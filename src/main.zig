@@ -7,5 +7,8 @@ pub fn main() !void {
     print("Yes, I am your CFO (certified forklift operator)\n", .{});
 
     var cfo = try CFO.init(allocator);
-    _ = try cfo.inst_1byte(0x00);
+    try cfo.ret();
+    var fptr = try cfo.test_finalize();
+    var val = fptr(4, 10);
+    print("did: {}\n", .{val});
 }
