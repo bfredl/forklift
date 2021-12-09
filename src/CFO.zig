@@ -74,8 +74,8 @@ pub fn ret(self: *Self) !void {
 pub fn mov(self: *Self, dst: IPReg, src: IPReg) !void {
     try self.new_inst();
     try self.rex_wrxb(true, false, false, false); // TODO: r8-r15 thx plz
-    try self.wb(0x89); // MOV \rm
-    try self.modRm(0b11, src.lowId(), dst.lowId());
+    try self.wb(0x8b); // MOV \rm
+    try self.modRm(0b11, dst.lowId(), src.lowId());
 }
 
 pub fn test_finalize(self: *Self) !FunPtr {
