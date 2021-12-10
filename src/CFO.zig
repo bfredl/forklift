@@ -1,5 +1,6 @@
 const std = @import("std");
 const os = std.os;
+const fs = std.fs;
 const Allocator = std.mem.Allocator;
 const page_allocator = std.heap.page_allocator;
 const ArrayList = std.ArrayList;
@@ -42,6 +43,10 @@ pub const IPReg = enum(u4) {
     pub fn lowId(self: @This()) u3 {
         return @truncate(u3, @enumToInt(self));
     }
+
+    pub fn ext(self: @This()) bool {
+        return @enumToInt(self) >= 0x08;
+    }
 };
 
 pub fn init(allocator: Allocator) !Self {
@@ -73,12 +78,13 @@ pub fn ret(self: *Self) !void {
 
 pub fn mov(self: *Self, dst: IPReg, src: IPReg) !void {
     try self.new_inst();
-    try self.rex_wrxb(true, false, false, false); // TODO: r8-r15 thx plz
+    try self.rex_wrxb(true, dst.ext(), false, src.ext()); // TODO: r8-r15 thx plz
     try self.wb(0x8b); // MOV \rm
     try self.modRm(0b11, dst.lowId(), src.lowId());
 }
 
 pub fn test_finalize(self: *Self) !FunPtr {
+    try fs.cwd().writeFile("test.o", self.code.items);
     try os.mprotect(self.code.items.ptr[0..self.code.capacity], os.PROT.READ | os.PROT.EXEC);
     return @ptrCast(FunPtr, self.code.items.ptr);
 }
