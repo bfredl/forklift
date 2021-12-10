@@ -79,7 +79,7 @@ pub fn ret(self: *Self) !void {
 pub fn mov(self: *Self, dst: IPReg, src: IPReg) !void {
     try self.new_inst();
     try self.rex_wrxb(true, dst.ext(), false, src.ext());
-    try self.wb(0x8b); // MOV \rm
+    try self.wb(0x8b); // MOV reg, \rm
     try self.modRm(0b11, dst.lowId(), src.lowId());
 }
 
@@ -92,8 +92,21 @@ pub fn movrm(self: *Self, dst: IPReg, srcbase: IPReg, srcoff: i32) !void {
     }
     try self.new_inst();
     try self.rex_wrxb(true, dst.ext(), false, srcbase.ext());
-    try self.wb(0x8b); // MOV \rm
+    try self.wb(0x8b); // MOV reg, \rm
     try self.modRm(0b00, dst.lowId(), srcbase.lowId());
+}
+
+pub fn movmr(self: *Self, dstbase: IPReg, dstoff: i32, src: IPReg) !void {
+    if (dstoff != 0) {
+        return error.OOPSIE;
+    }
+    if (dstbase.lowId() == 0x04 or dstbase == IPReg.rbp) {
+        return error.OHNOES;
+    }
+    try self.new_inst();
+    try self.rex_wrxb(true, src.ext(), false, dstbase.ext());
+    try self.wb(0x89); // MOV \rm, reg
+    try self.modRm(0b00, src.lowId(), dstbase.lowId());
 }
 
 pub fn test_finalize(self: *Self) !FunPtr {
