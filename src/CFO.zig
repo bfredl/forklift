@@ -78,9 +78,22 @@ pub fn ret(self: *Self) !void {
 
 pub fn mov(self: *Self, dst: IPReg, src: IPReg) !void {
     try self.new_inst();
-    try self.rex_wrxb(true, dst.ext(), false, src.ext()); // TODO: r8-r15 thx plz
+    try self.rex_wrxb(true, dst.ext(), false, src.ext());
     try self.wb(0x8b); // MOV \rm
     try self.modRm(0b11, dst.lowId(), src.lowId());
+}
+
+pub fn movrm(self: *Self, dst: IPReg, srcbase: IPReg, srcoff: i32) !void {
+    if (srcoff != 0) {
+        return error.OOPSIE;
+    }
+    if (srcbase.lowId() == 0x04 or srcbase == IPReg.rbp) {
+        return error.OHNOES;
+    }
+    try self.new_inst();
+    try self.rex_wrxb(true, dst.ext(), false, srcbase.ext());
+    try self.wb(0x8b); // MOV \rm
+    try self.modRm(0b00, dst.lowId(), srcbase.lowId());
 }
 
 pub fn test_finalize(self: *Self) !FunPtr {
