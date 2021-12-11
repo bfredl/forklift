@@ -120,6 +120,18 @@ pub fn dump(self: *Self) !FunPtr {
     try fs.cwd().writeFile("test.o", self.code.items);
 }
 
+pub fn dbg_nasm(self: *Self, allocator: Allocator) !void {
+    var nasm = try std.ChildProcess.init(&[_][]const u8{ "ndisasm", "-b", "64", "-" }, allocator);
+    defer nasm.deinit();
+    nasm.stdin_behavior = .Pipe;
+    _ = try std.io.getStdOut().write("\n");
+    try nasm.spawn();
+    _ = try nasm.stdin.?.write(self.code.items);
+    _ = nasm.stdin.?.close();
+    nasm.stdin = null;
+    _ = try nasm.wait();
+}
+
 pub fn test_finalize(self: *Self) !FunPtr {
     try os.mprotect(self.code.items.ptr[0..self.code.capacity], os.PROT.READ | os.PROT.EXEC);
     return @ptrCast(FunPtr, self.code.items.ptr);
@@ -165,9 +177,10 @@ test "return second argument" {
     try expectEqual(@as(usize, 10), fptr(4, 10));
 }
 
-test "read/write first arg as 64-bit point" {
+test "read/write first arg as 64-bit pointer" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
+    errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
 
     try cfo.movrm(IPReg.rax, IPReg.rdi, 0);
     try cfo.movmr(IPReg.rdi, 0, IPReg.rsi);
@@ -175,7 +188,8 @@ test "read/write first arg as 64-bit point" {
 
     var someint: u64 = 33;
     const fptr = try cfo.test_finalize();
+
     var retval = fptr(@ptrToInt(&someint), 10);
     try expectEqual(@as(usize, 33), retval);
-    try expectEqual(@as(usize, 10), someint);
+    try expectEqual(@as(usize, 9), someint);
 }
