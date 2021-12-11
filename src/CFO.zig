@@ -57,6 +57,13 @@ pub fn init(allocator: Allocator) !Self {
     };
 }
 
+pub fn deinit(self: *Self) void {
+    // TODO: only in debug mode (as clobbers the array, needs r/w)
+    os.mprotect(self.code.items.ptr[0..self.code.capacity], os.PROT.READ | os.PROT.WRITE) catch unreachable;
+    self.code.deinit();
+    self.inst_off.deinit();
+}
+
 fn new_inst(self: *Self) !void {
     var size = @intCast(u32, self.code.items.len);
     try self.inst_off.append(size);
@@ -109,8 +116,11 @@ pub fn movmr(self: *Self, dstbase: IPReg, dstoff: i32, src: IPReg) !void {
     try self.modRm(0b00, src.lowId(), dstbase.lowId());
 }
 
-pub fn test_finalize(self: *Self) !FunPtr {
+pub fn dump(self: *Self) !FunPtr {
     try fs.cwd().writeFile("test.o", self.code.items);
+}
+
+pub fn test_finalize(self: *Self) !FunPtr {
     try os.mprotect(self.code.items.ptr[0..self.code.capacity], os.PROT.READ | os.PROT.EXEC);
     return @ptrCast(FunPtr, self.code.items.ptr);
 }
@@ -130,4 +140,42 @@ pub fn rex_wrxb(self: *Self, w: bool, r: bool, x: bool, b: bool) !void {
 
 pub fn modRm(self: *Self, mod: u2, reg_or_opx: u3, rm: u3) !void {
     try self.wb(@as(u8, mod) << 6 | @as(u8, reg_or_opx) << 3 | rm);
+}
+
+const test_allocator = std.testing.allocator;
+const expectEqual = std.testing.expectEqual;
+
+test "return first argument" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+
+    try cfo.mov(IPReg.rax, IPReg.rdi);
+    try cfo.ret();
+    const fptr = try cfo.test_finalize();
+    try expectEqual(@as(usize, 4), fptr(4, 10));
+}
+
+test "return second argument" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+
+    try cfo.mov(IPReg.rax, IPReg.rsi);
+    try cfo.ret();
+    const fptr = try cfo.test_finalize();
+    try expectEqual(@as(usize, 10), fptr(4, 10));
+}
+
+test "read/write first arg as 64-bit point" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+
+    try cfo.movrm(IPReg.rax, IPReg.rdi, 0);
+    try cfo.movmr(IPReg.rdi, 0, IPReg.rsi);
+    try cfo.ret();
+
+    var someint: u64 = 33;
+    const fptr = try cfo.test_finalize();
+    var retval = fptr(@ptrToInt(&someint), 10);
+    try expectEqual(@as(usize, 33), retval);
+    try expectEqual(@as(usize, 10), someint);
 }
