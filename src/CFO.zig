@@ -14,8 +14,6 @@ inst_off: ArrayList(u32),
 
 const Self = @This();
 
-const FunPtr = fn (arg1: usize, arg2: usize) callconv(.C) usize;
-
 /// Registers for pointers and pointer-sized int
 ///
 /// smaller sizes will be handled by separate modifiers
@@ -144,7 +142,7 @@ pub fn movmi(self: *Self, dstbase: IPReg, dstoff: i32, src: i32) !void {
     try self.wd(src);
 }
 
-pub fn dump(self: *Self) !FunPtr {
+pub fn dump(self: *Self) !void {
     try fs.cwd().writeFile("test.o", self.code.items);
 }
 
@@ -160,9 +158,18 @@ pub fn dbg_nasm(self: *Self, allocator: Allocator) !void {
     _ = try nasm.wait();
 }
 
-pub fn test_finalize(self: *Self) !FunPtr {
+pub fn finalize(self: *Self) !void {
     try os.mprotect(self.code.items.ptr[0..self.code.capacity], os.PROT.READ | os.PROT.EXEC);
-    return @ptrCast(FunPtr, self.code.items.ptr);
+}
+
+pub fn get_ptr(self: *Self, comptime T: type) T {
+    return @ptrCast(T, self.code.items.ptr);
+}
+
+pub fn test_call2(self: *Self, arg1: usize, arg2: usize) !usize {
+    try self.finalize();
+    const FunPtr = fn (arg1: usize, arg2: usize) callconv(.C) usize;
+    return self.get_ptr(FunPtr)(arg1, arg2);
 }
 
 pub fn rex_wrxb(self: *Self, w: bool, r: bool, x: bool, b: bool) !void {
@@ -191,8 +198,7 @@ test "return first argument" {
 
     try cfo.mov(IPReg.rax, IPReg.rdi);
     try cfo.ret();
-    const fptr = try cfo.test_finalize();
-    try expectEqual(@as(usize, 4), fptr(4, 10));
+    try expectEqual(@as(usize, 4), try cfo.test_call2(4, 10));
 }
 
 test "return second argument" {
@@ -201,8 +207,7 @@ test "return second argument" {
 
     try cfo.mov(IPReg.rax, IPReg.rsi);
     try cfo.ret();
-    const fptr = try cfo.test_finalize();
-    try expectEqual(@as(usize, 10), fptr(4, 10));
+    try expectEqual(@as(usize, 10), try cfo.test_call2(4, 10));
 }
 
 test "read/write first arg as 64-bit pointer" {
@@ -214,9 +219,8 @@ test "read/write first arg as 64-bit pointer" {
     try cfo.ret();
 
     var someint: u64 = 33;
-    const fptr = try cfo.test_finalize();
 
-    var retval = fptr(@ptrToInt(&someint), 10);
+    var retval = try cfo.test_call2(@ptrToInt(&someint), 10);
     try expectEqual(@as(usize, 33), retval);
     try expectEqual(@as(usize, 10), someint);
 }
@@ -228,9 +232,7 @@ test "return intermediate value" {
     try cfo.movri(IPReg.rax, 1337);
     try cfo.ret();
 
-    const fptr = try cfo.test_finalize();
-
-    var retval = fptr(7, 8);
+    var retval = try cfo.test_call2(7, 8);
     try expectEqual(@as(usize, 1337), retval);
 }
 
@@ -243,8 +245,7 @@ test "write intermediate value to 64-bit pointer" {
     try cfo.ret();
 
     var someint: u64 = 33;
-    const fptr = try cfo.test_finalize();
 
-    _ = fptr(@ptrToInt(&someint), 8);
+    _ = try cfo.test_call2(@ptrToInt(&someint), 8);
     try expectEqual(@as(usize, 586), someint);
 }
