@@ -130,6 +130,20 @@ pub fn movri(self: *Self, dst: IPReg, src: i32) !void {
     try self.wd(src);
 }
 
+pub fn movmi(self: *Self, dstbase: IPReg, dstoff: i32, src: i32) !void {
+    if (dstoff != 0) {
+        return error.OOPSIE;
+    }
+    if (dstbase.lowId() == 0x04 or dstbase == IPReg.rbp) {
+        return error.OHNOES;
+    }
+    try self.new_inst();
+    try self.rex_wrxb(true, false, false, false);
+    try self.wb(0xc7); // MOV \rm, imm32
+    try self.modRm(0b00, 0b000, dstbase.lowId());
+    try self.wd(src);
+}
+
 pub fn dump(self: *Self) !FunPtr {
     try fs.cwd().writeFile("test.o", self.code.items);
 }
@@ -210,7 +224,6 @@ test "read/write first arg as 64-bit pointer" {
 test "return intermediate value" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
-    errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
 
     try cfo.movri(IPReg.rax, 1337);
     try cfo.ret();
@@ -219,4 +232,19 @@ test "return intermediate value" {
 
     var retval = fptr(7, 8);
     try expectEqual(@as(usize, 1337), retval);
+}
+
+test "write intermediate value to 64-bit pointer" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+    errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
+
+    try cfo.movmi(IPReg.rdi, 0, 586);
+    try cfo.ret();
+
+    var someint: u64 = 33;
+    const fptr = try cfo.test_finalize();
+
+    _ = fptr(@ptrToInt(&someint), 8);
+    try expectEqual(@as(usize, 586), someint);
 }
