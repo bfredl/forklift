@@ -191,5 +191,5 @@ test "read/write first arg as 64-bit pointer" {
 
     var retval = fptr(@ptrToInt(&someint), 10);
     try expectEqual(@as(usize, 33), retval);
-    try expectEqual(@as(usize, 9), someint);
+    try expectEqual(@as(usize, 10), someint);
 }
