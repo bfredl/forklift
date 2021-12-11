@@ -74,6 +74,10 @@ fn wb(self: *Self, opcode: u8) !void {
     try self.code.append(opcode);
 }
 
+fn wd(self: *Self, dword: i32) !void {
+    std.mem.writeIntLittle(i32, try self.code.addManyAsArray(4), dword);
+}
+
 pub fn inst_1byte(self: *Self, opcode: u8) !void {
     try self.new_inst();
     try self.wb(opcode);
@@ -114,6 +118,16 @@ pub fn movmr(self: *Self, dstbase: IPReg, dstoff: i32, src: IPReg) !void {
     try self.rex_wrxb(true, src.ext(), false, dstbase.ext());
     try self.wb(0x89); // MOV \rm, reg
     try self.modRm(0b00, src.lowId(), dstbase.lowId());
+}
+
+pub fn movri(self: *Self, dst: IPReg, src: i32) !void {
+    try self.new_inst();
+    // TODO: w bit should be avoidable in a lot of cases
+    // like "mov rax, 1337" is equivalent to "mov eax, 1337"
+    try self.rex_wrxb(true, dst.ext(), false, false);
+    try self.wb(0xc7); // MOV \rm, imm32
+    try self.modRm(0b11, 0b000, dst.lowId());
+    try self.wd(src);
 }
 
 pub fn dump(self: *Self) !FunPtr {
@@ -180,7 +194,6 @@ test "return second argument" {
 test "read/write first arg as 64-bit pointer" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
-    errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
 
     try cfo.movrm(IPReg.rax, IPReg.rdi, 0);
     try cfo.movmr(IPReg.rdi, 0, IPReg.rsi);
@@ -192,4 +205,18 @@ test "read/write first arg as 64-bit pointer" {
     var retval = fptr(@ptrToInt(&someint), 10);
     try expectEqual(@as(usize, 33), retval);
     try expectEqual(@as(usize, 10), someint);
+}
+
+test "return intermediate value" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+    errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
+
+    try cfo.movri(IPReg.rax, 1337);
+    try cfo.ret();
+
+    const fptr = try cfo.test_finalize();
+
+    var retval = fptr(7, 8);
+    try expectEqual(@as(usize, 1337), retval);
 }
