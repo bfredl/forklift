@@ -47,6 +47,21 @@ pub const IPReg = enum(u4) {
     }
 };
 
+pub const AOp = enum(u3) {
+    add,
+    bor,
+    adc,
+    sbb,
+    band, // There is no band!
+    sub,
+    xor,
+    cmp,
+
+    pub fn off(self: @This()) u8 {
+        return @as(u8, @enumToInt(self)) * 8;
+    }
+};
+
 pub fn init(allocator: Allocator) !Self {
     // TODO: allocate consequtive mprotectable pages
     return Self{
@@ -85,11 +100,19 @@ pub fn ret(self: *Self) !void {
     try self.inst_1byte(0xC3);
 }
 
-pub fn mov(self: *Self, dst: IPReg, src: IPReg) !void {
+fn op_rr(self: *Self, opcode: u8, dst: IPReg, src: IPReg) !void {
     try self.new_inst();
     try self.rex_wrxb(true, dst.ext(), false, src.ext());
-    try self.wb(0x8b); // MOV reg, \rm
+    try self.wb(opcode); // OP reg, \rm
     try self.modRm(0b11, dst.lowId(), src.lowId());
+}
+
+pub fn mov(self: *Self, dst: IPReg, src: IPReg) !void {
+    try self.op_rr(0x8b, dst, src);
+}
+
+pub fn arit(self: *Self, op: AOp, dst: IPReg, src: IPReg) !void {
+    try self.op_rr(op.off() + 0b11, dst, src);
 }
 
 pub fn movrm(self: *Self, dst: IPReg, srcbase: IPReg, srcoff: i32) !void {
@@ -219,7 +242,6 @@ test "read/write first arg as 64-bit pointer" {
     try cfo.ret();
 
     var someint: u64 = 33;
-
     var retval = try cfo.test_call2(@ptrToInt(&someint), 10);
     try expectEqual(@as(usize, 33), retval);
     try expectEqual(@as(usize, 10), someint);
@@ -248,4 +270,16 @@ test "write intermediate value to 64-bit pointer" {
 
     _ = try cfo.test_call2(@ptrToInt(&someint), 8);
     try expectEqual(@as(usize, 586), someint);
+}
+
+test "add arguments" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+
+    try cfo.mov(IPReg.rax, IPReg.rdi);
+    try cfo.arit(AOp.add, IPReg.rax, IPReg.rsi);
+    try cfo.ret();
+
+    var retval = try cfo.test_call2(1002, 560);
+    try expectEqual(@as(usize, 1562), retval);
 }
