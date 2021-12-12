@@ -57,8 +57,39 @@ pub const AOp = enum(u3) {
     xor,
     cmp,
 
-    pub fn off(self: @This()) u8 {
+    fn off(self: @This()) u8 {
         return @as(u8, @enumToInt(self)) * 8;
+    }
+};
+
+pub const Cond = enum(u4) {
+    o, // overflow
+    no,
+    b, // below
+    nb,
+    e, // equal
+    ne,
+    na,
+    a, // above
+    s, // sign
+    ns,
+    p, // parity
+    np,
+    l, // less
+    nl,
+    ng,
+    g, // greater
+
+    const C = @This();
+    pub const c = C.b;
+    pub const nc = C.nb;
+
+    pub const ae = C.nb;
+    pub const be = C.na;
+    pub const ge = C.nl;
+    pub const le = C.ng;
+    fn off(self: @This()) u8 {
+        return @as(u8, @enumToInt(self));
     }
 };
 
@@ -165,6 +196,22 @@ pub fn movmi(self: *Self, dstbase: IPReg, dstoff: i32, src: i32) !void {
     try self.wd(src);
 }
 
+pub fn jfwd(self: *Self, cond: Cond) !u32 {
+    try self.new_inst();
+    try self.wb(0x70 + cond.off());
+    var pos = @intCast(u32, self.code.items.len);
+    try self.wb(0x00); // placeholder
+    return pos;
+}
+
+pub fn set_target(self: *Self, pos: u32) !void {
+    var off = @intCast(u32, self.code.items.len) - (pos + 1);
+    if (off > 0x7f) {
+        return error.InvalidNearJump;
+    }
+    self.code.items[pos] = @intCast(u8, off);
+}
+
 pub fn dump(self: *Self) !void {
     try fs.cwd().writeFile("test.o", self.code.items);
 }
@@ -261,7 +308,6 @@ test "return intermediate value" {
 test "write intermediate value to 64-bit pointer" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
-    errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
 
     try cfo.movmi(IPReg.rdi, 0, 586);
     try cfo.ret();
@@ -282,4 +328,35 @@ test "add arguments" {
 
     var retval = try cfo.test_call2(1002, 560);
     try expectEqual(@as(usize, 1562), retval);
+}
+
+test "subtract arguments" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+
+    try cfo.mov(IPReg.rax, IPReg.rdi);
+    try cfo.arit(AOp.sub, IPReg.rax, IPReg.rsi);
+    try cfo.ret();
+
+    var retval = try cfo.test_call2(1002, 560);
+    try expectEqual(@as(usize, 442), retval);
+}
+
+test "get the maximum of two args" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+    errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
+
+    try cfo.mov(IPReg.rax, IPReg.rdi);
+    try cfo.arit(AOp.cmp, IPReg.rdi, IPReg.rsi);
+    const jump = try cfo.jfwd(Cond.g);
+    try cfo.mov(IPReg.rax, IPReg.rsi);
+    try cfo.set_target(jump);
+    try cfo.ret();
+
+    var retval = try cfo.test_call2(1002, 560);
+    try expectEqual(@as(usize, 1002), retval);
+
+    retval = try cfo.test_call2(460, 902);
+    try expectEqual(@as(usize, 903), retval);
 }
