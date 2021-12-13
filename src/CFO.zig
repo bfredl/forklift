@@ -295,8 +295,17 @@ pub fn vmath(self: *Self, op: u8, fmode: FMode, dst: u4, src1: u4, src2: u4) !vo
     try self.modRm(0b11, @truncate(u3, dst), @truncate(u3, src2));
 }
 
-pub fn vadd(self: *Self, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
-    try self.vmath(0x58, fmode, dst, src1, src2);
+pub fn vmathrm(self: *Self, op: u8, fmode: FMode, dst: u4, srcbase: IPReg, srcoff: i32) !void {
+    if (srcoff != 0) {
+        return error.OOPSIE;
+    }
+    if (srcbase.lowId() == 0x04 or srcbase == IPReg.rbp) {
+        return error.OHNOES;
+    }
+    try self.new_inst();
+    try self.vex0fwig(dst > 7, false, srcbase.ext(), 0, fmode.l(), fmode.pp());
+    try self.wb(op);
+    try self.modRm(0b00, @truncate(u3, dst), srcbase.lowId());
 }
 
 // dst[low] = src2[low]; dst[high] = src[high]
@@ -312,6 +321,14 @@ pub fn vmov2(self: *Self, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
 // vmovupd xmm1, xmm2
 pub fn vmov(self: *Self, fmode: FMode, dst: u4, src: u4) !void {
     try self.vmath(0x10, fmode, dst, if (fmode.scalar()) dst else 0, src);
+}
+
+pub fn vmovrm(self: *Self, fmode: FMode, dst: u4, src: IPReg, srcbase: i32) !void {
+    try self.vmathrm(0x10, fmode, dst, src, srcbase);
+}
+
+pub fn vadd(self: *Self, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
+    try self.vmath(0x58, fmode, dst, src1, src2);
 }
 
 pub fn dump(self: *Self) !void {
@@ -347,6 +364,12 @@ pub fn test_call2(self: *Self, arg1: usize, arg2: usize) !usize {
 pub fn test_call2f64(self: *Self, arg1: f64, arg2: f64) !f64 {
     try self.finalize();
     const FunPtr = fn (arg1: f64, arg2: f64) callconv(.C) f64;
+    return self.get_ptr(FunPtr)(arg1, arg2);
+}
+
+pub fn test_call2x(self: *Self, comptime T: type, arg1: anytype, arg2: anytype) !f64 {
+    try self.finalize();
+    const FunPtr = fn (arg1: @TypeOf(arg1), arg2: @TypeOf(arg2)) callconv(.C) T;
     return self.get_ptr(FunPtr)(arg1, arg2);
 }
 
@@ -473,4 +496,18 @@ test "move scalar double" {
 
     var retval = try cfo.test_call2f64(22.0, 0.75);
     try expectEqual(@as(f64, 0.75), retval);
+}
+
+test "read scalar double" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+    errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
+
+    try cfo.vmovrm(FMode.sd, 0, IPReg.rdi, 0);
+    try cfo.ret();
+
+    var thefloat: f64 = 13.5;
+
+    var retval = try cfo.test_call2x(f64, &thefloat, @as(f64, 0.75));
+    try expectEqual(@as(f64, 13.5), retval);
 }
