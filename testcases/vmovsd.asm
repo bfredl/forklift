@@ -12,11 +12,11 @@ vmovsd xmm1, [rcx]
 vmovsd xmm1, [rsi]
 vmovsd xmm9, [rsi]
 
+movsd xmm0, xmm1
+vmovsd xmm0, xmm1, xmm2
+vmovpd xmm0, xmm1
+
 vaddsd xmm1, xmm1, xmm2
-vaddsd xmm1, xmm2, xmm2
-vaddsd xmm1, xmm2, xmm3
-vaddsd xmm2, xmm2, xmm3
-vaddsd xmm2, xmm3, xmm3
 
 vaddsd xmm1, xmm9, xmm1
 vaddsd xmm9, xmm1, xmm1

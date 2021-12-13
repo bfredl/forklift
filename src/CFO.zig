@@ -93,13 +93,34 @@ pub const Cond = enum(u4) {
     }
 };
 
-const PP = enum(u4) {
+const PP = enum(u2) {
     none,
     h66,
     F3,
     F2,
     fn val(self: @This()) u8 {
         return @as(u8, @enumToInt(self));
+    }
+};
+
+const FMode = enum(u3) {
+    ps4,
+    pd2,
+    ss,
+    sd,
+    ps8,
+    pd4,
+
+    fn pp(self: @This()) PP {
+        return @intToEnum(PP, @truncate(u2, @enumToInt(self)));
+    }
+
+    fn l(self: @This()) bool {
+        return @enumToInt(self) >= 4;
+    }
+
+    fn scalar(self: @This()) bool {
+        return self == @This().ss or self == @This().sd;
     }
 };
 
@@ -267,11 +288,30 @@ pub fn movmi(self: *Self, dstbase: IPReg, dstoff: i32, src: i32) !void {
 // note: for now we use VEX for all xmm/ymm operations.
 // old school SSE forms might be shorter for some 128/scalar ops?
 
-pub fn vaddsd(self: *Self, dst: u4, src1: u4, src2: u4) !void {
+pub fn vmath(self: *Self, op: u8, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
     try self.new_inst();
-    try self.vex0fwig(dst > 7, false, src2 > 7, src1, false, PP.F2);
-    try self.wb(0x58);
+    try self.vex0fwig(dst > 7, false, src2 > 7, src1, fmode.l(), fmode.pp());
+    try self.wb(op);
     try self.modRm(0b11, @truncate(u3, dst), @truncate(u3, src2));
+}
+
+pub fn vadd(self: *Self, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
+    try self.vmath(0x58, fmode, dst, src1, src2);
+}
+
+// dst[low] = src2[low]; dst[high] = src[high]
+pub fn vmov2(self: *Self, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
+    if (!fmode.scalar()) {
+        return error.InvalidFMode;
+    }
+    try self.vmath(0x10, fmode, dst, src1, src2);
+}
+
+// pseudo-instruction for moving register
+// vmovsd xmm1, xmm1, xmm2
+// vmovupd xmm1, xmm2
+pub fn vmov(self: *Self, fmode: FMode, dst: u4, src: u4) !void {
+    try self.vmath(0x10, fmode, dst, if (fmode.scalar()) dst else 0, src);
 }
 
 pub fn dump(self: *Self) !void {
@@ -416,12 +456,21 @@ test "add scalar double" {
     defer cfo.deinit();
     errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
 
-    try cfo.vaddsd(0, 0, 1);
-    // try cfo.vaddsd(0, 8, 2);
-    // try cfo.vaddsd(8, 3, 1);
-    // try cfo.vaddsd(5, 3, 8);
+    try cfo.vadd(FMode.sd, 0, 0, 1);
     try cfo.ret();
 
     var retval = try cfo.test_call2f64(2.0, 0.5);
     try expectEqual(@as(f64, 2.5), retval);
+}
+
+test "move scalar double" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+    errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
+
+    try cfo.vmov(FMode.sd, 0, 1);
+    try cfo.ret();
+
+    var retval = try cfo.test_call2f64(22.0, 0.75);
+    try expectEqual(@as(f64, 0.75), retval);
 }
