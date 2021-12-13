@@ -127,10 +127,46 @@ pub fn inst_1byte(self: *Self, opcode: u8) !void {
     try self.wb(opcode);
 }
 
+// encodings
+pub fn rex_wrxb(self: *Self, w: bool, r: bool, x: bool, b: bool) !void {
+    var value: u8 = 0x40;
+
+    if (w) value |= 0b1000;
+    if (r) value |= 0b0100;
+    if (x) value |= 0b0010;
+    if (b) value |= 0b0001;
+
+    if (value != 0x40) {
+        try self.wb(value);
+    }
+}
+
+pub fn modRm(self: *Self, mod: u2, reg_or_opx: u3, rm: u3) !void {
+    try self.wb(@as(u8, mod) << 6 | @as(u8, reg_or_opx) << 3 | rm);
+}
+
+// control flow
 pub fn ret(self: *Self) !void {
     try self.inst_1byte(0xC3);
 }
 
+pub fn jfwd(self: *Self, cond: Cond) !u32 {
+    try self.new_inst();
+    try self.wb(0x70 + cond.off());
+    var pos = @intCast(u32, self.code.items.len);
+    try self.wb(0x00); // placeholder
+    return pos;
+}
+
+pub fn set_target(self: *Self, pos: u32) !void {
+    var off = @intCast(u32, self.code.items.len) - (pos + 1);
+    if (off > 0x7f) {
+        return error.InvalidNearJump;
+    }
+    self.code.items[pos] = @intCast(u8, off);
+}
+
+// mov and arithmetic
 fn op_rr(self: *Self, opcode: u8, dst: IPReg, src: IPReg) !void {
     try self.new_inst();
     try self.rex_wrxb(true, dst.ext(), false, src.ext());
@@ -196,22 +232,6 @@ pub fn movmi(self: *Self, dstbase: IPReg, dstoff: i32, src: i32) !void {
     try self.wd(src);
 }
 
-pub fn jfwd(self: *Self, cond: Cond) !u32 {
-    try self.new_inst();
-    try self.wb(0x70 + cond.off());
-    var pos = @intCast(u32, self.code.items.len);
-    try self.wb(0x00); // placeholder
-    return pos;
-}
-
-pub fn set_target(self: *Self, pos: u32) !void {
-    var off = @intCast(u32, self.code.items.len) - (pos + 1);
-    if (off > 0x7f) {
-        return error.InvalidNearJump;
-    }
-    self.code.items[pos] = @intCast(u8, off);
-}
-
 pub fn dump(self: *Self) !void {
     try fs.cwd().writeFile("test.o", self.code.items);
 }
@@ -240,23 +260,6 @@ pub fn test_call2(self: *Self, arg1: usize, arg2: usize) !usize {
     try self.finalize();
     const FunPtr = fn (arg1: usize, arg2: usize) callconv(.C) usize;
     return self.get_ptr(FunPtr)(arg1, arg2);
-}
-
-pub fn rex_wrxb(self: *Self, w: bool, r: bool, x: bool, b: bool) !void {
-    var value: u8 = 0x40;
-
-    if (w) value |= 0b1000;
-    if (r) value |= 0b0100;
-    if (x) value |= 0b0010;
-    if (b) value |= 0b0001;
-
-    if (value != 0x40) {
-        try self.wb(value);
-    }
-}
-
-pub fn modRm(self: *Self, mod: u2, reg_or_opx: u3, rm: u3) !void {
-    try self.wb(@as(u8, mod) << 6 | @as(u8, reg_or_opx) << 3 | rm);
 }
 
 const test_allocator = std.testing.allocator;
@@ -358,5 +361,5 @@ test "get the maximum of two args" {
     try expectEqual(@as(usize, 1002), retval);
 
     retval = try cfo.test_call2(460, 902);
-    try expectEqual(@as(usize, 903), retval);
+    try expectEqual(@as(usize, 902), retval);
 }
