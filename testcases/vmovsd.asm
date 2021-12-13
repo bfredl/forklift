@@ -17,3 +17,7 @@ vaddsd xmm1, xmm2, xmm2
 vaddsd xmm1, xmm2, xmm3
 vaddsd xmm2, xmm2, xmm3
 vaddsd xmm2, xmm3, xmm3
+
+vaddsd xmm1, xmm9, xmm1
+vaddsd xmm9, xmm1, xmm1
+vaddsd xmm1, xmm1, xmm9

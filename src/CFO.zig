@@ -93,6 +93,16 @@ pub const Cond = enum(u4) {
     }
 };
 
+const PP = enum(u4) {
+    none,
+    h66,
+    F3,
+    F2,
+    fn val(self: @This()) u8 {
+        return @as(u8, @enumToInt(self));
+    }
+};
+
 pub fn init(allocator: Allocator) !Self {
     // TODO: allocate consequtive mprotectable pages
     return Self{
@@ -143,6 +153,27 @@ pub fn rex_wrxb(self: *Self, w: bool, r: bool, x: bool, b: bool) !void {
 
 pub fn modRm(self: *Self, mod: u2, reg_or_opx: u3, rm: u3) !void {
     try self.wb(@as(u8, mod) << 6 | @as(u8, reg_or_opx) << 3 | rm);
+}
+
+pub fn tibflag(comptime T: type, flag: bool) u8 {
+    return @as(T, @boolToInt(!flag));
+}
+
+// Note: implements inversion of r, vvvv
+pub fn vex2(self: *Self, r: bool, vv: u4, l: bool, pp: PP) !void {
+    try self.wb(0xC5);
+    try self.wb(tibflag(u8, r) << 7 | @as(u8, ~vv) << 3 | @as(u8, @boolToInt(l)) << 2 | pp.val());
+}
+
+// Note: implements inversion of wrxb, vvvv
+pub fn vex3(self: *Self, w: bool, r: bool, x: bool, b: bool, mm: u5, vv: u4, l: bool, pp: PP) !void {
+    try self.wb(0xC4);
+    try self.wb(tibflag(u8, r) << 7 | tibflag(u8, x) << 6 | tibflag(u8, b) << 5 | @as(u8, mm));
+    try self.wb(tibflag(u8, w) << 7 | @as(u8, ~vv) << 3 | @as(u8, @boolToInt(l)) << 2 | pp.val());
+}
+
+pub fn vex0fwig(self: *Self, r: bool, x: bool, b: bool, vv: u4, l: bool, pp: PP) !void {
+    try if (x or b) self.vex3(false, r, x, b, 1, vv, l, pp) else self.vex2(r, vv, l, pp);
 }
 
 // control flow
@@ -232,6 +263,17 @@ pub fn movmi(self: *Self, dstbase: IPReg, dstoff: i32, src: i32) !void {
     try self.wd(src);
 }
 
+// VEX instructions
+// note: for now we use VEX for all xmm/ymm operations.
+// old school SSE forms might be shorter for some 128/scalar ops?
+
+pub fn vaddsd(self: *Self, dst: u4, src1: u4, src2: u4) !void {
+    try self.new_inst();
+    try self.vex0fwig(dst > 7, false, src2 > 7, src1, false, PP.F2);
+    try self.wb(0x58);
+    try self.modRm(0b11, @truncate(u3, dst), @truncate(u3, src2));
+}
+
 pub fn dump(self: *Self) !void {
     try fs.cwd().writeFile("test.o", self.code.items);
 }
@@ -259,6 +301,12 @@ pub fn get_ptr(self: *Self, comptime T: type) T {
 pub fn test_call2(self: *Self, arg1: usize, arg2: usize) !usize {
     try self.finalize();
     const FunPtr = fn (arg1: usize, arg2: usize) callconv(.C) usize;
+    return self.get_ptr(FunPtr)(arg1, arg2);
+}
+
+pub fn test_call2f64(self: *Self, arg1: f64, arg2: f64) !f64 {
+    try self.finalize();
+    const FunPtr = fn (arg1: f64, arg2: f64) callconv(.C) f64;
     return self.get_ptr(FunPtr)(arg1, arg2);
 }
 
@@ -348,7 +396,6 @@ test "subtract arguments" {
 test "get the maximum of two args" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
-    errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
 
     try cfo.mov(IPReg.rax, IPReg.rdi);
     try cfo.arit(AOp.cmp, IPReg.rdi, IPReg.rsi);
@@ -362,4 +409,19 @@ test "get the maximum of two args" {
 
     retval = try cfo.test_call2(460, 902);
     try expectEqual(@as(usize, 902), retval);
+}
+
+test "add scalar double" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+    errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
+
+    try cfo.vaddsd(0, 0, 1);
+    // try cfo.vaddsd(0, 8, 2);
+    // try cfo.vaddsd(8, 3, 1);
+    // try cfo.vaddsd(5, 3, 8);
+    try cfo.ret();
+
+    var retval = try cfo.test_call2f64(2.0, 0.5);
+    try expectEqual(@as(f64, 2.5), retval);
 }
