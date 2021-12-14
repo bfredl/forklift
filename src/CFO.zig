@@ -183,7 +183,7 @@ pub fn sib(self: *Self, scale: u2, index: u3, base: u3) !void {
 
 // modRm with no index, but add forced SIB byte when indexing RSP or R12
 pub fn modRmNoIndex(self: *Self, mod: u2, reg_or_opx: u3, rm: u3) !void {
-    try self.wb(@as(u8, mod) << 6 | @as(u8, reg_or_opx) << 3 | rm);
+    try self.modRm(mod, reg_or_opx, rm);
     if (rm == 0x04) {
         // no index, RSP/R12 as base
         try self.sib(0b00, 0x04, 0x04);
