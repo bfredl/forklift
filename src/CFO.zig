@@ -103,6 +103,7 @@ const PP = enum(u2) {
     }
 };
 
+// common floating-point modes of VEX instructions
 const FMode = enum(u3) {
     ps4,
     pd2,
@@ -248,10 +249,7 @@ pub fn arit(self: *Self, op: AOp, dst: IPReg, src: IPReg) !void {
 }
 
 pub fn movrm(self: *Self, dst: IPReg, srcbase: IPReg, srcoff: i32) !void {
-    if (srcoff != 0) {
-        return error.OOPSIE;
-    }
-    if (srcbase == IPReg.rbp) {
+    if (srcoff != 0 or srcbase == IPReg.rbp) {
         return error.OHNOES;
     }
     try self.new_inst();
@@ -261,10 +259,7 @@ pub fn movrm(self: *Self, dst: IPReg, srcbase: IPReg, srcoff: i32) !void {
 }
 
 pub fn movmr(self: *Self, dstbase: IPReg, dstoff: i32, src: IPReg) !void {
-    if (dstoff != 0) {
-        return error.OOPSIE;
-    }
-    if (dstbase == IPReg.rbp) {
+    if (dstoff != 0 or dstbase == IPReg.rbp) {
         return error.OHNOES;
     }
     try self.new_inst();
@@ -284,10 +279,7 @@ pub fn movri(self: *Self, dst: IPReg, src: i32) !void {
 }
 
 pub fn movmi(self: *Self, dstbase: IPReg, dstoff: i32, src: i32) !void {
-    if (dstoff != 0) {
-        return error.OOPSIE;
-    }
-    if (dstbase == IPReg.rbp) {
+    if (dstoff != 0 or dstbase == IPReg.rbp) {
         return error.OHNOES;
     }
     try self.new_inst();
@@ -308,17 +300,14 @@ pub fn vmath(self: *Self, op: u8, fmode: FMode, dst: u4, src1: u4, src2: u4) !vo
     try self.modRm(0b11, @truncate(u3, dst), @truncate(u3, src2));
 }
 
-pub fn vmathrm(self: *Self, op: u8, fmode: FMode, dst: u4, srcbase: IPReg, srcoff: i32) !void {
-    if (srcoff != 0) {
-        return error.OOPSIE;
-    }
-    if (srcbase.lowId() == 0x04 or srcbase == IPReg.rbp) {
+pub fn vmathrm(self: *Self, op: u8, fmode: FMode, reg: u4, base: IPReg, off: i32) !void {
+    if (off != 0 or base == IPReg.rbp) {
         return error.OHNOES;
     }
     try self.new_inst();
-    try self.vex0fwig(dst > 7, false, srcbase.ext(), 0, fmode.l(), fmode.pp());
+    try self.vex0fwig(reg > 7, false, base.ext(), 0, fmode.l(), fmode.pp());
     try self.wb(op);
-    try self.modRm(0b00, @truncate(u3, dst), srcbase.lowId());
+    try self.modRmNoIndex(0b00, @truncate(u3, reg), base.lowId());
 }
 
 // dst[low] = src2[low]; dst[high] = src[high]
@@ -336,8 +325,12 @@ pub fn vmov(self: *Self, fmode: FMode, dst: u4, src: u4) !void {
     try self.vmath(0x10, fmode, dst, if (fmode.scalar()) dst else 0, src);
 }
 
-pub fn vmovrm(self: *Self, fmode: FMode, dst: u4, src: IPReg, srcbase: i32) !void {
-    try self.vmathrm(0x10, fmode, dst, src, srcbase);
+pub fn vmovrm(self: *Self, fmode: FMode, dst: u4, srcbase: IPReg, srcoff: i32) !void {
+    try self.vmathrm(0x10, fmode, dst, srcbase, srcoff);
+}
+
+pub fn vmovmr(self: *Self, fmode: FMode, dstbase: IPReg, dstoff: i32, src: u4) !void {
+    try self.vmathrm(0x11, fmode, src, dstbase, dstoff);
 }
 
 pub fn vadd(self: *Self, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
@@ -530,16 +523,20 @@ test "move scalar double" {
     try expectEqual(@as(f64, 0.75), retval);
 }
 
-test "read scalar double" {
+test "read/write scalar double" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
     errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
 
-    try cfo.vmovrm(FMode.sd, 0, IPReg.rdi, 0);
+    // as we are swapping [rdi] and xmm0, use a temp
+    try cfo.vmovrm(FMode.sd, 1, IPReg.rdi, 0);
+    try cfo.vmovmr(FMode.sd, IPReg.rdi, 0, 0);
+    try cfo.vmov(FMode.sd, 0, 1);
     try cfo.ret();
 
     var thefloat: f64 = 13.5;
 
-    var retval = try cfo.test_call2x(f64, &thefloat, @as(f64, 0.75));
+    var retval = try cfo.test_call2x(f64, &thefloat, @as(f64, 0.25));
     try expectEqual(@as(f64, 13.5), retval);
+    try expectEqual(@as(f64, 0.25), thefloat);
 }
