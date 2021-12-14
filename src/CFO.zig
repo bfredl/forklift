@@ -176,6 +176,19 @@ pub fn modRm(self: *Self, mod: u2, reg_or_opx: u3, rm: u3) !void {
     try self.wb(@as(u8, mod) << 6 | @as(u8, reg_or_opx) << 3 | rm);
 }
 
+pub fn sib(self: *Self, scale: u2, index: u3, base: u3) !void {
+    try self.wb(@as(u8, scale) << 6 | @as(u8, index) << 3 | base);
+}
+
+// modRm with no index, but add forced SIB byte when indexing RSP or R12
+pub fn modRmNoIndex(self: *Self, mod: u2, reg_or_opx: u3, rm: u3) !void {
+    try self.wb(@as(u8, mod) << 6 | @as(u8, reg_or_opx) << 3 | rm);
+    if (rm == 0x04) {
+        // no index, RSP/R12 as base
+        try self.sib(0b00, 0x04, 0x04);
+    }
+}
+
 pub fn tibflag(comptime T: type, flag: bool) u8 {
     return @as(T, @boolToInt(!flag));
 }
@@ -238,26 +251,26 @@ pub fn movrm(self: *Self, dst: IPReg, srcbase: IPReg, srcoff: i32) !void {
     if (srcoff != 0) {
         return error.OOPSIE;
     }
-    if (srcbase.lowId() == 0x04 or srcbase == IPReg.rbp) {
+    if (srcbase == IPReg.rbp) {
         return error.OHNOES;
     }
     try self.new_inst();
     try self.rex_wrxb(true, dst.ext(), false, srcbase.ext());
     try self.wb(0x8b); // MOV reg, \rm
-    try self.modRm(0b00, dst.lowId(), srcbase.lowId());
+    try self.modRmNoIndex(0b00, dst.lowId(), srcbase.lowId());
 }
 
 pub fn movmr(self: *Self, dstbase: IPReg, dstoff: i32, src: IPReg) !void {
     if (dstoff != 0) {
         return error.OOPSIE;
     }
-    if (dstbase.lowId() == 0x04 or dstbase == IPReg.rbp) {
+    if (dstbase == IPReg.rbp) {
         return error.OHNOES;
     }
     try self.new_inst();
     try self.rex_wrxb(true, src.ext(), false, dstbase.ext());
     try self.wb(0x89); // MOV \rm, reg
-    try self.modRm(0b00, src.lowId(), dstbase.lowId());
+    try self.modRmNoIndex(0b00, src.lowId(), dstbase.lowId());
 }
 
 pub fn movri(self: *Self, dst: IPReg, src: i32) !void {
@@ -274,13 +287,13 @@ pub fn movmi(self: *Self, dstbase: IPReg, dstoff: i32, src: i32) !void {
     if (dstoff != 0) {
         return error.OOPSIE;
     }
-    if (dstbase.lowId() == 0x04 or dstbase == IPReg.rbp) {
+    if (dstbase == IPReg.rbp) {
         return error.OHNOES;
     }
     try self.new_inst();
-    try self.rex_wrxb(true, false, false, false);
+    try self.rex_wrxb(true, false, false, dstbase.ext());
     try self.wb(0xc7); // MOV \rm, imm32
-    try self.modRm(0b00, 0b000, dstbase.lowId());
+    try self.modRmNoIndex(0b00, 0b000, dstbase.lowId());
     try self.wd(src);
 }
 
@@ -430,6 +443,25 @@ test "write intermediate value to 64-bit pointer" {
 
     _ = try cfo.test_call2(@ptrToInt(&someint), 8);
     try expectEqual(@as(usize, 586), someint);
+}
+
+test "use r12 for base address" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+
+    // r12 is callee-saved. so save it
+    try cfo.mov(IPReg.rcx, IPReg.r12);
+    try cfo.mov(IPReg.r12, IPReg.rdi);
+
+    try cfo.movmi(IPReg.r12, 0, 389);
+
+    try cfo.mov(IPReg.r12, IPReg.rcx);
+    try cfo.ret();
+
+    var someint: u64 = 33;
+
+    _ = try cfo.test_call2(@ptrToInt(&someint), 8);
+    try expectEqual(@as(usize, 389), someint);
 }
 
 test "add arguments" {

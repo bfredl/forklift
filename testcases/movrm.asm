@@ -1,3 +1,4 @@
+bits 64
 global main
     section   .text
 main:
@@ -5,6 +6,7 @@ main:
 mov rax, [rbx]
 mov rax, [rsp]
 mov rax, [rbp]
+mov rax, [rdi+2*rbp]
 
 
 mov rax, [rbx-8]
