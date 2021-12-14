@@ -207,6 +207,13 @@ pub fn modRmBaseOff(self: *Self, reg_or_opx: u3, rmr: IPReg, offset: i32) !void 
     }
 }
 
+pub const EAddr = struct {
+    base: IPReg, // TODO: optional for RIP+off[+index] ??
+    index: IPReg, // tricky: ESP for none
+    scale: u2,
+    offset: u32,
+};
+
 pub fn tibflag(comptime T: type, flag: bool) u8 {
     return @as(T, @boolToInt(!flag));
 }
