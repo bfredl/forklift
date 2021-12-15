@@ -185,34 +185,57 @@ pub fn sib(self: *Self, scale: u2, index: u3, base: u3) !void {
     try self.wb(@as(u8, scale) << 6 | @as(u8, index) << 3 | base);
 }
 
-// modRm with no index, but add forced SIB byte when indexing RSP or R12
-pub fn modRmBaseOff(self: *Self, reg_or_opx: u3, rmr: IPReg, offset: i32) !void {
-    var mod: u2 = if (offset == 0 and rmr != IPReg.rbp)
+pub const EAddr = struct {
+    base: IPReg, // TODO: optional for RIP+off[+index] ??
+    index: ?IPReg = null,
+    scale: u2 = 0,
+    offset: i32 = 0,
+
+    pub inline fn b(self: @This()) bool {
+        return self.base.ext();
+    }
+    pub inline fn x(self: @This()) bool {
+        return if (self.index) |index| index.ext() else false;
+    }
+};
+
+pub fn a(reg: IPReg) EAddr {
+    return .{ .base = reg };
+}
+
+pub fn bo(reg: IPReg, offset: i32) EAddr {
+    return .{ .base = reg, .offset = offset };
+}
+
+// write modrm byte + optional SIB + optional offset
+// caller needs to handle ea.x() and ea.b() for addresses
+// with extended indices!
+pub fn modRmEA(self: *Self, reg_or_opx: u3, ea: EAddr) !void {
+    var mod: u2 = if (ea.offset == 0 and ea.base != IPReg.rbp)
         @as(u2, 0b00)
-    else if (offset == @truncate(i8, offset))
+    else if (ea.offset == @truncate(i8, ea.offset))
         @as(u2, 0b01)
     else
         @as(u2, 0b10);
 
-    const rm = rmr.lowId();
+    const rm = ea.base.lowId();
     try self.modRm(mod, reg_or_opx, rm);
-    if (rm == 0x04) {
-        // no index, RSP/R12 as base
+    if (ea.index == null and rm == 0x04) {
+        // no index, but RSP/R12 as base
+        // forces a SIB byte
         try self.sib(0b00, 0x04, 0x04);
+    } else if (ea.index) |index| {
+        if (index == IPReg.rsp) {
+            return error.InvalidIndex;
+        }
+        try self.sib(ea.scale, index.lowId(), rm);
     }
     if (mod == 0b01) {
-        try self.wbi(@truncate(i8, offset));
+        try self.wbi(@truncate(i8, ea.offset));
     } else if (mod == 0b10) {
-        try self.wd(offset);
+        try self.wd(ea.offset);
     }
 }
-
-pub const EAddr = struct {
-    base: IPReg, // TODO: optional for RIP+off[+index] ??
-    index: IPReg, // tricky: ESP for none
-    scale: u2,
-    offset: u32,
-};
 
 pub fn tibflag(comptime T: type, flag: bool) u8 {
     return @as(T, @boolToInt(!flag));
@@ -272,18 +295,18 @@ pub fn arit(self: *Self, op: AOp, dst: IPReg, src: IPReg) !void {
     try self.op_rr(op.off() + 0b11, dst, src);
 }
 
-pub fn movrm(self: *Self, dst: IPReg, srcbase: IPReg, srcoff: i32) !void {
+pub fn movrm(self: *Self, dst: IPReg, src: EAddr) !void {
     try self.new_inst();
-    try self.rex_wrxb(true, dst.ext(), false, srcbase.ext());
+    try self.rex_wrxb(true, dst.ext(), src.x(), src.b());
     try self.wb(0x8b); // MOV reg, \rm
-    try self.modRmBaseOff(dst.lowId(), srcbase, srcoff);
+    try self.modRmEA(dst.lowId(), src);
 }
 
-pub fn movmr(self: *Self, dstbase: IPReg, dstoff: i32, src: IPReg) !void {
+pub fn movmr(self: *Self, dst: EAddr, src: IPReg) !void {
     try self.new_inst();
-    try self.rex_wrxb(true, src.ext(), false, dstbase.ext());
+    try self.rex_wrxb(true, src.ext(), dst.x(), dst.b());
     try self.wb(0x89); // MOV \rm, reg
-    try self.modRmBaseOff(src.lowId(), dstbase, dstoff);
+    try self.modRmEA(src.lowId(), dst);
 }
 
 pub fn movri(self: *Self, dst: IPReg, src: i32) !void {
@@ -296,11 +319,11 @@ pub fn movri(self: *Self, dst: IPReg, src: i32) !void {
     try self.wd(src);
 }
 
-pub fn movmi(self: *Self, dstbase: IPReg, dstoff: i32, src: i32) !void {
+pub fn movmi(self: *Self, dst: EAddr, src: i32) !void {
     try self.new_inst();
-    try self.rex_wrxb(true, false, false, dstbase.ext());
+    try self.rex_wrxb(true, false, dst.x(), dst.b());
     try self.wb(0xc7); // MOV \rm, imm32
-    try self.modRmBaseOff(0b000, dstbase, dstoff);
+    try self.modRmEA(0b000, dst);
     try self.wd(src);
 }
 
@@ -315,11 +338,11 @@ pub fn vmath(self: *Self, op: u8, fmode: FMode, dst: u4, src1: u4, src2: u4) !vo
     try self.modRm(0b11, @truncate(u3, dst), @truncate(u3, src2));
 }
 
-pub fn vmathrm(self: *Self, op: u8, fmode: FMode, reg: u4, base: IPReg, off: i32) !void {
+pub fn vmathrm(self: *Self, op: u8, fmode: FMode, reg: u4, ea: EAddr) !void {
     try self.new_inst();
-    try self.vex0fwig(reg > 7, false, base.ext(), 0, fmode.l(), fmode.pp());
+    try self.vex0fwig(reg > 7, ea.x(), ea.b(), 0, fmode.l(), fmode.pp());
     try self.wb(op);
-    try self.modRmBaseOff(@truncate(u3, reg), base, off);
+    try self.modRmEA(@truncate(u3, reg), ea);
 }
 
 // dst[low] = src2[low]; dst[high] = src[high]
@@ -337,12 +360,12 @@ pub fn vmov(self: *Self, fmode: FMode, dst: u4, src: u4) !void {
     try self.vmath(0x10, fmode, dst, if (fmode.scalar()) dst else 0, src);
 }
 
-pub fn vmovrm(self: *Self, fmode: FMode, dst: u4, srcbase: IPReg, srcoff: i32) !void {
-    try self.vmathrm(0x10, fmode, dst, srcbase, srcoff);
+pub fn vmovrm(self: *Self, fmode: FMode, dst: u4, src: EAddr) !void {
+    try self.vmathrm(0x10, fmode, dst, src);
 }
 
-pub fn vmovmr(self: *Self, fmode: FMode, dstbase: IPReg, dstoff: i32, src: u4) !void {
-    try self.vmathrm(0x11, fmode, src, dstbase, dstoff);
+pub fn vmovmr(self: *Self, fmode: FMode, dst: EAddr, src: u4) !void {
+    try self.vmathrm(0x11, fmode, src, dst);
 }
 
 pub fn vadd(self: *Self, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
@@ -416,8 +439,8 @@ test "read/write first arg as 64-bit pointer" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.movrm(IPReg.rax, IPReg.rdi, 0);
-    try cfo.movmr(IPReg.rdi, 0, IPReg.rsi);
+    try cfo.movrm(IPReg.rax, a(IPReg.rdi));
+    try cfo.movmr(a(IPReg.rdi), IPReg.rsi);
     try cfo.ret();
 
     var someint: u64 = 33;
@@ -431,8 +454,8 @@ test "read/write first arg as 64-bit pointer with offsett" {
     defer cfo.deinit();
     errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
 
-    try cfo.movrm(IPReg.rax, IPReg.rdi, 0x08);
-    try cfo.movmr(IPReg.rdi, 0x10, IPReg.rsi);
+    try cfo.movrm(IPReg.rax, bo(IPReg.rdi, 0x08));
+    try cfo.movmr(bo(IPReg.rdi, 0x10), IPReg.rsi);
     try cfo.ret();
 
     var someint: [2]u64 = .{ 33, 45 };
@@ -457,7 +480,7 @@ test "write intermediate value to 64-bit pointer" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.movmi(IPReg.rdi, 0, 586);
+    try cfo.movmi(a(IPReg.rdi), 586);
     try cfo.ret();
 
     var someint: u64 = 33;
@@ -474,7 +497,7 @@ test "use r12 for base address" {
     try cfo.mov(IPReg.rcx, IPReg.r12);
     try cfo.mov(IPReg.r12, IPReg.rdi);
 
-    try cfo.movmi(IPReg.r12, 0, 389);
+    try cfo.movmi(a(IPReg.r12), 389);
 
     try cfo.mov(IPReg.r12, IPReg.rcx);
     try cfo.ret();
@@ -557,8 +580,8 @@ test "read/write scalar double" {
     errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
 
     // as we are swapping [rdi] and xmm0, use a temp
-    try cfo.vmovrm(FMode.sd, 1, IPReg.rdi, 0);
-    try cfo.vmovmr(FMode.sd, IPReg.rdi, 0, 0);
+    try cfo.vmovrm(FMode.sd, 1, a(IPReg.rdi));
+    try cfo.vmovmr(FMode.sd, a(IPReg.rdi), 0);
     try cfo.vmov(FMode.sd, 0, 1);
     try cfo.ret();
 
