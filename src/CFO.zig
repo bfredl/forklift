@@ -698,7 +698,6 @@ test "add scalar double from memory" {
     defer cfo.deinit();
     errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
 
-    // as we are swapping [rdi] and xmm0, use a temp
     try cfo.vmathrm(VMathOp.add, FMode.sd, 0, 0, a(IPReg.rdi));
     try cfo.ret();
 
