@@ -129,6 +129,19 @@ const FMode = enum(u3) {
     }
 };
 
+pub const VMathOp = enum(u3) {
+    add = 0,
+    mul = 1,
+    sub = 4,
+    min = 5,
+    div = 6,
+    max = 7,
+
+    fn off(self: @This()) u8 {
+        return @as(u8, @enumToInt(self));
+    }
+};
+
 pub fn init(allocator: Allocator) !Self {
     // TODO: allocate consequtive mprotectable pages
     return Self{
@@ -353,14 +366,14 @@ pub fn movmi(self: *Self, dst: EAddr, src: i32) !void {
 // note: for now we use VEX for all xmm/ymm operations.
 // old school SSE forms might be shorter for some 128/scalar ops?
 
-pub fn vmath(self: *Self, op: u8, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
+pub fn vop_rr(self: *Self, op: u8, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
     try self.new_inst();
     try self.vex0fwig(dst > 7, false, src2 > 7, src1, fmode.l(), fmode.pp());
     try self.wb(op);
     try self.modRm(0b11, @truncate(u3, dst), @truncate(u3, src2));
 }
 
-pub fn vmathrm(self: *Self, op: u8, fmode: FMode, reg: u4, ea: EAddr) !void {
+pub fn vop_rm(self: *Self, op: u8, fmode: FMode, reg: u4, ea: EAddr) !void {
     try self.new_inst();
     try self.vex0fwig(reg > 7, ea.x(), ea.b(), 0, fmode.l(), fmode.pp());
     try self.wb(op);
@@ -372,26 +385,26 @@ pub fn vmov2(self: *Self, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
     if (!fmode.scalar()) {
         return error.InvalidFMode;
     }
-    try self.vmath(0x10, fmode, dst, src1, src2);
+    try self.vop_rr(0x10, fmode, dst, src1, src2);
 }
 
 // pseudo-instruction for moving register
 // vmovsd xmm1, xmm1, xmm2
 // vmovupd xmm1, xmm2
 pub fn vmov(self: *Self, fmode: FMode, dst: u4, src: u4) !void {
-    try self.vmath(0x10, fmode, dst, if (fmode.scalar()) dst else 0, src);
+    try self.vop_rr(0x10, fmode, dst, if (fmode.scalar()) dst else 0, src);
 }
 
 pub fn vmovrm(self: *Self, fmode: FMode, dst: u4, src: EAddr) !void {
-    try self.vmathrm(0x10, fmode, dst, src);
+    try self.vop_rm(0x10, fmode, dst, src);
 }
 
 pub fn vmovmr(self: *Self, fmode: FMode, dst: EAddr, src: u4) !void {
-    try self.vmathrm(0x11, fmode, src, dst);
+    try self.vop_rm(0x11, fmode, src, dst);
 }
 
-pub fn vadd(self: *Self, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
-    try self.vmath(0x58, fmode, dst, src1, src2);
+pub fn vmath(self: *Self, op: VMathOp, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
+    try self.vop_rr(0x58 + op.off(), fmode, dst, src1, src2);
 }
 
 pub fn dump(self: *Self) !void {
@@ -627,11 +640,25 @@ test "add scalar double" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.vadd(FMode.sd, 0, 0, 1);
+    try cfo.vmath(VMathOp.add, FMode.sd, 0, 0, 1);
     try cfo.ret();
 
     var retval = try cfo.test_call2f64(2.0, 0.5);
     try expectEqual(@as(f64, 2.5), retval);
+}
+
+test "max of scalar double" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+
+    try cfo.vmath(VMathOp.max, FMode.sd, 0, 0, 1);
+    try cfo.ret();
+
+    var retval = try cfo.test_call2f64(2.0, 5.5);
+    try expectEqual(@as(f64, 5.5), retval);
+
+    retval = try cfo.test_call2f64(10.0, 8.5);
+    try expectEqual(@as(f64, 10.0), retval);
 }
 
 test "move scalar double" {
