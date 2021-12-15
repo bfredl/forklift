@@ -219,7 +219,7 @@ pub fn modRmEA(self: *Self, reg_or_opx: u3, ea: EAddr) !void {
         @as(u2, 0b10);
 
     const rm = ea.base.lowId();
-    try self.modRm(mod, reg_or_opx, rm);
+    try self.modRm(mod, reg_or_opx, if (ea.index) |_| 0x04 else rm);
     if (ea.index == null and rm == 0x04) {
         // no index, but RSP/R12 as base
         // forces a SIB byte
@@ -295,18 +295,23 @@ pub fn arit(self: *Self, op: AOp, dst: IPReg, src: IPReg) !void {
     try self.op_rr(op.off() + 0b11, dst, src);
 }
 
-pub fn movrm(self: *Self, dst: IPReg, src: EAddr) !void {
+pub fn op_rm(self: *Self, opcode: u8, reg: IPReg, ea: EAddr) !void {
     try self.new_inst();
-    try self.rex_wrxb(true, dst.ext(), src.x(), src.b());
-    try self.wb(0x8b); // MOV reg, \rm
-    try self.modRmEA(dst.lowId(), src);
+    try self.rex_wrxb(true, reg.ext(), ea.x(), ea.b());
+    try self.wb(opcode);
+    try self.modRmEA(reg.lowId(), ea);
+}
+
+pub fn movrm(self: *Self, dst: IPReg, src: EAddr) !void {
+    try self.op_rm(0x8b, dst, src); // MOV reg, \rm
 }
 
 pub fn movmr(self: *Self, dst: EAddr, src: IPReg) !void {
-    try self.new_inst();
-    try self.rex_wrxb(true, src.ext(), dst.x(), dst.b());
-    try self.wb(0x89); // MOV \rm, reg
-    try self.modRmEA(src.lowId(), dst);
+    try self.op_rm(0x89, src, dst); // MOV \rm, reg
+}
+
+pub fn lea(self: *Self, dst: IPReg, src: EAddr) !void {
+    try self.op_rm(0x8d, dst, src); // LEA reg, \rm
 }
 
 pub fn movri(self: *Self, dst: IPReg, src: i32) !void {
@@ -518,6 +523,28 @@ test "add arguments" {
 
     var retval = try cfo.test_call2(1002, 560);
     try expectEqual(@as(usize, 1562), retval);
+}
+
+test "add arguments using lea" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+
+    try cfo.lea(IPReg.rax, .{ .base = IPReg.rdi, .index = IPReg.rsi });
+    try cfo.ret();
+
+    var retval = try cfo.test_call2(736, 121);
+    try expectEqual(@as(usize, 857), retval);
+}
+
+test "add scaled arguments using lea" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+
+    try cfo.lea(IPReg.rax, .{ .base = IPReg.rdi, .index = IPReg.rsi, .scale = 3 });
+    try cfo.ret();
+
+    var retval = try cfo.test_call2(736, 121);
+    try expectEqual(@as(usize, 1704), retval);
 }
 
 test "subtract arguments" {
