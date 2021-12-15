@@ -373,9 +373,9 @@ pub fn vop_rr(self: *Self, op: u8, fmode: FMode, dst: u4, src1: u4, src2: u4) !v
     try self.modRm(0b11, @truncate(u3, dst), @truncate(u3, src2));
 }
 
-pub fn vop_rm(self: *Self, op: u8, fmode: FMode, reg: u4, ea: EAddr) !void {
+pub fn vop_rm(self: *Self, op: u8, fmode: FMode, reg: u4, vreg: u4, ea: EAddr) !void {
     try self.new_inst();
-    try self.vex0fwig(reg > 7, ea.x(), ea.b(), 0, fmode.l(), fmode.pp());
+    try self.vex0fwig(reg > 7, ea.x(), ea.b(), vreg, fmode.l(), fmode.pp());
     try self.wb(op);
     try self.modRmEA(@truncate(u3, reg), ea);
 }
@@ -396,15 +396,19 @@ pub fn vmov(self: *Self, fmode: FMode, dst: u4, src: u4) !void {
 }
 
 pub fn vmovrm(self: *Self, fmode: FMode, dst: u4, src: EAddr) !void {
-    try self.vop_rm(0x10, fmode, dst, src);
+    try self.vop_rm(0x10, fmode, dst, 0, src);
 }
 
 pub fn vmovmr(self: *Self, fmode: FMode, dst: EAddr, src: u4) !void {
-    try self.vop_rm(0x11, fmode, src, dst);
+    try self.vop_rm(0x11, fmode, src, 0, dst);
 }
 
 pub fn vmath(self: *Self, op: VMathOp, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
     try self.vop_rr(0x58 + op.off(), fmode, dst, src1, src2);
+}
+
+pub fn vmathrm(self: *Self, op: VMathOp, fmode: FMode, dst: u4, src1: u4, src2: EAddr) !void {
+    try self.vop_rm(0x58 + op.off(), fmode, dst, src1, src2);
 }
 
 pub fn dump(self: *Self) !void {
@@ -675,7 +679,6 @@ test "move scalar double" {
 test "read/write scalar double" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
-    errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
 
     // as we are swapping [rdi] and xmm0, use a temp
     try cfo.vmovrm(FMode.sd, 1, a(IPReg.rdi));
@@ -688,4 +691,20 @@ test "read/write scalar double" {
     var retval = try cfo.test_call2x(f64, &thefloat, @as(f64, 0.25));
     try expectEqual(@as(f64, 13.5), retval);
     try expectEqual(@as(f64, 0.25), thefloat);
+}
+
+test "add scalar double from memory" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+    errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
+
+    // as we are swapping [rdi] and xmm0, use a temp
+    try cfo.vmathrm(VMathOp.add, FMode.sd, 0, 0, a(IPReg.rdi));
+    try cfo.ret();
+
+    var thefloat: f64 = 6.5;
+
+    var retval = try cfo.test_call2x(f64, &thefloat, @as(f64, 0.125));
+    try expectEqual(@as(f64, 6.625), retval);
+    try expectEqual(@as(f64, 6.5), thefloat);
 }
