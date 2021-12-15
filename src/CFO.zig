@@ -60,6 +60,10 @@ pub const AOp = enum(u3) {
     fn off(self: @This()) u8 {
         return @as(u8, @enumToInt(self)) * 8;
     }
+
+    fn opx(self: @This()) u3 {
+        return @enumToInt(self);
+    }
 };
 
 pub const Cond = enum(u4) {
@@ -207,13 +211,19 @@ pub fn bo(reg: IPReg, offset: i32) EAddr {
     return .{ .base = reg, .offset = offset };
 }
 
+pub fn maybe_imm8(imm: i32) ?i8 {
+    var imm8 = @truncate(i8, imm);
+    return if (imm == imm8) imm8 else null;
+}
+
 // write modrm byte + optional SIB + optional offset
 // caller needs to handle ea.x() and ea.b() for addresses
 // with extended indices!
 pub fn modRmEA(self: *Self, reg_or_opx: u3, ea: EAddr) !void {
-    var mod: u2 = if (ea.offset == 0 and ea.base != IPReg.rbp)
+    const offset8 = maybe_imm8(ea.offset);
+    const mod: u2 = if (ea.offset == 0 and ea.base != IPReg.rbp)
         @as(u2, 0b00)
-    else if (ea.offset == @truncate(i8, ea.offset))
+    else if (offset8 != null)
         @as(u2, 0b01)
     else
         @as(u2, 0b10);
@@ -230,10 +240,8 @@ pub fn modRmEA(self: *Self, reg_or_opx: u3, ea: EAddr) !void {
         }
         try self.sib(ea.scale, index.lowId(), rm);
     }
-    if (mod == 0b01) {
-        try self.wbi(@truncate(i8, ea.offset));
-    } else if (mod == 0b10) {
-        try self.wd(ea.offset);
+    if (mod != 0b00) {
+        try if (offset8) |off| self.wbi(off) else self.wd(ea.offset);
     }
 }
 
@@ -322,6 +330,15 @@ pub fn movri(self: *Self, dst: IPReg, src: i32) !void {
     try self.wb(0xc7); // MOV \rm, imm32
     try self.modRm(0b11, 0b000, dst.lowId());
     try self.wd(src);
+}
+
+pub fn aritri(self: *Self, op: AOp, dst: IPReg, imm: i32) !void {
+    const imm8 = maybe_imm8(imm);
+    try self.new_inst();
+    try self.rex_wrxb(true, dst.ext(), false, false);
+    try self.wb(if (imm8 != null) 0x83 else 0x81);
+    try self.modRm(0b11, op.opx(), dst.lowId());
+    try if (imm8) |i| self.wbi(i) else self.wd(imm);
 }
 
 pub fn movmi(self: *Self, dst: EAddr, src: i32) !void {
@@ -422,6 +439,12 @@ pub fn test_call2x(self: *Self, comptime T: type, arg1: anytype, arg2: anytype) 
 const test_allocator = std.testing.allocator;
 const expectEqual = std.testing.expectEqual;
 
+// for quick debugging change ret to retnasm
+fn retnasm(self: *Self) !void {
+    try self.ret();
+    try self.dbg_nasm(test_allocator);
+}
+
 test "return first argument" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
@@ -457,7 +480,6 @@ test "read/write first arg as 64-bit pointer" {
 test "read/write first arg as 64-bit pointer with offsett" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
-    errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
 
     try cfo.movrm(IPReg.rax, bo(IPReg.rdi, 0x08));
     try cfo.movmr(bo(IPReg.rdi, 0x10), IPReg.rsi);
@@ -559,6 +581,30 @@ test "subtract arguments" {
     try expectEqual(@as(usize, 442), retval);
 }
 
+test "add imm8 to argument" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+
+    try cfo.mov(IPReg.rax, IPReg.rdi);
+    try cfo.aritri(AOp.add, IPReg.rax, 64);
+    try cfo.ret();
+
+    var retval = try cfo.test_call2(120, 9204);
+    try expectEqual(@as(usize, 184), retval);
+}
+
+test "add immediate to argument" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+
+    try cfo.mov(IPReg.rax, IPReg.rdi);
+    try cfo.aritri(AOp.add, IPReg.rax, 137);
+    try cfo.ret();
+
+    var retval = try cfo.test_call2(100, 560);
+    try expectEqual(@as(usize, 237), retval);
+}
+
 test "get the maximum of two args" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
@@ -580,7 +626,6 @@ test "get the maximum of two args" {
 test "add scalar double" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
-    errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
 
     try cfo.vadd(FMode.sd, 0, 0, 1);
     try cfo.ret();
@@ -592,7 +637,6 @@ test "add scalar double" {
 test "move scalar double" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
-    errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
 
     try cfo.vmov(FMode.sd, 0, 1);
     try cfo.ret();
