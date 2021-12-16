@@ -284,6 +284,7 @@ pub fn ret(self: *Self) !void {
     try self.inst_1byte(0xC3);
 }
 
+// there..
 pub fn jfwd(self: *Self, cond: Cond) !u32 {
     try self.new_inst();
     try self.wb(0x70 + cond.off());
@@ -298,6 +299,24 @@ pub fn set_target(self: *Self, pos: u32) !void {
         return error.InvalidNearJump;
     }
     self.code.items[pos] = @intCast(u8, off);
+}
+
+pub fn get_target(self: *Self) u32 {
+    return @intCast(u32, self.code.items.len);
+}
+
+// .. and back again
+pub fn jbck(self: *Self, cond: Cond, target: u32) !void {
+    try self.new_inst();
+    var off = @intCast(i32, target) - (@intCast(i32, self.code.items.len) + 2);
+    if (maybe_imm8(off)) |off8| {
+        try self.wb(0x70 + cond.off());
+        try self.wbi(off8);
+    } else {
+        try self.wb(0x0f);
+        try self.wb(0x80 + cond.off());
+        try self.wd(off + 4); // FETING: offset is larger as the jump instruction is larger
+    }
 }
 
 // mov and arithmetic
@@ -638,6 +657,25 @@ test "get the maximum of two args" {
 
     retval = try cfo.test_call2(460, 902);
     try expectEqual(@as(usize, 902), retval);
+}
+
+test "jump backwards in a loop" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+
+    try cfo.arit(AOp.xor, IPReg.rax, IPReg.rax);
+    const loop = cfo.get_target();
+    try cfo.arit(AOp.add, IPReg.rax, IPReg.rdi);
+    try cfo.aritri(AOp.sub, IPReg.rdi, 1);
+    // equal -> zero after the subtraction
+    try cfo.jbck(Cond.ne, loop);
+    try cfo.ret();
+
+    var retval = try cfo.test_call2(10, 560);
+    try expectEqual(@as(usize, 55), retval);
+
+    retval = try cfo.test_call2(20, 560);
+    try expectEqual(@as(usize, 210), retval);
 }
 
 test "add scalar double" {
