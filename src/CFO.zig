@@ -108,7 +108,7 @@ const PP = enum(u2) {
 };
 
 // common floating-point modes of VEX instructions
-const FMode = enum(u3) {
+pub const FMode = enum(u3) {
     ps4,
     pd2,
     ss,
@@ -222,6 +222,11 @@ pub fn a(reg: IPReg) EAddr {
 
 pub fn bo(reg: IPReg, offset: i32) EAddr {
     return .{ .base = reg, .offset = offset };
+}
+
+// index quadword array
+pub fn qi(base: IPReg, index: IPReg) EAddr {
+    return .{ .base = base, .index = index, .scale = 3 };
 }
 
 pub fn maybe_imm8(imm: i32) ?i8 {
@@ -458,26 +463,26 @@ pub fn finalize(self: *Self) !void {
     try os.mprotect(self.code.items.ptr[0..self.code.capacity], os.PROT.READ | os.PROT.EXEC);
 }
 
-pub fn get_ptr(self: *Self, comptime T: type) T {
-    return @ptrCast(T, self.code.items.ptr);
+pub fn get_ptr(self: *Self, target: u32, comptime T: type) T {
+    return @ptrCast(T, self.code.items[target..].ptr);
 }
 
 pub fn test_call2(self: *Self, arg1: usize, arg2: usize) !usize {
     try self.finalize();
     const FunPtr = fn (arg1: usize, arg2: usize) callconv(.C) usize;
-    return self.get_ptr(FunPtr)(arg1, arg2);
+    return self.get_ptr(FunPtr)(0, arg1, arg2);
 }
 
 pub fn test_call2f64(self: *Self, arg1: f64, arg2: f64) !f64 {
     try self.finalize();
     const FunPtr = fn (arg1: f64, arg2: f64) callconv(.C) f64;
-    return self.get_ptr(FunPtr)(arg1, arg2);
+    return self.get_ptr(FunPtr)(0, arg1, arg2);
 }
 
 pub fn test_call2x(self: *Self, comptime T: type, arg1: anytype, arg2: anytype) !T {
     try self.finalize();
     const FunPtr = fn (arg1: @TypeOf(arg1), arg2: @TypeOf(arg2)) callconv(.C) T;
-    return self.get_ptr(FunPtr)(arg1, arg2);
+    return self.get_ptr(FunPtr)(0, arg1, arg2);
 }
 
 const test_allocator = std.testing.allocator;
