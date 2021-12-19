@@ -443,6 +443,16 @@ pub fn vmathrm(self: *Self, op: VMathOp, fmode: FMode, dst: u4, src1: u4, src2: 
     try self.vop_rm(0x58 + op.off(), fmode, dst, src1, src2);
 }
 
+pub fn vzeroupper(self: *Self) !void {
+    try self.vex2(false, 0, false, PP.none);
+    try self.wb(0x77);
+}
+
+pub fn vzeroall(self: *Self) !void {
+    try self.vex2(false, 0, true, PP.none);
+    try self.wb(0x77);
+}
+
 pub fn dump(self: *Self) !void {
     try fs.cwd().writeFile("test.o", self.code.items);
 }
@@ -489,7 +499,7 @@ const test_allocator = std.testing.allocator;
 const expectEqual = std.testing.expectEqual;
 
 // for quick debugging change ret to retnasm
-fn retnasm(self: *Self) !void {
+pub fn retnasm(self: *Self) !void {
     try self.ret();
     try self.dbg_nasm(test_allocator);
 }
