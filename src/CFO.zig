@@ -418,8 +418,16 @@ pub fn vmovrm(self: *Self, fmode: FMode, dst: u4, src: EAddr) !void {
     try self.vop_rm(0x10, fmode, dst, 0, src);
 }
 
+pub fn vmovarm(self: *Self, fmode: FMode, dst: u4, src: EAddr) !void {
+    try self.vop_rm(0x28, fmode, dst, 0, src);
+}
+
 pub fn vmovmr(self: *Self, fmode: FMode, dst: EAddr, src: u4) !void {
     try self.vop_rm(0x11, fmode, src, 0, dst);
+}
+
+pub fn vmovamr(self: *Self, fmode: FMode, dst: EAddr, src: u4) !void {
+    try self.vop_rm(0x29, fmode, src, 0, dst);
 }
 
 pub fn vmath(self: *Self, op: VMathOp, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
@@ -466,7 +474,7 @@ pub fn test_call2f64(self: *Self, arg1: f64, arg2: f64) !f64 {
     return self.get_ptr(FunPtr)(arg1, arg2);
 }
 
-pub fn test_call2x(self: *Self, comptime T: type, arg1: anytype, arg2: anytype) !f64 {
+pub fn test_call2x(self: *Self, comptime T: type, arg1: anytype, arg2: anytype) !T {
     try self.finalize();
     const FunPtr = fn (arg1: @TypeOf(arg1), arg2: @TypeOf(arg2)) callconv(.C) T;
     return self.get_ptr(FunPtr)(arg1, arg2);
@@ -729,6 +737,22 @@ test "read/write scalar double" {
     var retval = try cfo.test_call2x(f64, &thefloat, @as(f64, 0.25));
     try expectEqual(@as(f64, 13.5), retval);
     try expectEqual(@as(f64, 0.25), thefloat);
+}
+
+test "read/write aligned double vector" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+
+    try cfo.vmovarm(FMode.pd4, 0, a(IPReg.rdi));
+    try cfo.vmath(VMathOp.mul, FMode.pd4, 0, 0, 0);
+    try cfo.vmovamr(FMode.pd4, a(IPReg.rdi), 0);
+    try cfo.ret();
+
+    var thevec: [4]f64 align(32) = .{ 13.5, 25.125, 4552.0, -50.5 };
+
+    try cfo.test_call2x(void, &thevec, @as(u64, 0));
+    try expectEqual(@as(f64, 182.25), thevec[0]);
+    try expectEqual(@as(f64, 2550.25), thevec[3]);
 }
 
 test "add scalar double from memory" {
