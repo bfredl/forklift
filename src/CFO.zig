@@ -515,6 +515,20 @@ pub fn dbg_test(self: *Self) !void {
     }
 }
 
+pub fn lookup(self: *Self, addr: usize) usize {
+    const startaddr: usize = @ptrToInt(self.code.items.ptr);
+    const endaddr: usize = startaddr + self.code.items.len;
+    if (startaddr <= addr and addr < endaddr) {
+        const off = addr - startaddr;
+        for (self.inst_dbg.items) |x, i| {
+            if (i + 1 >= self.inst_off.items.len or off < self.inst_off.items[i + 1]) {
+                return x;
+            }
+        }
+    }
+    return addr;
+}
+
 test "return first argument" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();

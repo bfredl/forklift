@@ -4,6 +4,8 @@ const CFO = @import("./CFO.zig");
 
 const page_allocator = std.heap.page_allocator;
 
+pub var the_cfo: ?*CFO = null;
+
 pub fn main() !void {
     const allocator = std.testing.allocator;
     print("Yes, I am your CFO (certified forklift operator)\n", .{});
@@ -30,6 +32,7 @@ pub fn main() !void {
     const start = cfo.get_target();
     try cfo.arit(.xor, idx, idx);
     const loop = cfo.get_target();
+    try cfo.vmovrm(.sd, v0, CFO.a(idx));
     try cfo.vmovrm(.sd, v0, CFO.qi(arg1, idx));
     try cfo.vmathrm(.add, .sd, v0, v0, CFO.qi(arg2, idx));
     try cfo.vmovmr(.sd, CFO.qi(arg1, idx), v0);
@@ -50,8 +53,10 @@ pub fn main() !void {
     try cfo.vzeroupper();
     // try cfo.retnasm();
     try cfo.ret();
-    try cfo.dbg_test();
+    // try cfo.dbg_test();
     try cfo.finalize();
+    the_cfo = &cfo;
+    defer the_cfo = null;
     const scalar_add = cfo.get_ptr(start, fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
     const simd_add = cfo.get_ptr(start_simd, fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
     _ = simd_add;
