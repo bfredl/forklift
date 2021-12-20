@@ -19,40 +19,37 @@ pub fn main() !void {
     }
 
     const IPReg = CFO.IPReg;
-    const AOp = CFO.AOp;
-
     const idx = IPReg.rcx;
     const arg1 = IPReg.rdi;
     const arg2 = IPReg.rsi;
     const arg3 = IPReg.rdx;
-    const sd = CFO.FMode.sd;
-    const pd4 = CFO.FMode.pd4;
     const v0 = 0;
 
     var cfo = try CFO.init(allocator);
     defer cfo.deinit();
     const start = cfo.get_target();
-    try cfo.arit(AOp.xor, idx, idx);
+    try cfo.arit(.xor, idx, idx);
     const loop = cfo.get_target();
-    try cfo.vmovrm(sd, v0, CFO.qi(arg1, idx));
-    try cfo.vmathrm(CFO.VMathOp.add, sd, v0, v0, CFO.qi(arg2, idx));
-    try cfo.vmovmr(sd, CFO.qi(arg1, idx), v0);
-    try cfo.aritri(AOp.add, idx, 1);
-    try cfo.arit(AOp.cmp, idx, arg3);
+    try cfo.vmovrm(.sd, v0, CFO.qi(arg1, idx));
+    try cfo.vmathrm(.add, .sd, v0, v0, CFO.qi(arg2, idx));
+    try cfo.vmovmr(.sd, CFO.qi(arg1, idx), v0);
+    try cfo.aritri(.add, idx, 1);
+    try cfo.arit(.cmp, idx, arg3);
     try cfo.jbck(CFO.Cond.l, loop);
     try cfo.ret();
 
     const start_simd = cfo.get_target();
-    try cfo.arit(AOp.xor, idx, idx);
+    try cfo.arit(.xor, idx, idx);
     const loop2 = cfo.get_target();
-    try cfo.vmovarm(pd4, v0, CFO.qi(arg1, idx));
-    try cfo.vmathrm(CFO.VMathOp.add, pd4, v0, v0, CFO.qi(arg2, idx));
-    try cfo.vmovmr(pd4, CFO.qi(arg1, idx), v0);
-    try cfo.aritri(AOp.add, idx, 4);
-    try cfo.arit(AOp.cmp, idx, arg3);
+    try cfo.vmovarm(.pd4, v0, CFO.qi(arg1, idx));
+    try cfo.vmathrm(.add, .pd4, v0, v0, CFO.qi(arg2, idx));
+    try cfo.vmovmr(.pd4, CFO.qi(arg1, idx), v0);
+    try cfo.aritri(.add, idx, 4);
+    try cfo.arit(.cmp, idx, arg3);
     try cfo.jbck(CFO.Cond.l, loop2);
     try cfo.vzeroupper();
-    try cfo.retnasm();
+    // try cfo.retnasm();
+    try cfo.ret();
     try cfo.finalize();
     const scalar_add = cfo.get_ptr(start, fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
     const simd_add = cfo.get_ptr(start_simd, fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
