@@ -4,7 +4,10 @@ const CFO = @import("./CFO.zig");
 
 const page_allocator = std.heap.page_allocator;
 
-pub var the_cfo: ?*CFO = null;
+var the_cfo: ?*CFO = null;
+pub fn addr_lookup(addr: usize) usize {
+    return if (the_cfo) |c| c.lookup(addr) else addr;
+}
 
 pub fn main() !void {
     const allocator = std.testing.allocator;
