@@ -30,6 +30,7 @@ pub fn main() !void {
     var cfo = try CFO.init(allocator);
     defer cfo.deinit();
     const start = cfo.get_target();
+    try cfo.enter();
     try cfo.arit(.xor, idx, idx);
     const loop = cfo.get_target();
     try cfo.vmovrm(.sd, v0, CFO.a(idx));
@@ -39,9 +40,11 @@ pub fn main() !void {
     try cfo.aritri(.add, idx, 1);
     try cfo.arit(.cmp, idx, arg3);
     try cfo.jbck(CFO.Cond.l, loop);
+    try cfo.leave();
     try cfo.ret();
 
     const start_simd = cfo.get_target();
+    try cfo.enter();
     try cfo.arit(.xor, idx, idx);
     const loop2 = cfo.get_target();
     try cfo.vmovarm(.pd4, v0, CFO.qi(arg1, idx));
@@ -52,6 +55,7 @@ pub fn main() !void {
     try cfo.jbck(CFO.Cond.l, loop2);
     try cfo.vzeroupper();
     // try cfo.retnasm();
+    try cfo.leave();
     try cfo.ret();
     // try cfo.dbg_test();
     try cfo.finalize();

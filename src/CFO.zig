@@ -290,6 +290,18 @@ pub fn ret(self: *Self) !void {
     try self.wb(0xC3);
 }
 
+pub fn enter(self: *Self) !void {
+    try self.new_inst(@returnAddress());
+    try self.wb(0x55); // PUSH rbp
+    try self.mov(.rbp, .rsp);
+}
+
+pub fn leave(self: *Self) !void {
+    try self.new_inst(@returnAddress());
+    try self.mov(.rsp, .rbp);
+    try self.wb(0x5D); // POP rbp
+}
+
 // there..
 pub fn jfwd(self: *Self, cond: Cond) !u32 {
     try self.new_inst(@returnAddress());
