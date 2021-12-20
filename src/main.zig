@@ -50,6 +50,7 @@ pub fn main() !void {
     try cfo.vzeroupper();
     // try cfo.retnasm();
     try cfo.ret();
+    try cfo.dbg_test();
     try cfo.finalize();
     const scalar_add = cfo.get_ptr(start, fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
     const simd_add = cfo.get_ptr(start_simd, fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);

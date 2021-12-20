@@ -1,5 +1,6 @@
 const std = @import("std");
 const os = std.os;
+const debug = std.debug;
 const fs = std.fs;
 const Allocator = std.mem.Allocator;
 const page_allocator = std.heap.page_allocator;
@@ -11,6 +12,7 @@ code: ArrayListAligned(u8, 4096),
 /// offset of each encoded instruction. Might not be needed
 /// but useful for debugging.
 inst_off: ArrayList(u32),
+inst_dbg: ArrayList(usize),
 
 const Self = @This();
 
@@ -147,6 +149,7 @@ pub fn init(allocator: Allocator) !Self {
     return Self{
         .code = try ArrayListAligned(u8, 4096).initCapacity(page_allocator, 4096),
         .inst_off = ArrayList(u32).init(allocator),
+        .inst_dbg = ArrayList(usize).init(allocator),
     };
 }
 
@@ -155,11 +158,13 @@ pub fn deinit(self: *Self) void {
     os.mprotect(self.code.items.ptr[0..self.code.capacity], os.PROT.READ | os.PROT.WRITE) catch unreachable;
     self.code.deinit();
     self.inst_off.deinit();
+    self.inst_dbg.deinit();
 }
 
-fn new_inst(self: *Self) !void {
+fn new_inst(self: *Self, addr: usize) !void {
     var size = @intCast(u32, self.code.items.len);
     try self.inst_off.append(size);
+    try self.inst_dbg.append(addr);
 }
 
 // TODO: use appendAssumeCapacity in a smart way like arch/x86_64
@@ -173,11 +178,6 @@ fn wbi(self: *Self, imm: i8) !void {
 
 fn wd(self: *Self, dword: i32) !void {
     std.mem.writeIntLittle(i32, try self.code.addManyAsArray(4), dword);
-}
-
-pub fn inst_1byte(self: *Self, opcode: u8) !void {
-    try self.new_inst();
-    try self.wb(opcode);
 }
 
 // encodings
@@ -286,12 +286,13 @@ pub fn vex0fwig(self: *Self, r: bool, x: bool, b: bool, vv: u4, l: bool, pp: PP)
 
 // control flow
 pub fn ret(self: *Self) !void {
-    try self.inst_1byte(0xC3);
+    try self.new_inst(@returnAddress());
+    try self.wb(0xC3);
 }
 
 // there..
 pub fn jfwd(self: *Self, cond: Cond) !u32 {
-    try self.new_inst();
+    try self.new_inst(@returnAddress());
     try self.wb(0x70 + cond.off());
     var pos = @intCast(u32, self.code.items.len);
     try self.wb(0x00); // placeholder
@@ -312,7 +313,7 @@ pub fn get_target(self: *Self) u32 {
 
 // .. and back again
 pub fn jbck(self: *Self, cond: Cond, target: u32) !void {
-    try self.new_inst();
+    try self.new_inst(@returnAddress());
     var off = @intCast(i32, target) - (@intCast(i32, self.code.items.len) + 2);
     if (maybe_imm8(off)) |off8| {
         try self.wb(0x70 + cond.off());
@@ -325,8 +326,8 @@ pub fn jbck(self: *Self, cond: Cond, target: u32) !void {
 }
 
 // mov and arithmetic
-fn op_rr(self: *Self, opcode: u8, dst: IPReg, src: IPReg) !void {
-    try self.new_inst();
+inline fn op_rr(self: *Self, opcode: u8, dst: IPReg, src: IPReg) !void {
+    try self.new_inst(@returnAddress());
     try self.rex_wrxb(true, dst.ext(), false, src.ext());
     try self.wb(opcode); // OP reg, \rm
     try self.modRm(0b11, dst.lowId(), src.lowId());
@@ -340,8 +341,8 @@ pub fn arit(self: *Self, op: AOp, dst: IPReg, src: IPReg) !void {
     try self.op_rr(op.off() + 0b11, dst, src);
 }
 
-pub fn op_rm(self: *Self, opcode: u8, reg: IPReg, ea: EAddr) !void {
-    try self.new_inst();
+pub inline fn op_rm(self: *Self, opcode: u8, reg: IPReg, ea: EAddr) !void {
+    try self.new_inst(@returnAddress());
     try self.rex_wrxb(true, reg.ext(), ea.x(), ea.b());
     try self.wb(opcode);
     try self.modRmEA(reg.lowId(), ea);
@@ -360,7 +361,7 @@ pub fn lea(self: *Self, dst: IPReg, src: EAddr) !void {
 }
 
 pub fn movri(self: *Self, dst: IPReg, src: i32) !void {
-    try self.new_inst();
+    try self.new_inst(@returnAddress());
     // TODO: w bit should be avoidable in a lot of cases
     // like "mov rax, 1337" is equivalent to "mov eax, 1337"
     try self.rex_wrxb(true, dst.ext(), false, false);
@@ -371,7 +372,7 @@ pub fn movri(self: *Self, dst: IPReg, src: i32) !void {
 
 pub fn aritri(self: *Self, op: AOp, dst: IPReg, imm: i32) !void {
     const imm8 = maybe_imm8(imm);
-    try self.new_inst();
+    try self.new_inst(@returnAddress());
     try self.rex_wrxb(true, dst.ext(), false, false);
     try self.wb(if (imm8 != null) 0x83 else 0x81);
     try self.modRm(0b11, op.opx(), dst.lowId());
@@ -379,7 +380,7 @@ pub fn aritri(self: *Self, op: AOp, dst: IPReg, imm: i32) !void {
 }
 
 pub fn movmi(self: *Self, dst: EAddr, src: i32) !void {
-    try self.new_inst();
+    try self.new_inst(@returnAddress());
     try self.rex_wrxb(true, false, dst.x(), dst.b());
     try self.wb(0xc7); // MOV \rm, imm32
     try self.modRmEA(0b000, dst);
@@ -390,15 +391,15 @@ pub fn movmi(self: *Self, dst: EAddr, src: i32) !void {
 // note: for now we use VEX for all xmm/ymm operations.
 // old school SSE forms might be shorter for some 128/scalar ops?
 
-pub fn vop_rr(self: *Self, op: u8, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
-    try self.new_inst();
+pub inline fn vop_rr(self: *Self, op: u8, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
+    try self.new_inst(@returnAddress());
     try self.vex0fwig(dst > 7, false, src2 > 7, src1, fmode.l(), fmode.pp());
     try self.wb(op);
     try self.modRm(0b11, @truncate(u3, dst), @truncate(u3, src2));
 }
 
-pub fn vop_rm(self: *Self, op: u8, fmode: FMode, reg: u4, vreg: u4, ea: EAddr) !void {
-    try self.new_inst();
+pub inline fn vop_rm(self: *Self, op: u8, fmode: FMode, reg: u4, vreg: u4, ea: EAddr) !void {
+    try self.new_inst(@returnAddress());
     try self.vex0fwig(reg > 7, ea.x(), ea.b(), vreg, fmode.l(), fmode.pp());
     try self.wb(op);
     try self.modRmEA(@truncate(u3, reg), ea);
@@ -502,6 +503,16 @@ const expectEqual = std.testing.expectEqual;
 pub fn retnasm(self: *Self) !void {
     try self.ret();
     try self.dbg_nasm(test_allocator);
+}
+
+pub fn dbg_test(self: *Self) !void {
+    const stderr = std.io.getStdErr().writer();
+    const dbginfo = try debug.getSelfDebugInfo();
+    const tty_config = debug.detectTTYConfig();
+    for (self.inst_dbg.items) |x, i| {
+        debug.print("{} {}\n", .{ i, x });
+        try debug.printSourceAtAddress(dbginfo, stderr, x, tty_config);
+    }
 }
 
 test "return first argument" {
