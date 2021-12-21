@@ -24,11 +24,11 @@ pub fn main() !void {
     }
 
     const IPReg = CFO.IPReg;
-    const idx = IPReg.rcx;
-    const arg1 = IPReg.rdi;
-    const arg2 = IPReg.rsi;
-    const arg3 = IPReg.rdx;
-    const v0 = 0;
+    const idx: IPReg = .rcx;
+    const arg1: IPReg = .rdi;
+    const arg2: IPReg = .rsi;
+    const arg3: IPReg = .rdx;
+    const v0: u4 = 0;
 
     var cfo = try CFO.init(allocator);
     defer cfo.deinit();
@@ -36,13 +36,13 @@ pub fn main() !void {
     try cfo.enter();
     try cfo.arit(.xor, idx, idx);
     const loop = cfo.get_target();
-    try cfo.vmovrm(.sd, v0, CFO.a(idx));
+    // try cfo.vmovrm(.sd, v0, CFO.a(idx));
     try cfo.vmovrm(.sd, v0, CFO.qi(arg1, idx));
     try cfo.vmathrm(.add, .sd, v0, v0, CFO.qi(arg2, idx));
     try cfo.vmovmr(.sd, CFO.qi(arg1, idx), v0);
     try cfo.aritri(.add, idx, 1);
     try cfo.arit(.cmp, idx, arg3);
-    try cfo.jbck(CFO.Cond.l, loop);
+    try cfo.jbck(.l, loop);
     try cfo.leave();
     try cfo.ret();
 
@@ -55,7 +55,7 @@ pub fn main() !void {
     try cfo.vmovmr(.pd4, CFO.qi(arg1, idx), v0);
     try cfo.aritri(.add, idx, 4);
     try cfo.arit(.cmp, idx, arg3);
-    try cfo.jbck(CFO.Cond.l, loop2);
+    try cfo.jbck(.l, loop2);
     try cfo.vzeroupper();
     // try cfo.retnasm();
     try cfo.leave();

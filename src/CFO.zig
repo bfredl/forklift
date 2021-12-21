@@ -229,6 +229,10 @@ pub fn qi(base: IPReg, index: IPReg) EAddr {
     return .{ .base = base, .index = index, .scale = 3 };
 }
 
+pub fn bi(base: IPReg, index: IPReg) EAddr {
+    return .{ .base = base, .index = index, .scale = 0 };
+}
+
 pub fn maybe_imm8(imm: i32) ?i8 {
     var imm8 = @truncate(i8, imm);
     return if (imm == imm8) imm8 else null;
@@ -239,7 +243,7 @@ pub fn maybe_imm8(imm: i32) ?i8 {
 // with extended indices!
 pub fn modRmEA(self: *Self, reg_or_opx: u3, ea: EAddr) !void {
     const offset8 = maybe_imm8(ea.offset);
-    const mod: u2 = if (ea.offset == 0 and ea.base != IPReg.rbp)
+    const mod: u2 = if (ea.offset == 0 and ea.base != .rbp)
         @as(u2, 0b00)
     else if (offset8 != null)
         @as(u2, 0b01)
@@ -253,7 +257,7 @@ pub fn modRmEA(self: *Self, reg_or_opx: u3, ea: EAddr) !void {
         // forces a SIB byte
         try self.sib(0b00, 0x04, 0x04);
     } else if (ea.index) |index| {
-        if (index == IPReg.rsp) {
+        if (index == .rsp) {
             return error.InvalidIndex;
         }
         try self.sib(ea.scale, index.lowId(), rm);
@@ -545,7 +549,7 @@ test "return first argument" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.mov(IPReg.rax, IPReg.rdi);
+    try cfo.mov(.rax, .rdi);
     try cfo.ret();
     try expectEqual(@as(usize, 4), try cfo.test_call2(4, 10));
 }
@@ -554,7 +558,7 @@ test "return second argument" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.mov(IPReg.rax, IPReg.rsi);
+    try cfo.mov(.rax, .rsi);
     try cfo.ret();
     try expectEqual(@as(usize, 10), try cfo.test_call2(4, 10));
 }
@@ -563,8 +567,8 @@ test "read/write first arg as 64-bit pointer" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.movrm(IPReg.rax, a(IPReg.rdi));
-    try cfo.movmr(a(IPReg.rdi), IPReg.rsi);
+    try cfo.movrm(.rax, a(.rdi));
+    try cfo.movmr(a(.rdi), .rsi);
     try cfo.ret();
 
     var someint: u64 = 33;
@@ -577,8 +581,8 @@ test "read/write first arg as 64-bit pointer with offsett" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.movrm(IPReg.rax, bo(IPReg.rdi, 0x08));
-    try cfo.movmr(bo(IPReg.rdi, 0x10), IPReg.rsi);
+    try cfo.movrm(.rax, bo(.rdi, 0x08));
+    try cfo.movmr(bo(.rdi, 0x10), .rsi);
     try cfo.ret();
 
     var someint: [2]u64 = .{ 33, 45 };
@@ -592,7 +596,7 @@ test "return intermediate value" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.movri(IPReg.rax, 1337);
+    try cfo.movri(.rax, 1337);
     try cfo.ret();
 
     var retval = try cfo.test_call2(7, 8);
@@ -603,7 +607,7 @@ test "write intermediate value to 64-bit pointer" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.movmi(a(IPReg.rdi), 586);
+    try cfo.movmi(a(.rdi), 586);
     try cfo.ret();
 
     var someint: u64 = 33;
@@ -617,12 +621,12 @@ test "use r12 for base address" {
     defer cfo.deinit();
 
     // r12 is callee-saved. so save it
-    try cfo.mov(IPReg.rcx, IPReg.r12);
-    try cfo.mov(IPReg.r12, IPReg.rdi);
+    try cfo.mov(.rcx, .r12);
+    try cfo.mov(.r12, .rdi);
 
-    try cfo.movmi(a(IPReg.r12), 389);
+    try cfo.movmi(a(.r12), 389);
 
-    try cfo.mov(IPReg.r12, IPReg.rcx);
+    try cfo.mov(.r12, .rcx);
     try cfo.ret();
 
     var someint: u64 = 33;
@@ -635,8 +639,8 @@ test "add arguments" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.mov(IPReg.rax, IPReg.rdi);
-    try cfo.arit(AOp.add, IPReg.rax, IPReg.rsi);
+    try cfo.mov(.rax, .rdi);
+    try cfo.arit(.add, .rax, .rsi);
     try cfo.ret();
 
     var retval = try cfo.test_call2(1002, 560);
@@ -647,7 +651,7 @@ test "add arguments using lea" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.lea(IPReg.rax, .{ .base = IPReg.rdi, .index = IPReg.rsi });
+    try cfo.lea(.rax, bi(.rdi, .rsi));
     try cfo.ret();
 
     var retval = try cfo.test_call2(736, 121);
@@ -658,7 +662,7 @@ test "add scaled arguments using lea" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.lea(IPReg.rax, .{ .base = IPReg.rdi, .index = IPReg.rsi, .scale = 3 });
+    try cfo.lea(.rax, qi(.rdi, .rsi));
     try cfo.ret();
 
     var retval = try cfo.test_call2(736, 121);
@@ -669,8 +673,8 @@ test "subtract arguments" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.mov(IPReg.rax, IPReg.rdi);
-    try cfo.arit(AOp.sub, IPReg.rax, IPReg.rsi);
+    try cfo.mov(.rax, .rdi);
+    try cfo.arit(.sub, .rax, .rsi);
     try cfo.ret();
 
     var retval = try cfo.test_call2(1002, 560);
@@ -681,8 +685,8 @@ test "add imm8 to argument" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.mov(IPReg.rax, IPReg.rdi);
-    try cfo.aritri(AOp.add, IPReg.rax, 64);
+    try cfo.mov(.rax, .rdi);
+    try cfo.aritri(.add, .rax, 64);
     try cfo.ret();
 
     var retval = try cfo.test_call2(120, 9204);
@@ -693,8 +697,8 @@ test "add immediate to argument" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.mov(IPReg.rax, IPReg.rdi);
-    try cfo.aritri(AOp.add, IPReg.rax, 137);
+    try cfo.mov(.rax, .rdi);
+    try cfo.aritri(.add, .rax, 137);
     try cfo.ret();
 
     var retval = try cfo.test_call2(100, 560);
@@ -705,10 +709,10 @@ test "get the maximum of two args" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.mov(IPReg.rax, IPReg.rdi);
-    try cfo.arit(AOp.cmp, IPReg.rdi, IPReg.rsi);
-    const jump = try cfo.jfwd(Cond.g);
-    try cfo.mov(IPReg.rax, IPReg.rsi);
+    try cfo.mov(.rax, .rdi);
+    try cfo.arit(.cmp, .rdi, .rsi);
+    const jump = try cfo.jfwd(.g);
+    try cfo.mov(.rax, .rsi);
     try cfo.set_target(jump);
     try cfo.ret();
 
@@ -723,12 +727,12 @@ test "jump backwards in a loop" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.arit(AOp.xor, IPReg.rax, IPReg.rax);
+    try cfo.arit(.xor, .rax, .rax);
     const loop = cfo.get_target();
-    try cfo.arit(AOp.add, IPReg.rax, IPReg.rdi);
-    try cfo.aritri(AOp.sub, IPReg.rdi, 1);
+    try cfo.arit(.add, .rax, .rdi);
+    try cfo.aritri(.sub, .rdi, 1);
     // equal -> zero after the subtraction
-    try cfo.jbck(Cond.ne, loop);
+    try cfo.jbck(.ne, loop);
     try cfo.ret();
 
     var retval = try cfo.test_call2(10, 560);
@@ -742,7 +746,7 @@ test "add scalar double" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.vmath(VMathOp.add, FMode.sd, 0, 0, 1);
+    try cfo.vmath(.add, .sd, 0, 0, 1);
     try cfo.ret();
 
     var retval = try cfo.test_call2f64(2.0, 0.5);
@@ -753,7 +757,7 @@ test "max of scalar double" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.vmath(VMathOp.max, FMode.sd, 0, 0, 1);
+    try cfo.vmath(.max, .sd, 0, 0, 1);
     try cfo.ret();
 
     var retval = try cfo.test_call2f64(2.0, 5.5);
@@ -767,7 +771,7 @@ test "move scalar double" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.vmov(FMode.sd, 0, 1);
+    try cfo.vmov(.sd, 0, 1);
     try cfo.ret();
 
     var retval = try cfo.test_call2f64(22.0, 0.75);
@@ -779,9 +783,9 @@ test "read/write scalar double" {
     defer cfo.deinit();
 
     // as we are swapping [rdi] and xmm0, use a temp
-    try cfo.vmovrm(FMode.sd, 1, a(IPReg.rdi));
-    try cfo.vmovmr(FMode.sd, a(IPReg.rdi), 0);
-    try cfo.vmov(FMode.sd, 0, 1);
+    try cfo.vmovrm(.sd, 1, a(.rdi));
+    try cfo.vmovmr(.sd, a(.rdi), 0);
+    try cfo.vmov(.sd, 0, 1);
     try cfo.ret();
 
     var thefloat: f64 = 13.5;
@@ -795,9 +799,9 @@ test "read/write aligned double vector" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.vmovarm(FMode.pd4, 0, a(IPReg.rdi));
-    try cfo.vmath(VMathOp.mul, FMode.pd4, 0, 0, 0);
-    try cfo.vmovamr(FMode.pd4, a(IPReg.rdi), 0);
+    try cfo.vmovarm(.pd4, 0, a(.rdi));
+    try cfo.vmath(.mul, .pd4, 0, 0, 0);
+    try cfo.vmovamr(.pd4, a(.rdi), 0);
     try cfo.ret();
 
     var thevec: [4]f64 align(32) = .{ 13.5, 25.125, 4552.0, -50.5 };
@@ -812,7 +816,7 @@ test "add scalar double from memory" {
     defer cfo.deinit();
     errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
 
-    try cfo.vmathrm(VMathOp.add, FMode.sd, 0, 0, a(IPReg.rdi));
+    try cfo.vmathrm(.add, .sd, 0, 0, a(.rdi));
     try cfo.ret();
 
     var thefloat: f64 = 6.5;
