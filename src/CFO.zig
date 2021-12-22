@@ -1,18 +1,24 @@
 const std = @import("std");
+const mem = std.mem;
 const os = std.os;
 const debug = std.debug;
 const fs = std.fs;
-const Allocator = std.mem.Allocator;
+const Allocator = mem.Allocator;
 const page_allocator = std.heap.page_allocator;
 const ArrayList = std.ArrayList;
 const ArrayListAligned = std.ArrayListAligned;
 
-code: ArrayListAligned(u8, 4096),
+const builtin = @import("builtin");
+const s2 = builtin.zig_is_stage2;
+
+code: if (s2) []u8 else ArrayListAligned(u8, 4096),
+
+s2_pos: if (s2) usize else void,
 
 /// offset of each encoded instruction. Might not be needed
 /// but useful for debugging.
-inst_off: ArrayList(u32),
-inst_dbg: ArrayList(usize),
+inst_off: if (s2) void else ArrayList(u32),
+inst_dbg: if (s2) void else ArrayList(usize),
 
 const Self = @This();
 
@@ -182,12 +188,24 @@ pub const VMathOp = enum(u3) {
     }
 };
 
+// cannot Error!Struct because:
+// error: TODO coerce_result_ptr wrap_errunion_payload
+pub fn init_stage2() Self {
+    return Self{
+        .code = page_allocator.alloc(u8, 4096) catch unreachable,
+        .inst_off = {},
+        .inst_dbg = {},
+        .s2_pos = 0,
+    };
+}
+
 pub fn init(allocator: Allocator) !Self {
     // TODO: allocate consequtive mprotectable pages
     return Self{
         .code = try ArrayListAligned(u8, 4096).initCapacity(page_allocator, 4096),
         .inst_off = ArrayList(u32).init(allocator),
         .inst_dbg = ArrayList(usize).init(allocator),
+        .s2_pos = {},
     };
 }
 
@@ -200,14 +218,21 @@ pub fn deinit(self: *Self) void {
 }
 
 fn new_inst(self: *Self, addr: usize) !void {
-    var size = @intCast(u32, self.code.items.len);
-    try self.inst_off.append(size);
-    try self.inst_dbg.append(addr);
+    if (!s2) {
+        var size = @intCast(u32, self.code.items.len);
+        try self.inst_off.append(size);
+        try self.inst_dbg.append(addr);
+    }
 }
 
 // TODO: use appendAssumeCapacity in a smart way like arch/x86_64
 fn wb(self: *Self, opcode: u8) !void {
-    try self.code.append(opcode);
+    if (s2) {
+        self.code[self.s2_pos] = opcode;
+        self.s2_pos += 1;
+    } else {
+        try self.code.append(opcode);
+    }
 }
 
 fn wbi(self: *Self, imm: i8) !void {
