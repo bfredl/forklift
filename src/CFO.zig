@@ -99,6 +99,44 @@ pub const Cond = enum(u4) {
     }
 };
 
+pub const VCmp = enum(u5) {
+    eq,
+    lt,
+    le,
+    unord,
+    neq,
+    nlt,
+    nle,
+    ord,
+    eq_uq,
+    nge,
+    ngt,
+    @"false",
+    neq_oq,
+    ge,
+    gt,
+    @"true",
+    eq_os,
+    lt_oq,
+    le_oq,
+    unord_s,
+    neq_us,
+    nlt_uq,
+    nle_uq,
+    ord_s,
+    eq_us,
+    nge_uq,
+    ngt_uq,
+    false_os,
+    neq_os,
+    ge_oq,
+    gt_oq,
+    true_us,
+    fn val(self: @This()) u8 {
+        return @as(u8, @enumToInt(self));
+    }
+};
+
 const PP = enum(u2) {
     none,
     h66,
@@ -458,6 +496,14 @@ pub fn vmath(self: *Self, op: VMathOp, fmode: FMode, dst: u4, src1: u4, src2: u4
 
 pub fn vmathrm(self: *Self, op: VMathOp, fmode: FMode, dst: u4, src1: u4, src2: EAddr) !void {
     try self.vop_rm(0x58 + op.off(), fmode, dst, src1, src2);
+}
+
+pub fn vcmp(self: *Self, op: VCmp, fmode: FMode, dst: u4, src1: u4, src2: EAddr) !void {
+    if (fmode.scalar()) {
+        return error.FEEEEL; // TODO:probably does something useful for scalars?
+    }
+    try self.vop_rr(0xC2, fmode, dst, src1, src2);
+    try self.wb(op.val());
 }
 
 pub fn vzeroupper(self: *Self) !void {
