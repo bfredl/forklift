@@ -226,7 +226,7 @@ fn new_inst(self: *Self, addr: usize) !void {
 }
 
 // TODO: use appendAssumeCapacity in a smart way like arch/x86_64
-fn wb(self: *Self, opcode: u8) !void {
+pub fn wb(self: *Self, opcode: u8) !void {
     if (s2) {
         self.code[self.s2_pos] = opcode;
         self.s2_pos += 1;
@@ -387,7 +387,11 @@ pub fn set_target(self: *Self, pos: u32) !void {
 }
 
 pub fn get_target(self: *Self) u32 {
-    return @intCast(u32, self.code.items.len);
+    if (s2) {
+        return @intCast(u32, self.s2_pos);
+    } else {
+        return @intCast(u32, self.code.items.len);
+    }
 }
 
 // .. and back again
@@ -559,6 +563,16 @@ pub fn dbg_nasm(self: *Self, allocator: Allocator) !void {
 
 pub fn finalize(self: *Self) !void {
     try os.mprotect(self.code.items.ptr[0..self.code.capacity], os.PROT.READ | os.PROT.EXEC);
+}
+
+pub fn finalize_stage2(self: *Self) !void {
+    if (os.linux.mprotect(self.code.ptr, self.code.len, os.PROT.READ | os.PROT.EXEC) != 0) {
+        return error.ComputarSaysNo;
+    }
+}
+
+pub fn get_ptr_stage2(self: *Self, target: u32, comptime T: type) T {
+    return @ptrCast(T, self.code[target..].ptr);
 }
 
 pub fn get_ptr(self: *Self, target: u32, comptime T: type) T {

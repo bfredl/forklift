@@ -7,10 +7,12 @@ pub fn main2() !void {
     // const allocator = page_allocator;
     // var cfo = CFO.init(allocator) catch unreachable;
     var cfo = CFO.init_stage2();
+    var pos = cfo.get_target();
     try cfo.ret();
-    // cfo.finalize();
-    // const ArrayList = std.ArrayList;
-    // var code = ArrayList(u8).initCapacity(allocator, 4096);
+    try cfo.finalize_stage2();
+
+    var pointer = cfo.get_ptr_stage2(pos, fn () callconv(.C) void);
+    pointer();
 }
 
 pub fn main() void {
