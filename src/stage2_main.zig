@@ -9,6 +9,7 @@ pub fn main2() !void {
     //
     const size = 1024 * 8;
     var arr1 = try std.heap.page_allocator.alloc(f64, size);
+    var arr2 = try std.heap.page_allocator.alloc(f64, size);
 
     const IPReg = CFO.IPReg;
     const idx: IPReg = .rcx;
@@ -17,20 +18,24 @@ pub fn main2() !void {
     // const arg3: IPReg = .rdx;
     const v0: u4 = 0;
 
+    arr1[0] = 7.0;
+    arr2[0] = 6.5;
+
     var cfo = CFO.init_stage2();
     var pos = cfo.get_target();
     try cfo.enter();
     try cfo.arit(.xor, idx, idx);
-    try cfo.mov(.rax, arg2);
     try cfo.vmovrm(.sd, v0, CFO.qi(arg1, idx));
+    try cfo.vmathrm(.add, .sd, v0, v0, CFO.qi(arg2, idx));
+    try cfo.vmovmr(.sd, CFO.qi(arg1, idx), v0);
+    try cfo.mov(.rax, idx);
     try cfo.leave();
     try cfo.ret();
     try cfo.finalize_stage2();
 
-    //var fun = cfo.get_ptr_stage2(pos, fn (usize, usize) callconv(.C) usize);
-    //std.os.exit(@intCast(u8, fun(10, 5)));
-    var fun = cfo.get_ptr_stage2(pos, fn ([*]f64, usize) callconv(.C) usize);
-    std.os.exit(@intCast(u8, fun(arr1.ptr, 5)));
+    var fun = cfo.get_ptr_stage2(pos, fn ([*]f64, [*]f64) callconv(.C) usize);
+    _ = fun(arr1.ptr, arr2.ptr);
+    std.os.exit(@floatToInt(u8, 2.0 * arr1[0]));
 }
 
 pub fn main() void {
