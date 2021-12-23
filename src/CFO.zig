@@ -386,6 +386,12 @@ pub fn leave(self: *Self) !void {
     try self.wb(0x5D); // POP rbp
 }
 
+pub fn trap(self: *Self) !void {
+    try self.new_inst(@returnAddress());
+    // WHEEEEEEEE!
+    try self.wb(0xCC); // INT 03h
+}
+
 // there..
 pub fn jfwd(self: *Self, cond: Cond) !u32 {
     try self.new_inst(@returnAddress());

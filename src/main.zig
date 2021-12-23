@@ -1,6 +1,7 @@
 const std = @import("std");
 const print = std.debug.print;
 const CFO = @import("./CFO.zig");
+const OSHA = @import("./OSHA.zig");
 
 const page_allocator = std.heap.page_allocator;
 
@@ -11,6 +12,8 @@ pub fn addr_lookup(addr: usize) usize {
 
 pub fn main() !void {
     print("Yes, I am your CFO (certified forklift operator)\n", .{});
+
+    OSHA.install();
 
     const size = 1024 * 8;
 
@@ -45,6 +48,7 @@ pub fn main() !void {
     try cfo.aritri(.add, idx, 1);
     try cfo.arit(.cmp, idx, arg3);
     try cfo.jbck(.l, loop);
+    try cfo.trap();
     try cfo.leave();
     try cfo.ret();
 
@@ -90,7 +94,7 @@ pub fn main() !void {
 
     var timer = try std.time.Timer.start();
     i = 0;
-    while (i < 20) : (i += 1) {
+    while (i < 3) : (i += 1) {
         scalar_add(arr1.ptr, arr2.ptr, size);
         const tid1 = timer.lap();
         simd_add(arr1.ptr, arr2.ptr, size);
