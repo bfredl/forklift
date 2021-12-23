@@ -8,9 +8,7 @@ pub fn main2() !void {
     // var cfo = CFO.init(allocator) catch unreachable;
     var cfo = CFO.init_stage2();
     var pos = cfo.get_target();
-    try cfo.rex_wrxb(true, false, false, false);
-    try cfo.wb(0x8b); // OP reg, \rm
-    try cfo.modRm(0b11, @truncate(u3, @enumToInt(CFO.IPReg.rax)), 6);
+    try cfo.mov(.rax, .rsi);
     try cfo.ret();
     try cfo.finalize_stage2();
 
