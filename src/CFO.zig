@@ -236,11 +236,16 @@ pub fn wb(self: *Self, opcode: u8) !void {
 }
 
 fn wbi(self: *Self, imm: i8) !void {
-    try self.code.append(@bitCast(u8, imm));
+    try self.wb(@bitCast(u8, imm));
 }
 
 fn wd(self: *Self, dword: i32) !void {
-    std.mem.writeIntLittle(i32, try self.code.addManyAsArray(4), dword);
+    if (s2) {
+        std.mem.writeIntLittle(i32, self.code[self.s2_pos..][0..4], dword);
+        self.s2_pos += 4;
+    } else {
+        std.mem.writeIntLittle(i32, try self.code.addManyAsArray(4), dword);
+    }
 }
 
 // encodings
@@ -295,7 +300,9 @@ pub fn bo(reg: IPReg, offset: i32) EAddr {
 
 // index quadword array
 pub fn qi(base: IPReg, index: IPReg) EAddr {
-    return .{ .base = base, .index = index, .scale = 3 };
+    // stage2: lol no default fields
+    // return .{ .base = base, .index = index, .scale = 3 };
+    return .{ .base = base, .index = index, .scale = 3, .offset = 0 };
 }
 
 pub fn bi(base: IPReg, index: IPReg) EAddr {
@@ -332,7 +339,9 @@ pub fn modRmEA(self: *Self, reg_or_opx: u3, ea: EAddr) !void {
         try self.sib(ea.scale, index.lowId(), rm);
     }
     if (mod != 0b00) {
-        try if (offset8) |off| self.wbi(off) else self.wd(ea.offset);
+        // TODO: stage2
+        // try if (offset8) |off| self.wbi(off) else self.wd(ea.offset);
+        if (offset8) |off| (try self.wbi(off)) else (try self.wd(ea.offset));
     }
 }
 
@@ -354,7 +363,9 @@ pub fn vex3(self: *Self, w: bool, r: bool, x: bool, b: bool, mm: u5, vv: u4, l: 
 }
 
 pub fn vex0fwig(self: *Self, r: bool, x: bool, b: bool, vv: u4, l: bool, pp: PP) !void {
-    try if (x or b) self.vex3(false, r, x, b, 1, vv, l, pp) else self.vex2(r, vv, l, pp);
+    // TODO: stage2
+    // try if (x or b) self.vex3(false, r, x, b, 1, vv, l, pp) else self.vex2(r, vv, l, pp);
+    if (x or b) (try self.vex3(false, r, x, b, 1, vv, l, pp)) else (try self.vex2(r, vv, l, pp));
 }
 
 // control flow
