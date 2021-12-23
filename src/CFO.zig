@@ -277,6 +277,12 @@ pub const EAddr = struct {
     pub inline fn x(self: @This()) bool {
         return if (self.index) |index| index.ext() else false;
     }
+
+    pub inline fn o(self: @This(), offset: i32) @This() {
+        var newself = self;
+        newself.offset += offset;
+        return newself;
+    }
 };
 
 pub fn a(reg: IPReg) EAddr {

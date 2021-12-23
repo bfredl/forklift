@@ -10,10 +10,9 @@ pub fn addr_lookup(addr: usize) usize {
 }
 
 pub fn main() !void {
-    const allocator = std.testing.allocator;
     print("Yes, I am your CFO (certified forklift operator)\n", .{});
 
-    const size = 1024 * 64;
+    const size = 1024 * 8;
 
     var arr1 = try std.heap.page_allocator.alloc(f64, size);
     var arr2 = try std.heap.page_allocator.alloc(f64, size);
@@ -29,9 +28,12 @@ pub fn main() !void {
     const arg2: IPReg = .rsi;
     const arg3: IPReg = .rdx;
     const v0: u4 = 0;
+    const v1: u4 = 1;
 
+    const allocator = std.testing.allocator;
     var cfo = try CFO.init(allocator);
     defer cfo.deinit();
+
     const start = cfo.get_target();
     try cfo.enter();
     try cfo.arit(.xor, idx, idx);
@@ -57,16 +59,34 @@ pub fn main() !void {
     try cfo.arit(.cmp, idx, arg3);
     try cfo.jbck(.l, loop2);
     try cfo.vzeroupper();
-    // try cfo.retnasm();
     try cfo.leave();
     try cfo.ret();
+
+    const start_simd2 = cfo.get_target();
+    try cfo.enter();
+    try cfo.arit(.xor, idx, idx);
+    const loop3 = cfo.get_target();
+    try cfo.vmovarm(.pd4, v0, CFO.qi(arg1, idx));
+    try cfo.vmovarm(.pd4, v1, CFO.qi(arg1, idx).o(32));
+    try cfo.vmathrm(.add, .pd4, v0, v0, CFO.qi(arg2, idx));
+    try cfo.vmathrm(.add, .pd4, v1, v1, CFO.qi(arg2, idx).o(32));
+    try cfo.vmovmr(.pd4, CFO.qi(arg1, idx), v0);
+    try cfo.vmovmr(.pd4, CFO.qi(arg1, idx).o(32), v1);
+    try cfo.aritri(.add, idx, 8);
+    try cfo.arit(.cmp, idx, arg3);
+    try cfo.jbck(.l, loop3);
+    try cfo.vzeroupper();
+    try cfo.leave();
+    // try cfo.retnasm();
+    try cfo.ret();
+
     // try cfo.dbg_test();
     try cfo.finalize();
     the_cfo = &cfo;
     defer the_cfo = null;
     const scalar_add = cfo.get_ptr(start, fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
     const simd_add = cfo.get_ptr(start_simd, fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
-    _ = simd_add;
+    const simd2_add = cfo.get_ptr(start_simd2, fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
 
     var timer = try std.time.Timer.start();
     i = 0;
@@ -75,7 +95,9 @@ pub fn main() !void {
         const tid1 = timer.lap();
         simd_add(arr1.ptr, arr2.ptr, size);
         const tid2 = timer.lap();
-        print("tidning: {}, {}\n", .{ tid1, tid2 });
+        simd2_add(arr1.ptr, arr2.ptr, size);
+        const tid3 = timer.lap();
+        print("tidning: {}, {}, {}\n", .{ tid1, tid2, tid3 });
         _ = timer.lap();
     }
 
