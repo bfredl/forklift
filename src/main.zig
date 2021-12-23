@@ -13,8 +13,6 @@ pub fn addr_lookup(addr: usize) usize {
 pub fn main() !void {
     print("Yes, I am your CFO (certified forklift operator)\n", .{});
 
-    OSHA.install();
-
     const size = 1024 * 8;
 
     var arr1 = try std.heap.page_allocator.alloc(f64, size);
@@ -88,13 +86,17 @@ pub fn main() !void {
     try cfo.finalize();
     the_cfo = &cfo;
     defer the_cfo = null;
+
+    OSHA.install(&cfo);
+    defer OSHA.clear();
+
     const scalar_add = cfo.get_ptr(start, fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
     const simd_add = cfo.get_ptr(start_simd, fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
     const simd2_add = cfo.get_ptr(start_simd2, fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
 
     var timer = try std.time.Timer.start();
     i = 0;
-    while (i < 3) : (i += 1) {
+    while (i < 2) : (i += 1) {
         scalar_add(arr1.ptr, arr2.ptr, size);
         const tid1 = timer.lap();
         simd_add(arr1.ptr, arr2.ptr, size);
