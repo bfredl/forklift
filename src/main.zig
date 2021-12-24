@@ -97,7 +97,7 @@ pub fn main() !void {
     var timer = try std.time.Timer.start();
     i = 0;
     while (i < 2) : (i += 1) {
-        scalar_add(arr1.ptr, arr2.ptr, size);
+        scalar_add(arr1.ptr, arr2.ptr, 2 * size);
         const tid1 = timer.lap();
         simd_add(arr1.ptr, arr2.ptr, size);
         const tid2 = timer.lap();
