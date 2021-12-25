@@ -618,7 +618,11 @@ pub fn get_ptr(self: *Self, target: u32, comptime T: type) T {
 }
 
 pub fn test_call2(self: *Self, arg1: usize, arg2: usize) !usize {
-    try self.finalize();
+    if (s2) {
+        self.finalize_stage2();
+    } else {
+        try self.finalize();
+    }
     const FunPtr = fn (arg1: usize, arg2: usize) callconv(.C) usize;
     return self.get_ptr(0, FunPtr)(arg1, arg2);
 }
