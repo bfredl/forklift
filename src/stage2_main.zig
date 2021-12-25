@@ -40,8 +40,8 @@ pub fn main2() !void {
     const runcount: usize = 137;
     var fun = cfo.get_ptr_stage2(pos, fn ([*]f64, [*]f64, usize) callconv(.C) usize);
     var ret = fun(arr1.ptr, arr2.ptr, runcount);
-    std.os.exit(@truncate(u8, ret));
     std.os.exit(@floatToInt(u8, 2.0 * arr1[5]));
+    std.os.exit(@truncate(u8, ret));
 }
 
 pub fn main() void {

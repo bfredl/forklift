@@ -423,7 +423,7 @@ pub fn jbck(self: *Self, cond: Cond, target: u32) !void {
         var off = @intCast(i32, target) - (@intCast(i32, self.s2_pos) + 2);
         try self.wb(0x0f);
         try self.wb(0x80 + cond.off());
-        try self.wd(off + 4); // FETING: offset is larger as the jump instruction is larger
+        try self.wd(off - 4); // FETING: offset is larger as the jump instruction is larger
     } else {
         try self.new_inst(@returnAddress());
         var off = @intCast(i32, target) - (@intCast(i32, self.code.items.len) + 2);
@@ -433,7 +433,7 @@ pub fn jbck(self: *Self, cond: Cond, target: u32) !void {
         } else {
             try self.wb(0x0f);
             try self.wb(0x80 + cond.off());
-            try self.wd(off + 4); // FETING: offset is larger as the jump instruction is larger
+            try self.wd(off - 4); // FETING: offset is larger as the jump instruction is larger
         }
     }
 }
