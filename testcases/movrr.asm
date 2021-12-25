@@ -1,3 +1,4 @@
+bits 64
 global main
     section   .text
 main:
@@ -12,3 +13,8 @@ main:
     mov eax, ebx
     mov ax, bx
     mov al, bl
+
+    push rax
+    push r15
+    pop rax
+    pop r15

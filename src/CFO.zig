@@ -438,7 +438,22 @@ pub fn jbck(self: *Self, cond: Cond, target: u32) !void {
     }
 }
 
+// stack management
+
+fn push(self: *Self, src: IPReg) !void {
+    // luring: 64-bit wide is already the default,
+    // extension only needed for r8-r15 registers
+    try self.rex_wrxb(false, false, false, src.ext());
+    try self.wb(0x50 + @as(u8, src.lowId()));
+}
+
+fn pop(self: *Self, dst: IPReg) !void {
+    try self.rex_wrxb(false, false, false, dst.ext());
+    try self.wb(0x58 + @as(u8, dst.lowId()));
+}
+
 // mov and arithmetic
+
 inline fn op_rr(self: *Self, opcode: u8, dst: IPReg, src: IPReg) !void {
     try self.new_inst(@returnAddress());
     try self.rex_wrxb(true, dst.ext(), false, src.ext());
@@ -867,6 +882,19 @@ test "jump backwards in a loop" {
 
     retval = try cfo.test_call2(20, 560);
     try expectEqual(@as(usize, 210), retval);
+}
+
+test "push/pop" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+
+    try cfo.push(.rdi);
+    try cfo.pop(.r13);
+    try cfo.mov(.rax, .r13);
+
+    try cfo.ret();
+    var retval = try cfo.test_call2(9009, 560);
+    try expectEqual(@as(usize, 9009), retval);
 }
 
 test "add scalar double" {
