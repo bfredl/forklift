@@ -12,7 +12,8 @@ Features:
 - [ ] byte/word/dword memory operations
 - [x] VEX encoded instructions (scalar and vector f32/f64-math)
 - [ ] SSE instructions (when lacking AVX/AVX2 support)
-- [x] Unaligned and aligned load/store of vectors
+- [ ] integer AVX2 instructions
+- [x] Unaligned and aligned load/store of XMM/YMM vectors
 - [x] Dump final output using `ndisasm`
 - [x] Tracebacks to generated code (using a custom signal handler or patch to stlib)
 - [x] _Partial_ support for being compiled with zig stage2
