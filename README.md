@@ -14,6 +14,5 @@ Features:
 - [ ] SSE instructions (when lacking AVX/AVX2 support)
 - [x] Unaligned and aligned load/store of vectors
 - [x] Dump final output using `ndisasm`
-- [x] Tracebacks to generated code using hacks (needs a patch to Zig stdlib)
-- [ ] Tracebacks to generated code without hacks.
+- [x] Tracebacks to generated code (using a custom signal handler or patch to stlib)
 - [x] _Partial_ support for being compiled with zig stage2
