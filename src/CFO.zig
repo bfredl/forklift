@@ -175,6 +175,17 @@ pub const FMode = enum(u3) {
     }
 };
 
+pub const IMode = enum(u2) {
+    b,
+    w,
+    d,
+    q,
+
+    fn off(self: @This()) u8 {
+        return @as(u8, @enumToInt(self));
+    }
+};
+
 pub const VMathOp = enum(u3) {
     add = 0,
     mul = 1,
@@ -560,18 +571,17 @@ pub fn vmovurm(self: *Self, fmode: FMode, dst: u4, src: EAddr) !void {
     try self.vop_rm(0x10, fmode, dst, 0, src);
 }
 
-pub fn vmovarm(self: *Self, fmode: FMode, dst: u4, src: EAddr) !void {
-    try self.vop_rm(0x28, fmode, dst, 0, src);
-}
-
 pub fn vmovumr(self: *Self, fmode: FMode, dst: EAddr, src: u4) !void {
     try self.vop_rm(0x11, fmode, src, 0, dst);
+}
+
+pub fn vmovarm(self: *Self, fmode: FMode, dst: u4, src: EAddr) !void {
+    try self.vop_rm(0x28, fmode, dst, 0, src);
 }
 
 pub fn vmovamr(self: *Self, fmode: FMode, dst: EAddr, src: u4) !void {
     try self.vop_rm(0x29, fmode, src, 0, dst);
 }
-
 pub fn vmathf(self: *Self, op: VMathOp, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
     try self.vop_rr(0x58 + op.off(), fmode, dst, src1, src2);
 }
@@ -586,6 +596,46 @@ pub fn vcmp(self: *Self, op: VCmp, fmode: FMode, dst: u4, src1: u4, src2: EAddr)
     }
     try self.vop_rr(0xC2, fmode, dst, src1, src2);
     try self.wb(op.val());
+}
+
+// integer vector instructions
+pub inline fn vop_i_rr(self: *Self, op: u8, wide: bool, dst: u4, src1: u4, src2: u4) !void {
+    try self.new_inst(@returnAddress());
+    try self.vex0fwig(dst > 7, false, src2 > 7, src1, wide, .h66);
+    try self.wb(op);
+    try self.modRm(0b11, @truncate(u3, dst), @truncate(u3, src2));
+}
+
+pub inline fn vop_i_rm(self: *Self, op: u8, wide: bool, pp: PP, reg: u4, vreg: u4, ea: EAddr) !void {
+    try self.new_inst(@returnAddress());
+    try self.vex0fwig(reg > 7, ea.x(), ea.b(), vreg, wide, pp);
+    try self.wb(op);
+    try self.modRmEA(@truncate(u3, reg), ea);
+}
+
+pub fn vmovdq(self: *Self, wide: bool, dst: u4, src: u4) !void {
+    try self.vop_i_rr(0x6f, wide, .h66, dst, 0, src);
+}
+
+pub fn vmovdqarm(self: *Self, wide: bool, dst: u4, src: EAddr) !void {
+    try self.vop_i_rm(0x6f, wide, .h66, dst, 0, src);
+}
+
+pub fn vmovdqamr(self: *Self, wide: bool, dst: EAddr, src: u4) !void {
+    try self.vop_i_rm(0x7f, wide, .h66, src, 0, dst);
+}
+
+pub fn vmovdqurm(self: *Self, wide: bool, dst: u4, src: EAddr) !void {
+    try self.vop_i_rm(0x6f, wide, .F3, dst, 0, src);
+}
+
+pub fn vmovdqumr(self: *Self, wide: bool, dst: EAddr, src: u4) !void {
+    try self.vop_i_rm(0x7f, wide, .F3, src, 0, dst);
+}
+
+pub fn vaddi(self: *Self, wide: bool, imode: IMode, dst: u4, src1: u4, src2: u4) !void {
+    const op = if (imode == .q) 0xD4 else (0xFC + imode.off());
+    try self.vop_i_rr(op, wide, .h66, dst, src1, src2);
 }
 
 pub fn vzeroupper(self: *Self) !void {
