@@ -26,9 +26,9 @@ pub fn main2() !void {
     try cfo.enter();
     try cfo.arit(.xor, idx, idx);
     const loop = cfo.get_target();
-    try cfo.vmovrm(.sd, v0, CFO.qi(arg1, idx));
-    try cfo.vmathrm(.add, .sd, v0, v0, CFO.qi(arg2, idx));
-    try cfo.vmovmr(.sd, CFO.qi(arg1, idx), v0);
+    try cfo.vmovurm(.sd, v0, CFO.qi(arg1, idx));
+    try cfo.vmathfrm(.add, .sd, v0, v0, CFO.qi(arg2, idx));
+    try cfo.vmovumr(.sd, CFO.qi(arg1, idx), v0);
     try cfo.aritri(.add, idx, 1);
     try cfo.arit(.cmp, idx, arg3);
     try cfo.jbck(.l, loop);

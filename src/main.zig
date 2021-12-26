@@ -13,7 +13,7 @@ pub fn addr_lookup(addr: usize) usize {
 pub fn main() !void {
     print("Yes, I am your CFO (certified forklift operator)\n", .{});
 
-    const size = 1024 * 8;
+    const size = 1024 * 32;
 
     var arr1 = try std.heap.page_allocator.alloc(f64, size);
     var arr2 = try std.heap.page_allocator.alloc(f64, size);
@@ -39,14 +39,14 @@ pub fn main() !void {
     try cfo.enter();
     try cfo.arit(.xor, idx, idx);
     const loop = cfo.get_target();
-    // try cfo.vmovrm(.sd, v0, CFO.a(idx));
-    try cfo.vmovrm(.sd, v0, CFO.qi(arg1, idx));
-    try cfo.vmathrm(.add, .sd, v0, v0, CFO.qi(arg2, idx));
-    try cfo.vmovmr(.sd, CFO.qi(arg1, idx), v0);
+    // try cfo.vmovurm(.sd, v0, CFO.a(idx));
+    try cfo.vmovurm(.sd, v0, CFO.qi(arg1, idx));
+    try cfo.vmathfrm(.add, .sd, v0, v0, CFO.qi(arg2, idx));
+    try cfo.vmovumr(.sd, CFO.qi(arg1, idx), v0);
     try cfo.aritri(.add, idx, 1);
     try cfo.arit(.cmp, idx, arg3);
     try cfo.jbck(.l, loop);
-    try cfo.trap();
+    // try cfo.trap();
     try cfo.leave();
     try cfo.ret();
 
@@ -55,8 +55,8 @@ pub fn main() !void {
     try cfo.arit(.xor, idx, idx);
     const loop2 = cfo.get_target();
     try cfo.vmovarm(.pd4, v0, CFO.qi(arg1, idx));
-    try cfo.vmathrm(.add, .pd4, v0, v0, CFO.qi(arg2, idx));
-    try cfo.vmovmr(.pd4, CFO.qi(arg1, idx), v0);
+    try cfo.vmathfrm(.add, .pd4, v0, v0, CFO.qi(arg2, idx));
+    try cfo.vmovamr(.pd4, CFO.qi(arg1, idx), v0);
     try cfo.aritri(.add, idx, 4);
     try cfo.arit(.cmp, idx, arg3);
     try cfo.jbck(.l, loop2);
@@ -70,10 +70,10 @@ pub fn main() !void {
     const loop3 = cfo.get_target();
     try cfo.vmovarm(.pd4, v0, CFO.qi(arg1, idx));
     try cfo.vmovarm(.pd4, v1, CFO.qi(arg1, idx).o(32));
-    try cfo.vmathrm(.add, .pd4, v0, v0, CFO.qi(arg2, idx));
-    try cfo.vmathrm(.add, .pd4, v1, v1, CFO.qi(arg2, idx).o(32));
-    try cfo.vmovmr(.pd4, CFO.qi(arg1, idx), v0);
-    try cfo.vmovmr(.pd4, CFO.qi(arg1, idx).o(32), v1);
+    try cfo.vmathfrm(.add, .pd4, v0, v0, CFO.qi(arg2, idx));
+    try cfo.vmathfrm(.add, .pd4, v1, v1, CFO.qi(arg2, idx).o(32));
+    try cfo.vmovamr(.pd4, CFO.qi(arg1, idx), v0);
+    try cfo.vmovamr(.pd4, CFO.qi(arg1, idx).o(32), v1);
     try cfo.aritri(.add, idx, 8);
     try cfo.arit(.cmp, idx, arg3);
     try cfo.jbck(.l, loop3);
@@ -96,8 +96,8 @@ pub fn main() !void {
 
     var timer = try std.time.Timer.start();
     i = 0;
-    while (i < 2) : (i += 1) {
-        scalar_add(arr1.ptr, arr2.ptr, 2 * size);
+    while (i < 10) : (i += 1) {
+        scalar_add(arr1.ptr, arr2.ptr, size);
         const tid1 = timer.lap();
         simd_add(arr1.ptr, arr2.ptr, size);
         const tid2 = timer.lap();

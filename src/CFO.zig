@@ -552,11 +552,11 @@ pub fn vmov2(self: *Self, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
 // pseudo-instruction for moving register
 // vmovsd xmm1, xmm1, xmm2
 // vmovupd xmm1, xmm2
-pub fn vmov(self: *Self, fmode: FMode, dst: u4, src: u4) !void {
+pub fn vmovf(self: *Self, fmode: FMode, dst: u4, src: u4) !void {
     try self.vop_rr(0x10, fmode, dst, if (fmode.scalar()) dst else 0, src);
 }
 
-pub fn vmovrm(self: *Self, fmode: FMode, dst: u4, src: EAddr) !void {
+pub fn vmovurm(self: *Self, fmode: FMode, dst: u4, src: EAddr) !void {
     try self.vop_rm(0x10, fmode, dst, 0, src);
 }
 
@@ -564,7 +564,7 @@ pub fn vmovarm(self: *Self, fmode: FMode, dst: u4, src: EAddr) !void {
     try self.vop_rm(0x28, fmode, dst, 0, src);
 }
 
-pub fn vmovmr(self: *Self, fmode: FMode, dst: EAddr, src: u4) !void {
+pub fn vmovumr(self: *Self, fmode: FMode, dst: EAddr, src: u4) !void {
     try self.vop_rm(0x11, fmode, src, 0, dst);
 }
 
@@ -572,11 +572,11 @@ pub fn vmovamr(self: *Self, fmode: FMode, dst: EAddr, src: u4) !void {
     try self.vop_rm(0x29, fmode, src, 0, dst);
 }
 
-pub fn vmath(self: *Self, op: VMathOp, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
+pub fn vmathf(self: *Self, op: VMathOp, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
     try self.vop_rr(0x58 + op.off(), fmode, dst, src1, src2);
 }
 
-pub fn vmathrm(self: *Self, op: VMathOp, fmode: FMode, dst: u4, src1: u4, src2: EAddr) !void {
+pub fn vmathfrm(self: *Self, op: VMathOp, fmode: FMode, dst: u4, src1: u4, src2: EAddr) !void {
     try self.vop_rm(0x58 + op.off(), fmode, dst, src1, src2);
 }
 
@@ -901,7 +901,7 @@ test "add scalar double" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.vmath(.add, .sd, 0, 0, 1);
+    try cfo.vmathf(.add, .sd, 0, 0, 1);
     try cfo.ret();
 
     var retval = try cfo.test_call2f64(2.0, 0.5);
@@ -912,7 +912,7 @@ test "max of scalar double" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.vmath(.max, .sd, 0, 0, 1);
+    try cfo.vmathf(.max, .sd, 0, 0, 1);
     try cfo.ret();
 
     var retval = try cfo.test_call2f64(2.0, 5.5);
@@ -926,7 +926,7 @@ test "move scalar double" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
-    try cfo.vmov(.sd, 0, 1);
+    try cfo.vmovf(.sd, 0, 1);
     try cfo.ret();
 
     var retval = try cfo.test_call2f64(22.0, 0.75);
@@ -938,9 +938,9 @@ test "read/write scalar double" {
     defer cfo.deinit();
 
     // as we are swapping [rdi] and xmm0, use a temp
-    try cfo.vmovrm(.sd, 1, a(.rdi));
-    try cfo.vmovmr(.sd, a(.rdi), 0);
-    try cfo.vmov(.sd, 0, 1);
+    try cfo.vmovurm(.sd, 1, a(.rdi));
+    try cfo.vmovumr(.sd, a(.rdi), 0);
+    try cfo.vmovf(.sd, 0, 1);
     try cfo.ret();
 
     var thefloat: f64 = 13.5;
@@ -955,7 +955,7 @@ test "read/write aligned double vector" {
     defer cfo.deinit();
 
     try cfo.vmovarm(.pd4, 0, a(.rdi));
-    try cfo.vmath(.mul, .pd4, 0, 0, 0);
+    try cfo.vmathf(.mul, .pd4, 0, 0, 0);
     try cfo.vmovamr(.pd4, a(.rdi), 0);
     try cfo.ret();
 
@@ -971,7 +971,7 @@ test "add scalar double from memory" {
     defer cfo.deinit();
     errdefer cfo.dbg_nasm(test_allocator) catch unreachable;
 
-    try cfo.vmathrm(.add, .sd, 0, 0, a(.rdi));
+    try cfo.vmathfrm(.add, .sd, 0, 0, a(.rdi));
     try cfo.ret();
 
     var thefloat: f64 = 6.5;
