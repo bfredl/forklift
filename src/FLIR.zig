@@ -68,6 +68,13 @@ fn rpn(narg: u4, str: []const u8, autoreg: bool, allocator: Allocator) !FLIR {
                 if (arg >= narg) return error.InvalidSyntax;
                 try stack.append(arg);
             },
+            'x'...'z' => {
+                const arg = str[pos] - 'x';
+                var reg = if (autoreg) @intCast(u4, narg + sp) else null;
+                if (arg >= narg) return error.InvalidSyntax;
+                try self.inst.append(.{ .tag = .load, .op1 = arg, .alloc = reg });
+                try stack.append(@intCast(u16, self.inst.items.len - 1));
+            },
             ' ' => continue,
             else => return error.InvalidSyntax,
         }
@@ -93,7 +100,7 @@ fn live(self: FLIR) void {
             .arg => 0,
             .vmath => 2,
             .ret => 1,
-            .load => undefined,
+            .load => 0, // of course this will be more when we track GPRs..
         };
         if (nop > 0) {
             self.set_live(inst.op1, pos);
@@ -120,10 +127,12 @@ fn debug_print(self: FLIR) void {
             .arg => 1,
             .vmath => 2,
             .ret => 1,
-            .load => undefined,
+            .load => 0,
         };
         if (inst.tag == .vmath) {
             print(".{s}", .{@tagName(@intToEnum(VMathOp, inst.opspec))});
+        } else if (inst.tag == .load) {
+            print(" [{}]", .{inst.op1});
         }
         if (nop > 0) {
             print(" %{}", .{inst.op1});
@@ -168,7 +177,17 @@ fn codegen(self: FLIR, cfo: *CFO) !u32 {
                 didret = true;
                 break;
             },
-            .load => unreachable,
+            .load => {
+                const dst = inst.alloc.?;
+                const reg: CFO.IPReg = switch (inst.op1) {
+                    0 => .rdi,
+                    1 => .rsi,
+                    2 => .rdx,
+                    else => unreachable,
+                };
+                const src = CFO.qi(reg, .rcx);
+                try cfo.vmovurm(.sd, dst, src);
+            },
         }
     }
 
@@ -181,7 +200,7 @@ fn codegen(self: FLIR, cfo: *CFO) !u32 {
 
 const test_allocator = std.testing.allocator;
 test "the rpn" {
-    var flir = try rpn(3, "a b + c a * m", true, test_allocator);
+    var flir = try rpn(3, "a x + c a * m", true, test_allocator);
     defer flir.deinit();
 
     print("\nIS LEN: {}\n", .{flir.inst.items.len});
