@@ -81,9 +81,13 @@ fn rpn(narg: u4, str: []const u8, autoreg: bool, allocator: Allocator) !FLIR {
     return self;
 }
 
+inline fn ninst(self: FLIR) u16 {
+    return @intCast(u16, self.inst.items.len);
+}
+
 fn live(self: FLIR) void {
-    var pos: usize = 0;
-    while (pos < self.inst.items.len) : (pos += 1) {
+    var pos: u16 = 0;
+    while (pos < self.ninst()) : (pos += 1) {
         const inst = &self.inst.items[pos];
         const nop: u2 = switch (inst.tag) {
             .arg => 0,
@@ -92,9 +96,9 @@ fn live(self: FLIR) void {
             .load => undefined,
         };
         if (nop > 0) {
-            self.set_live(inst.op1, @intCast(u16, pos));
+            self.set_live(inst.op1, pos);
             if (nop > 1) {
-                self.set_live(inst.op2, @intCast(u16, pos));
+                self.set_live(inst.op2, pos);
             }
         }
     }
@@ -108,7 +112,7 @@ inline fn set_live(self: FLIR, used: u16, user: u16) void {
 fn debug_print(self: FLIR) void {
     var pos: u16 = 0;
     print("\n", .{});
-    while (pos < @intCast(u16, self.inst.items.len)) : (pos += 1) {
+    while (pos < self.ninst()) : (pos += 1) {
         const inst = &self.inst.items[pos];
         const marker: u8 = if (inst.live) |_| ' ' else '!';
         print(" %{}{c}= {s}", .{ pos, marker, @tagName(inst.tag) });
