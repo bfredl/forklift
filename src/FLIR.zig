@@ -1,4 +1,5 @@
 const std = @import("std");
+const math = std.math;
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const FLIR = @This();
@@ -22,6 +23,7 @@ const Inst = struct {
     op1: ref,
     op2: ref = 0,
     alloc: ?u4,
+    live: ?u16 = null,
 };
 
 narg: u16,
@@ -79,6 +81,62 @@ fn rpn(narg: u4, str: []const u8, autoreg: bool, allocator: Allocator) !FLIR {
     return self;
 }
 
+fn live(self: FLIR) void {
+    var pos: usize = 0;
+    while (pos < self.inst.items.len) : (pos += 1) {
+        const inst = &self.inst.items[pos];
+        const nop: u2 = switch (inst.tag) {
+            .arg => 0,
+            .vmath => 2,
+            .ret => 1,
+            .load => undefined,
+        };
+        if (nop > 0) {
+            self.set_live(inst.op1, @intCast(u16, pos));
+            if (nop > 1) {
+                self.set_live(inst.op2, @intCast(u16, pos));
+            }
+        }
+    }
+}
+
+inline fn set_live(self: FLIR, used: u16, user: u16) void {
+    const inst = &self.inst.items[used];
+    inst.live = if (inst.live) |l| math.max(l, user) else user;
+}
+
+fn debug_print(self: FLIR) void {
+    var pos: u16 = 0;
+    print("\n", .{});
+    while (pos < @intCast(u16, self.inst.items.len)) : (pos += 1) {
+        const inst = &self.inst.items[pos];
+        const marker: u8 = if (inst.live) |_| ' ' else '!';
+        print(" %{}{c}= {s}", .{ pos, marker, @tagName(inst.tag) });
+        const nop: u2 = switch (inst.tag) {
+            .arg => 1,
+            .vmath => 2,
+            .ret => 1,
+            .load => undefined,
+        };
+        if (inst.tag == .vmath) {
+            print(".{s}", .{@tagName(@intToEnum(VMathOp, inst.opspec))});
+        }
+        if (nop > 0) {
+            print(" %{}", .{inst.op1});
+            if (self.inst.items[inst.op1].live == pos) {
+                print("!", .{});
+            }
+            if (nop > 1) {
+                print(", %{}", .{inst.op2});
+                if (self.inst.items[inst.op2].live == pos) {
+                    print("!", .{});
+                }
+            }
+        }
+        print("\n", .{});
+    }
+}
+
 fn codegen(self: FLIR, cfo: *CFO) !u32 {
     const target = cfo.get_target();
 
@@ -119,10 +177,13 @@ fn codegen(self: FLIR, cfo: *CFO) !u32 {
 
 const test_allocator = std.testing.allocator;
 test "the rpn" {
-    var flir = try rpn(3, "a b + c a *", true, test_allocator);
+    var flir = try rpn(3, "a b + c a * m", true, test_allocator);
     defer flir.deinit();
 
     print("\nIS LEN: {}\n", .{flir.inst.items.len});
+
+    flir.live();
+    flir.debug_print();
 
     var cfo = try CFO.init(test_allocator);
     defer cfo.deinit();
