@@ -194,7 +194,7 @@ pub const VMathOp = enum(u3) {
     div = 6,
     max = 7,
 
-    fn off(self: @This()) u8 {
+    pub fn off(self: @This()) u8 {
         return @as(u8, @enumToInt(self));
     }
 };
