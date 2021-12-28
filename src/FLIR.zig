@@ -116,13 +116,39 @@ inline fn set_live(self: FLIR, used: u16, user: u16) void {
     inst.live = if (inst.live) |l| math.max(l, user) else user;
 }
 
+fn scanreg(self: FLIR) !void {
+    var active: [16]?u16 = .{null} ** 16;
+    var pos: u16 = 0;
+    while (pos < self.ninst()) : (pos += 1) {
+        const inst = &self.inst.items[pos];
+        if (inst.live) |end| {
+            const reg = inst.alloc orelse found: {
+                for (active) |v, i| {
+                    if (v == null or v.? <= pos) {
+                        break :found @intCast(u4, i);
+                    }
+                } else {
+                    return error.TooManyLiveRanges;
+                }
+            };
+            inst.alloc = reg;
+            active[reg] = end;
+        }
+    }
+}
+
 fn debug_print(self: FLIR) void {
     var pos: u16 = 0;
     print("\n", .{});
     while (pos < self.ninst()) : (pos += 1) {
         const inst = &self.inst.items[pos];
+        if (inst.alloc) |reg| {
+            print(" xmm{} ", .{reg});
+        } else {
+            print(" ---- ", .{});
+        }
         const marker: u8 = if (inst.live) |_| ' ' else '!';
-        print(" %{}{c}= {s}", .{ pos, marker, @tagName(inst.tag) });
+        print("%{}{c}= {s}", .{ pos, marker, @tagName(inst.tag) });
         const nop: u2 = switch (inst.tag) {
             .arg => 1,
             .vmath => 2,
@@ -200,12 +226,12 @@ fn codegen(self: FLIR, cfo: *CFO) !u32 {
 
 const test_allocator = std.testing.allocator;
 test "the rpn" {
-    var flir = try rpn(3, "a x + c a * m", true, test_allocator);
+    var flir = try rpn(3, "a x + c a * m", false, test_allocator);
     defer flir.deinit();
 
-    print("\nIS LEN: {}\n", .{flir.inst.items.len});
-
     flir.live();
+    flir.debug_print();
+    try flir.scanreg();
     flir.debug_print();
 
     var cfo = try CFO.init(test_allocator);
@@ -218,7 +244,10 @@ pub fn main() !void {
     const arg1 = std.os.argv[1];
     var flir = try rpn(4, std.mem.span(arg1), true, test_allocator);
     defer flir.deinit();
-    print("\nIS LEN: {}\n", .{flir.inst.items.len});
+
+    flir.live();
+    flir.scanreg();
+    flir.debug_print();
 
     var cfo = try CFO.init(test_allocator);
     defer cfo.deinit();
