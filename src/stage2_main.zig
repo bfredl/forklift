@@ -35,10 +35,10 @@ pub fn main2() !void {
     try cfo.mov(.rax, idx);
     try cfo.leave();
     try cfo.ret();
-    try cfo.finalize_stage2();
+    try cfo.finalize();
 
     const runcount: usize = 137;
-    var fun = cfo.get_ptr_stage2(pos, fn ([*]f64, [*]f64, usize) callconv(.C) usize);
+    var fun = cfo.get_ptr(pos, fn ([*]f64, [*]f64, usize) callconv(.C) usize);
     var ret = fun(arr1.ptr, arr2.ptr, runcount);
     std.os.exit(@floatToInt(u8, 2.0 * arr1[5]));
     std.os.exit(@truncate(u8, ret));

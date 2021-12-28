@@ -202,6 +202,9 @@ pub const VMathOp = enum(u3) {
 // cannot Error!Struct because:
 // error: TODO coerce_result_ptr wrap_errunion_payload
 pub fn init_stage2() Self {
+    if (!s2) {
+        return init(page_allocator) catch unreachable;
+    }
     return Self{
         .code = page_allocator.alloc(u8, 4096) catch unreachable,
         .inst_off = {},
@@ -665,29 +668,25 @@ pub fn dbg_nasm(self: *Self, allocator: Allocator) !void {
 }
 
 pub fn finalize(self: *Self) !void {
-    try os.mprotect(self.code.items.ptr[0..self.code.capacity], os.PROT.READ | os.PROT.EXEC);
-}
-
-pub fn finalize_stage2(self: *Self) !void {
-    if (os.linux.mprotect(self.code.ptr, self.code.len, os.PROT.READ | os.PROT.EXEC) != 0) {
-        return error.ComputarSaysNo;
+    if (s2) {
+        if (os.linux.mprotect(self.code.ptr, self.code.len, os.PROT.READ | os.PROT.EXEC) != 0) {
+            return error.ComputarSaysNo;
+        }
+    } else {
+        try os.mprotect(self.code.items.ptr[0..self.code.capacity], os.PROT.READ | os.PROT.EXEC);
     }
-}
-
-pub fn get_ptr_stage2(self: *Self, target: u32, comptime T: type) T {
-    return @ptrCast(T, self.code[target..].ptr);
 }
 
 pub fn get_ptr(self: *Self, target: u32, comptime T: type) T {
-    return @ptrCast(T, self.code.items[target..].ptr);
+    if (s2) {
+        return @ptrCast(T, self.code[target..].ptr);
+    } else {
+        return @ptrCast(T, self.code.items[target..].ptr);
+    }
 }
 
 pub fn test_call2(self: *Self, arg1: usize, arg2: usize) !usize {
-    if (s2) {
-        self.finalize_stage2();
-    } else {
-        try self.finalize();
-    }
+    try self.finalize();
     const FunPtr = fn (arg1: usize, arg2: usize) callconv(.C) usize;
     return self.get_ptr(0, FunPtr)(arg1, arg2);
 }
