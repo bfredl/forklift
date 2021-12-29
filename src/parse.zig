@@ -33,9 +33,27 @@ pub fn expr_0(flir: *FLIR, str: []const u8, pos: *usize) !?u16 {
     }
 }
 
+pub fn expr_1(flir: *FLIR, str: []const u8, pos: *usize) !?u16 {
+    var val = (try expr_0(flir, str, pos)) orelse return null;
+    while (nonws(str, pos)) |char| {
+        const theop: CFO.VMathOp = switch (char) {
+            '+' => .add,
+            '-' => .sub,
+            else => return val,
+        };
+        pos.* += 1;
+        const op = (try expr_0(flir, str, pos)) orelse return error.EXPR1;
+        val = try flir.put(.{ .tag = .vmath, .opspec = theop.off(), .op1 = val, .op2 = op });
+    }
+    return val;
+}
+
 pub fn parse(flir: *FLIR, str: []const u8) !u16 {
     var pos: usize = 0;
-    const res = (try expr_0(flir, str, &pos)) orelse return error.EOFError;
+    const res = (try expr_1(flir, str, &pos)) orelse return error.EOFError;
+    if (nonws(str, &pos) != null) {
+        return error.SKRAPET;
+    }
     return res;
 }
 
