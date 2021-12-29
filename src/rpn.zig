@@ -1,7 +1,7 @@
 const std = @import("std");
-const FLIR = @import("./FLIR.zig");
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
+const FLIR = @import("./FLIR.zig");
 const CFO = @import("./CFO.zig");
 
 fn rpn(narg: u4, str: []const u8, autoreg: bool, allocator: Allocator) !FLIR {

@@ -22,7 +22,7 @@ const Inst = struct {
     opspec: u8 = 0,
     op1: ref,
     op2: ref = 0,
-    alloc: ?u4,
+    alloc: ?u4 = null,
     live: ?u16 = null,
 };
 
@@ -44,6 +44,11 @@ pub fn deinit(self: FLIR) void {
 
 pub inline fn ninst(self: FLIR) u16 {
     return @intCast(u16, self.inst.items.len);
+}
+
+pub fn put(self: *FLIR, inst: Inst) !u16 {
+    try self.inst.append(inst);
+    return @intCast(u16, self.inst.items.len - 1);
 }
 
 pub fn live(self: FLIR) void {
@@ -87,6 +92,9 @@ pub fn scanreg(self: FLIR) !void {
             };
             inst.alloc = reg;
             active[reg] = end;
+        } else if (inst.tag == .ret) {
+            // not used but it looks good\tm
+            inst.alloc = 0;
         }
     }
 }

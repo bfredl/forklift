@@ -9,6 +9,10 @@ pub fn build(b: *Builder) void {
     exe_rpn.setBuildMode(mode);
     exe_rpn.install();
 
+    var exe_parse = b.addExecutable("parse", "src/parse.zig");
+    exe_parse.setBuildMode(mode);
+    exe_parse.install();
+
     const operate = b.step("operate", "operate the forklift");
     const run = exe.run();
     run.step.dependOn(b.getInstallStep());
