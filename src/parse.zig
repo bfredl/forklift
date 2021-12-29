@@ -69,8 +69,8 @@ pub fn expr_2(flir: *FLIR, str: []const u8, pos: *usize) !?u16 {
     return val;
 }
 
-pub fn stmt(flir: *FLIR, str: []const u8, pos: *usize) !bool {
-    const char = nonws(str, pos) orelse return false;
+pub fn stmt(flir: *FLIR, str: []const u8, pos: *usize) !?bool {
+    const char = nonws(str, pos) orelse return null;
     var inst: FLIR.Inst = dest: {
         switch (char) {
             'r' => {
@@ -96,6 +96,8 @@ pub fn stmt(flir: *FLIR, str: []const u8, pos: *usize) !bool {
     if (nonws(str, pos) != @as(u8, '=')) return error.SyntaxError;
     pos.* += 1;
     inst.op1 = (try expr_2(flir, str, pos)) orelse return error.EOFError;
+    if (nonws(str, pos) != @as(u8, ';')) return error.SyntaxError;
+    pos.* += 1;
 
     _ = try flir.put(inst);
     return (inst.tag == .ret);
@@ -103,11 +105,15 @@ pub fn stmt(flir: *FLIR, str: []const u8, pos: *usize) !bool {
 
 pub fn parse(flir: *FLIR, str: []const u8) !bool {
     var pos: usize = 0;
-    const res = (try stmt(flir, str, &pos));
-    if (nonws(str, &pos) != null) {
-        return error.SKRAPET;
+    var didret = false;
+    while (try stmt(flir, str, &pos)) |res| {
+        if (res) {
+            didret = true;
+            break;
+        }
     }
-    return res;
+    if (nonws(str, &pos) != null) return error.SyntaxError;
+    return didret;
 }
 
 pub fn main() !void {
