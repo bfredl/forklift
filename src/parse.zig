@@ -48,8 +48,9 @@ pub fn expr_0(self: *Self) !?u16 {
             return try self.flir.put(inst);
         },
         't' => {
+            self.pos += 1;
             const i = self.num() orelse return error.InvalidSyntax;
-            return self.tmp[i] orelse return error.InvalidSyntax;
+            return self.tmp[i] orelse return error.UndefTemporary;
         },
         else => return null,
     }
