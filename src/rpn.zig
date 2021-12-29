@@ -39,7 +39,7 @@ fn rpn(narg: u4, str: []const u8, autoreg: bool, allocator: Allocator) !FLIR {
                 const arg = str[pos] - 'x';
                 var reg = if (autoreg) @intCast(u4, narg + sp) else null;
                 if (arg >= narg) return error.InvalidSyntax;
-                try flir.inst.append(.{ .tag = .load, .op1 = arg, .alloc = reg });
+                try flir.inst.append(.{ .tag = .load, .opspec = arg, .op1 = 0, .alloc = reg });
                 try stack.append(@intCast(u16, flir.inst.items.len - 1));
             },
             ' ' => continue,

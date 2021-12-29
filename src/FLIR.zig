@@ -11,6 +11,7 @@ const VMathOp = CFO.VMathOp;
 pub const Tag = enum(u8) {
     arg,
     load,
+    store,
     vmath,
     ret,
 };
@@ -60,6 +61,7 @@ pub fn live(self: FLIR) void {
             .vmath => 2,
             .ret => 1,
             .load => 0, // of course this will be more when we track GPRs..
+            .store => 1, // of course this will be more when we track GPRs..
         };
         if (nop > 0) {
             self.set_live(inst.op1, pos);
@@ -116,11 +118,14 @@ pub fn debug_print(self: FLIR) void {
             .vmath => 2,
             .ret => 1,
             .load => 0,
+            .store => 1,
         };
         if (inst.tag == .vmath) {
             print(".{s}", .{@tagName(@intToEnum(VMathOp, inst.opspec))});
         } else if (inst.tag == .load) {
-            print(" p{}[{}]", .{ inst.op1, inst.op2 });
+            print(" p{}[{}]", .{ inst.opspec, inst.op1 });
+        } else if (inst.tag == .store) {
+            print(" p{}[{}] <-", .{ inst.opspec, inst.op2 });
         }
         if (nop > 0) {
             print(" %{}", .{inst.op1});
@@ -167,14 +172,25 @@ pub fn codegen(self: FLIR, cfo: *CFO) !u32 {
             },
             .load => {
                 const dst = inst.alloc.?;
-                const reg: CFO.IPReg = switch (inst.op1) {
+                const reg: CFO.IPReg = switch (inst.opspec) {
                     0 => .rdi,
                     1 => .rsi,
                     2 => .rdx,
                     else => unreachable,
                 };
-                const src = CFO.a(reg).o(inst.op2);
+                const src = CFO.a(reg).o(inst.op1);
                 try cfo.vmovurm(.sd, dst, src);
+            },
+            .store => {
+                const src = self.inst.items[inst.op1].alloc.?;
+                const reg: CFO.IPReg = switch (inst.opspec) {
+                    0 => .rdi,
+                    1 => .rsi,
+                    2 => .rdx,
+                    else => unreachable,
+                };
+                const dst = CFO.a(reg).o(inst.op2);
+                try cfo.vmovumr(.sd, dst, src);
             },
         }
     }
