@@ -157,9 +157,10 @@ pub fn codegen(self: FLIR, cfo: *CFO) !u32 {
                 if (inst.op1 != @as(u16, inst.alloc.?)) return error.InvalidArgRegister;
             },
             .vmath => {
+                // TODO: kill dead instructions completely instead of leaving alloc blank
+                const dst = inst.alloc orelse continue;
                 const src1 = self.inst.items[inst.op1].alloc.?;
                 const src2 = self.inst.items[inst.op2].alloc.?;
-                const dst = inst.alloc.?;
                 try cfo.vmathf(@intToEnum(VMathOp, inst.opspec), .sd, dst, src1, src2);
             },
             .ret => {
