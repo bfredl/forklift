@@ -5,17 +5,17 @@ pub fn build(b: *Builder) void {
     exe.setBuildMode(mode);
     exe.install();
 
-    var exe2 = b.addExecutable("rpn", "src/FLIR.zig");
-    exe2.setBuildMode(mode);
-    exe2.install();
+    var exe_rpn = b.addExecutable("rpn", "src/rpn.zig");
+    exe_rpn.setBuildMode(mode);
+    exe_rpn.install();
 
     const operate = b.step("operate", "operate the forklift");
     const run = exe.run();
     run.step.dependOn(b.getInstallStep());
     operate.dependOn(&run.step);
 
-    const dorpn = b.step("rpn", "compile rpn expression");
-    const runrpc = exe2.run();
-    runrpc.step.dependOn(b.getInstallStep());
-    dorpn.dependOn(&runrpc.step);
+    const do_rpn = b.step("rpn", "compile rpn expression");
+    const run_rpc = exe_rpn.run();
+    run_rpc.step.dependOn(b.getInstallStep());
+    do_rpn.dependOn(&run_rpc.step);
 }

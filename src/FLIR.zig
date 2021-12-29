@@ -29,70 +29,24 @@ const Inst = struct {
 narg: u16,
 inst: ArrayList(Inst),
 
-fn deinit(self: FLIR) void {
-    self.inst.deinit();
-}
-
-fn rpn(narg: u4, str: []const u8, autoreg: bool, allocator: Allocator) !FLIR {
-    var stack = try ArrayList(u16).initCapacity(allocator, 16);
-    defer stack.deinit();
-    var pos: usize = 0;
+pub fn init(narg: u4, allocator: Allocator) !FLIR {
     var self: FLIR = .{ .narg = narg, .inst = try ArrayList(Inst).initCapacity(allocator, 16) };
-    errdefer self.deinit();
     var iarg: u4 = 0;
     while (iarg < narg) : (iarg += 1) {
         try self.inst.append(.{ .tag = .arg, .op1 = iarg, .alloc = iarg });
     }
-    while (pos < str.len) : (pos += 1) {
-        var sp = stack.items.len;
-        switch (str[pos]) {
-            '+', '-', '/', '*', 'M', 'm' => {
-                if (sp < 2) return error.InvalidSyntax;
-                var reg = if (autoreg) @intCast(u4, narg + sp - 2) else null;
-                var op: VMathOp = switch (str[pos]) {
-                    '+' => .add,
-                    '-' => .sub,
-                    '*' => .mul,
-                    '/' => .div,
-                    'M' => .max,
-                    'm' => .min,
-                    else => unreachable,
-                };
-
-                try self.inst.append(.{ .tag = .vmath, .opspec = op.off(), .op1 = stack.items[sp - 2], .op2 = stack.items[sp - 1], .alloc = reg });
-                _ = stack.pop();
-                stack.items[sp - 2] = @intCast(u16, self.inst.items.len - 1);
-            },
-            'a'...'d' => {
-                const arg = str[pos] - 'a';
-                if (arg >= narg) return error.InvalidSyntax;
-                try stack.append(arg);
-            },
-            'x'...'z' => {
-                const arg = str[pos] - 'x';
-                var reg = if (autoreg) @intCast(u4, narg + sp) else null;
-                if (arg >= narg) return error.InvalidSyntax;
-                try self.inst.append(.{ .tag = .load, .op1 = arg, .alloc = reg });
-                try stack.append(@intCast(u16, self.inst.items.len - 1));
-            },
-            ' ' => continue,
-            else => return error.InvalidSyntax,
-        }
-    }
-    if (stack.items.len != 1) return error.InvalidSyntax;
-    try self.inst.append(.{
-        .tag = .ret,
-        .op1 = stack.items[0],
-        .alloc = 0,
-    });
     return self;
 }
 
-inline fn ninst(self: FLIR) u16 {
+pub fn deinit(self: FLIR) void {
+    self.inst.deinit();
+}
+
+pub inline fn ninst(self: FLIR) u16 {
     return @intCast(u16, self.inst.items.len);
 }
 
-fn live(self: FLIR) void {
+pub fn live(self: FLIR) void {
     var pos: u16 = 0;
     while (pos < self.ninst()) : (pos += 1) {
         const inst = &self.inst.items[pos];
@@ -116,7 +70,7 @@ inline fn set_live(self: FLIR, used: u16, user: u16) void {
     inst.live = if (inst.live) |l| math.max(l, user) else user;
 }
 
-fn scanreg(self: FLIR) !void {
+pub fn scanreg(self: FLIR) !void {
     var active: [16]?u16 = .{null} ** 16;
     var pos: u16 = 0;
     while (pos < self.ninst()) : (pos += 1) {
@@ -137,7 +91,7 @@ fn scanreg(self: FLIR) !void {
     }
 }
 
-fn debug_print(self: FLIR) void {
+pub fn debug_print(self: FLIR) void {
     var pos: u16 = 0;
     print("\n", .{});
     while (pos < self.ninst()) : (pos += 1) {
@@ -176,7 +130,7 @@ fn debug_print(self: FLIR) void {
     }
 }
 
-fn codegen(self: FLIR, cfo: *CFO) !u32 {
+pub fn codegen(self: FLIR, cfo: *CFO) !u32 {
     const target = cfo.get_target();
 
     try cfo.enter();
@@ -222,35 +176,4 @@ fn codegen(self: FLIR, cfo: *CFO) !u32 {
     try cfo.leave();
     try cfo.ret();
     return target;
-}
-
-const test_allocator = std.testing.allocator;
-test "the rpn" {
-    var flir = try rpn(3, "a x + c a * m", false, test_allocator);
-    defer flir.deinit();
-
-    flir.live();
-    flir.debug_print();
-    try flir.scanreg();
-    flir.debug_print();
-
-    var cfo = try CFO.init(test_allocator);
-    defer cfo.deinit();
-    _ = try flir.codegen(&cfo);
-    try cfo.dbg_nasm(test_allocator);
-}
-
-pub fn main() !void {
-    const arg1 = std.os.argv[1];
-    var flir = try rpn(4, std.mem.span(arg1), true, test_allocator);
-    defer flir.deinit();
-
-    flir.live();
-    flir.scanreg();
-    flir.debug_print();
-
-    var cfo = try CFO.init(test_allocator);
-    defer cfo.deinit();
-    _ = try flir.codegen(&cfo);
-    try cfo.dbg_nasm(test_allocator);
 }
