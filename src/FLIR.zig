@@ -17,7 +17,7 @@ pub const Tag = enum(u8) {
 
 const ref = u16;
 
-const Inst = struct {
+pub const Inst = struct {
     tag: Tag,
     opspec: u8 = 0,
     op1: ref,
@@ -120,7 +120,7 @@ pub fn debug_print(self: FLIR) void {
         if (inst.tag == .vmath) {
             print(".{s}", .{@tagName(@intToEnum(VMathOp, inst.opspec))});
         } else if (inst.tag == .load) {
-            print(" [{}]", .{inst.op1});
+            print(" p{}[{}]", .{ inst.op1, inst.op2 });
         }
         if (nop > 0) {
             print(" %{}", .{inst.op1});
@@ -173,7 +173,7 @@ pub fn codegen(self: FLIR, cfo: *CFO) !u32 {
                     2 => .rdx,
                     else => unreachable,
                 };
-                const src = CFO.qi(reg, .rcx);
+                const src = CFO.a(reg).o(inst.op2);
                 try cfo.vmovurm(.sd, dst, src);
             },
         }

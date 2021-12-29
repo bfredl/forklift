@@ -25,9 +25,14 @@ pub fn expr_0(flir: *FLIR, str: []const u8, pos: *usize) !?u16 {
         },
         'x'...'z' => {
             const arg = char - 'x';
-            const ret = try flir.put(.{ .tag = .load, .op1 = arg });
+            var inst: FLIR.Inst = .{ .tag = .load, .op1 = arg };
             pos.* += 1;
-            return ret;
+            const c2 = nonws(str, pos) orelse ' ';
+            if ('0' <= c2 and c2 < '9') {
+                inst.op2 = c2 - '0';
+                pos.* += 1;
+            }
+            return try flir.put(inst);
         },
         else => return null,
     }
@@ -57,7 +62,7 @@ pub fn expr_2(flir: *FLIR, str: []const u8, pos: *usize) !?u16 {
             else => return val,
         };
         pos.* += 1;
-        const op = (try expr_1(flir, str, pos)) orelse return error.EXPR1;
+        const op = (try expr_1(flir, str, pos)) orelse return error.EXPR2;
         val = try flir.put(.{ .tag = .vmath, .opspec = theop.off(), .op1 = val, .op2 = op });
     }
     return val;
