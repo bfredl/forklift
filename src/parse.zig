@@ -6,86 +6,102 @@ const FLIR = @import("./FLIR.zig");
 const CFO = @import("./CFO.zig");
 const print = std.debug.print;
 
-pub fn nonws(str: []const u8, pos: *usize) ?u8 {
-    while (pos.* < str.len) : (pos.* += 1) {
-        if (str[pos.*] != ' ') {
-            return str[pos.*];
+const Self = @This();
+
+flir: *FLIR,
+tmp: [10]?u16 = .{null} ** 10,
+str: []const u8,
+pos: usize,
+
+pub fn nonws(self: *Self) ?u8 {
+    while (self.pos < self.str.len) : (self.pos += 1) {
+        if (self.str[self.pos] != ' ') {
+            return self.str[self.pos];
         }
     }
     return null;
 }
 
-pub fn expr_0(flir: *FLIR, str: []const u8, pos: *usize) !?u16 {
-    const char = nonws(str, pos) orelse return null;
+pub fn num(self: *Self) ?u4 {
+    const c = self.nonws() orelse return null;
+    if ('0' <= c and c < '9') {
+        self.pos += 1;
+        return @intCast(u4, c - '0');
+    }
+    return null;
+}
+
+pub fn expr_0(self: *Self) !?u16 {
+    const char = self.nonws() orelse return null;
     switch (char) {
         'a'...'d' => {
             const arg = char - 'a';
-            if (arg >= flir.narg) return error.InvalidSyntax;
-            pos.* += 1;
+            if (arg >= self.flir.narg) return error.InvalidSyntax;
+            self.pos += 1;
             return arg;
         },
         'x'...'z' => {
             const arg = char - 'x';
-            var inst: FLIR.Inst = .{ .tag = .load, .opspec = arg, .op1 = 0 };
-            pos.* += 1;
-            const c2 = nonws(str, pos) orelse ' ';
-            if ('0' <= c2 and c2 < '9') {
-                inst.op1 = c2 - '0';
-                pos.* += 1;
-            }
-            return try flir.put(inst);
+            self.pos += 1;
+            const op1 = self.num() orelse 0;
+            var inst: FLIR.Inst = .{ .tag = .load, .opspec = arg, .op1 = op1 };
+            return try self.flir.put(inst);
+        },
+        't' => {
+            const i = self.num() orelse return error.InvalidSyntax;
+            return self.tmp[i] orelse return error.InvalidSyntax;
         },
         else => return null,
     }
 }
 
-pub fn expr_1(flir: *FLIR, str: []const u8, pos: *usize) !?u16 {
-    var val = (try expr_0(flir, str, pos)) orelse return null;
-    while (nonws(str, pos)) |char| {
+pub fn expr_1(self: *Self) !?u16 {
+    var val = (try self.expr_0()) orelse return null;
+    while (self.nonws()) |char| {
         const theop: CFO.VMathOp = switch (char) {
             '*' => .mul,
             '/' => .div,
             else => return val,
         };
-        pos.* += 1;
-        const op = (try expr_0(flir, str, pos)) orelse return error.EXPR1;
-        val = try flir.put(.{ .tag = .vmath, .opspec = theop.off(), .op1 = val, .op2 = op });
+        self.pos += 1;
+        const op = (try self.expr_0()) orelse return error.EXPR1;
+        val = try self.flir.put(.{ .tag = .vmath, .opspec = theop.off(), .op1 = val, .op2 = op });
     }
     return val;
 }
 
-pub fn expr_2(flir: *FLIR, str: []const u8, pos: *usize) !?u16 {
-    var val = (try expr_1(flir, str, pos)) orelse return null;
-    while (nonws(str, pos)) |char| {
+pub fn expr_2(self: *Self) !?u16 {
+    var val = (try self.expr_1()) orelse return null;
+    while (self.nonws()) |char| {
         const theop: CFO.VMathOp = switch (char) {
             '+' => .add,
             '-' => .sub,
             else => return val,
         };
-        pos.* += 1;
-        const op = (try expr_1(flir, str, pos)) orelse return error.EXPR2;
-        val = try flir.put(.{ .tag = .vmath, .opspec = theop.off(), .op1 = val, .op2 = op });
+        self.pos += 1;
+        const op = (try self.expr_1()) orelse return error.EXPR2;
+        val = try self.flir.put(.{ .tag = .vmath, .opspec = theop.off(), .op1 = val, .op2 = op });
     }
     return val;
 }
 
-pub fn stmt(flir: *FLIR, str: []const u8, pos: *usize) !?bool {
-    const char = nonws(str, pos) orelse return null;
+pub fn stmt(self: *Self) !?bool {
+    const char = self.nonws() orelse return null;
     var inst: FLIR.Inst = dest: {
         switch (char) {
             'r' => {
-                pos.* += 1;
+                self.pos += 1;
                 break :dest .{ .tag = .ret, .op1 = undefined };
             },
             'x'...'z' => {
-                pos.* += 1;
+                self.pos += 1;
                 const arg = char - 'x';
-                const c2 = nonws(str, pos) orelse ' ';
+                const c2 = self.nonws() orelse ' ';
                 var op2: u16 = 0;
                 if ('0' <= c2 and c2 < '9') {
                     op2 = c2 - '0';
                     _ = op2;
-                    pos.* += 1;
+                    self.pos += 1;
                 }
                 break :dest .{ .tag = .store, .opspec = arg, .op1 = undefined, .op2 = op2 };
             },
@@ -93,26 +109,26 @@ pub fn stmt(flir: *FLIR, str: []const u8, pos: *usize) !?bool {
         }
     };
 
-    if (nonws(str, pos) != @as(u8, '=')) return error.SyntaxError;
-    pos.* += 1;
-    inst.op1 = (try expr_2(flir, str, pos)) orelse return error.EOFError;
-    if (nonws(str, pos) != @as(u8, ';')) return error.SyntaxError;
-    pos.* += 1;
+    if (self.nonws() != @as(u8, '=')) return error.SyntaxError;
+    self.pos += 1;
+    inst.op1 = (try self.expr_2()) orelse return error.EOFError;
+    if (self.nonws() != @as(u8, ';')) return error.SyntaxError;
+    self.pos += 1;
 
-    _ = try flir.put(inst);
+    _ = try self.flir.put(inst);
     return (inst.tag == .ret);
 }
 
 pub fn parse(flir: *FLIR, str: []const u8) !bool {
-    var pos: usize = 0;
     var didret = false;
-    while (try stmt(flir, str, &pos)) |res| {
+    var self: Self = .{ .flir = flir, .str = str, .pos = 0 };
+    while (try self.stmt()) |res| {
         if (res) {
             didret = true;
             break;
         }
     }
-    if (nonws(str, &pos) != null) return error.SyntaxError;
+    if (self.nonws() != null) return error.SyntaxError;
     return didret;
 }
 
