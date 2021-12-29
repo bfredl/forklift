@@ -49,7 +49,7 @@ pub fn expr_1(flir: *FLIR, str: []const u8, pos: *usize) !?u16 {
 }
 
 pub fn expr_2(flir: *FLIR, str: []const u8, pos: *usize) !?u16 {
-    var val = (try expr_0(flir, str, pos)) orelse return null;
+    var val = (try expr_1(flir, str, pos)) orelse return null;
     while (nonws(str, pos)) |char| {
         const theop: CFO.VMathOp = switch (char) {
             '+' => .add,
