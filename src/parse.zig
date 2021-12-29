@@ -88,33 +88,30 @@ pub fn expr_2(self: *Self) !?u16 {
 
 pub fn stmt(self: *Self) !?bool {
     const char = self.nonws() orelse return null;
-    var inst: FLIR.Inst = dest: {
+    self.pos += 1;
+    const extra: u4 =
         switch (char) {
-            'r' => {
-                self.pos += 1;
-                break :dest .{ .tag = .ret, .op1 = undefined };
-            },
-            'x'...'z' => {
-                self.pos += 1;
-                const arg = char - 'x';
-                const c2 = self.nonws() orelse ' ';
-                var op2: u16 = 0;
-                if ('0' <= c2 and c2 < '9') {
-                    op2 = c2 - '0';
-                    _ = op2;
-                    self.pos += 1;
-                }
-                break :dest .{ .tag = .store, .opspec = arg, .op1 = undefined, .op2 = op2 };
-            },
-            else => return error.SyntaxError,
-        }
+        'r' => undefined,
+        'x'...'z' => self.num() orelse 0,
+        't' => self.num() orelse return error.SyntaxError,
+        else => return error.SyntaxError,
     };
 
     if (self.nonws() != @as(u8, '=')) return error.SyntaxError;
     self.pos += 1;
-    inst.op1 = (try self.expr_2()) orelse return error.EOFError;
+    const res = (try self.expr_2()) orelse return error.EOFError;
     if (self.nonws() != @as(u8, ';')) return error.SyntaxError;
     self.pos += 1;
+
+    const inst: FLIR.Inst = switch (char) {
+        'r' => .{ .tag = .ret, .op1 = res },
+        'x'...'z' => .{ .tag = .store, .opspec = char - 'x', .op1 = res, .op2 = extra },
+        't' => {
+            self.tmp[extra] = res;
+            return false;
+        },
+        else => return error.SyntaxError,
+    };
 
     _ = try self.flir.put(inst);
     return (inst.tag == .ret);
