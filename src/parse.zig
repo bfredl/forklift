@@ -158,6 +158,9 @@ pub fn main() !void {
 
     var cfo = try CFO.init(test_allocator);
     defer cfo.deinit();
+    try cfo.enter();
     _ = try flir.codegen(&cfo);
+    try cfo.leave();
+    try cfo.ret();
     try cfo.dbg_nasm(test_allocator);
 }

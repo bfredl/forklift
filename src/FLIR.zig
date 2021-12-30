@@ -159,9 +159,6 @@ pub fn debug_print(self: FLIR) void {
 pub fn codegen(self: FLIR, cfo: *CFO) !u32 {
     const target = cfo.get_target();
 
-    try cfo.enter();
-    var didret = false;
-
     var pos: usize = 0;
     while (pos < self.inst.items.len) : (pos += 1) {
         const inst = &self.inst.items[pos];
@@ -181,7 +178,6 @@ pub fn codegen(self: FLIR, cfo: *CFO) !u32 {
                 if (src != 0) {
                     try cfo.vmovf(.sd, 0, src);
                 }
-                didret = true;
                 break;
             },
             .load => {
@@ -211,9 +207,5 @@ pub fn codegen(self: FLIR, cfo: *CFO) !u32 {
         }
     }
 
-    if (!didret) return error.Unreachable;
-
-    try cfo.leave();
-    try cfo.ret();
     return target;
 }
