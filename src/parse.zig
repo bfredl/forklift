@@ -31,6 +31,15 @@ pub fn num(self: *Self) ?u4 {
     return null;
 }
 
+pub fn idx(self: *Self) u8 {
+    const c = self.nonws() orelse return 0;
+    if (c == 'i') {
+        self.pos += 1;
+        return 0x10;
+    }
+    return 0;
+}
+
 pub fn expr_0(self: *Self) !?u16 {
     const char = self.nonws() orelse return null;
     switch (char) {
@@ -41,8 +50,9 @@ pub fn expr_0(self: *Self) !?u16 {
             return arg;
         },
         'x'...'z' => {
-            const arg = char - 'x';
+            var arg = char - 'x';
             self.pos += 1;
+            arg += self.idx();
             const op1 = self.num() orelse 0;
             var inst: FLIR.Inst = .{ .tag = .load, .opspec = arg, .op1 = op1 };
             return try self.flir.put(inst);
@@ -88,11 +98,15 @@ pub fn expr_2(self: *Self) !?u16 {
 
 pub fn stmt(self: *Self) !?bool {
     const char = self.nonws() orelse return null;
+    var i: u8 = 0;
     self.pos += 1;
-    const extra: u4 =
+    const extra: u8 =
         switch (char) {
         'r' => undefined,
-        'x'...'z' => self.num() orelse 0,
+        'x'...'z' => y: {
+            i = self.idx();
+            break :y self.num() orelse 0;
+        },
         't' => self.num() orelse return error.SyntaxError,
         else => return error.SyntaxError,
     };
@@ -105,7 +119,7 @@ pub fn stmt(self: *Self) !?bool {
 
     const inst: FLIR.Inst = switch (char) {
         'r' => .{ .tag = .ret, .op1 = res },
-        'x'...'z' => .{ .tag = .store, .opspec = char - 'x', .op1 = res, .op2 = extra },
+        'x'...'z' => .{ .tag = .store, .opspec = i + char - 'x', .op1 = res, .op2 = extra },
         't' => {
             self.tmp[extra] = res;
             return false;
@@ -137,7 +151,8 @@ pub fn main() !void {
 
     const ret = try parse(&flir, std.mem.span(arg1));
     if (!ret) print("gör du ens\n", .{});
-    flir.live();
+    const anyindex = true;
+    flir.live(anyindex);
     try flir.scanreg();
     flir.debug_print();
 

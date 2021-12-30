@@ -60,7 +60,7 @@ test "the rpn" {
     var flir = try rpn(3, "a x + c a * m", false, test_allocator);
     defer flir.deinit();
 
-    flir.live();
+    flir.live(false);
     flir.debug_print();
     try flir.scanreg();
     flir.debug_print();
@@ -76,7 +76,7 @@ pub fn main() !void {
     var flir = try rpn(4, std.mem.span(arg1), false, test_allocator);
     defer flir.deinit();
 
-    flir.live();
+    flir.live(false);
     try flir.scanreg();
     flir.debug_print();
 

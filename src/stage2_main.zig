@@ -7,7 +7,7 @@ pub fn main2() !void {
     // const allocator = page_allocator;
     // var cfo = CFO.init(allocator) catch unreachable;
     //
-    const size = 1024 * 8;
+    const size = 1024 * 16;
     var arr1 = try std.heap.page_allocator.alloc(f64, size);
     var arr2 = try std.heap.page_allocator.alloc(f64, size);
 

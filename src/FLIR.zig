@@ -52,10 +52,11 @@ pub fn put(self: *FLIR, inst: Inst) !u16 {
     return @intCast(u16, self.inst.items.len - 1);
 }
 
-pub fn live(self: FLIR) void {
+pub fn live(self: FLIR, arglive: bool) void {
     var pos: u16 = 0;
     while (pos < self.ninst()) : (pos += 1) {
         const inst = &self.inst.items[pos];
+        inst.live = null;
         const nop: u2 = switch (inst.tag) {
             .arg => 0,
             .vmath => 2,
@@ -67,6 +68,16 @@ pub fn live(self: FLIR) void {
             self.set_live(inst.op1, pos);
             if (nop > 1) {
                 self.set_live(inst.op2, pos);
+            }
+        }
+    }
+    // TODO: lol what is loop analysis
+    if (arglive) {
+        pos = 0;
+        while (pos < self.narg) : (pos += 1) {
+            const inst = &self.inst.items[pos];
+            if (inst.live != null) {
+                inst.live = self.ninst();
             }
         }
     }
@@ -123,9 +134,11 @@ pub fn debug_print(self: FLIR) void {
         if (inst.tag == .vmath) {
             print(".{s}", .{@tagName(@intToEnum(VMathOp, inst.opspec))});
         } else if (inst.tag == .load) {
-            print(" p{}[{}]", .{ inst.opspec, inst.op1 });
+            const i: []const u8 = if (inst.opspec > 0xF) "i+" else "";
+            print(" p{}[{s}{}]", .{ inst.opspec & 0xF, i, inst.op1 });
         } else if (inst.tag == .store) {
-            print(" p{}[{}] <-", .{ inst.opspec, inst.op2 });
+            const i: []const u8 = if (inst.opspec > 0xF) "i+" else "";
+            print(" p{}[{s}{}] <-", .{ inst.opspec & 0xF, i, inst.op2 });
         }
         if (nop > 0) {
             print(" %{}", .{inst.op1});
@@ -173,24 +186,26 @@ pub fn codegen(self: FLIR, cfo: *CFO) !u32 {
             },
             .load => {
                 const dst = inst.alloc.?;
-                const reg: CFO.IPReg = switch (inst.opspec) {
+                const reg: CFO.IPReg = switch (inst.opspec & 0xF) {
                     0 => .rdi,
                     1 => .rsi,
                     2 => .rdx,
                     else => unreachable,
                 };
-                const src = CFO.a(reg).o(inst.op1);
+                const base = if (inst.opspec > 0xF) CFO.qi(reg, .rcx) else CFO.a(reg);
+                const src = base.o(inst.op1);
                 try cfo.vmovurm(.sd, dst, src);
             },
             .store => {
                 const src = self.inst.items[inst.op1].alloc.?;
-                const reg: CFO.IPReg = switch (inst.opspec) {
+                const reg: CFO.IPReg = switch (inst.opspec & 0xF) {
                     0 => .rdi,
                     1 => .rsi,
                     2 => .rdx,
                     else => unreachable,
                 };
-                const dst = CFO.a(reg).o(inst.op2);
+                const base = if (inst.opspec > 0xF) CFO.qi(reg, .rcx) else CFO.a(reg);
+                const dst = base.o(inst.op2);
                 try cfo.vmovumr(.sd, dst, src);
             },
         }
