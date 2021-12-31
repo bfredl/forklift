@@ -2,6 +2,8 @@ const std = @import("std");
 const print = std.debug.print;
 const CFO = @import("./CFO.zig");
 const OSHA = @import("./OSHA.zig");
+const parse = @import("./parse.zig");
+const FLIR = @import("./FLIR.zig");
 
 const page_allocator = std.heap.page_allocator;
 
@@ -41,7 +43,9 @@ pub fn main() !void {
     const loop = cfo.get_target();
     // try cfo.vmovurm(.sd, v0, CFO.a(idx));
     try cfo.vmovurm(.sd, v0, CFO.qi(arg1, idx));
-    try cfo.vmathfrm(.add, .sd, v0, v0, CFO.qi(arg2, idx));
+    //try cfo.vmathfrm(.add, .sd, v0, v0, CFO.qi(arg2, idx));
+    try cfo.vmovurm(.sd, v1, CFO.qi(arg2, idx));
+    try cfo.vmathf(.add, .sd, v0, v0, v1);
     try cfo.vmovumr(.sd, CFO.qi(arg1, idx), v0);
     try cfo.aritri(.add, idx, 1);
     try cfo.arit(.cmp, idx, arg3);
@@ -49,6 +53,28 @@ pub fn main() !void {
     // try cfo.trap();
     try cfo.leave();
     try cfo.ret();
+
+    const start_parse = cfo.get_target();
+    var flir = try FLIR.init(0, allocator);
+    defer flir.deinit();
+
+    _ = try parse.parse(&flir, "xi = xi + yi;");
+    flir.live(true);
+    try flir.scanreg();
+    flir.debug_print();
+
+    try cfo.enter();
+    try cfo.arit(.xor, idx, idx);
+    const loopi = cfo.get_target();
+    _ = try flir.codegen(&cfo);
+    try cfo.aritri(.add, idx, 1);
+    try cfo.arit(.cmp, idx, arg3);
+    try cfo.jbck(.l, loopi);
+
+    try cfo.leave();
+    try cfo.ret();
+
+    try cfo.dbg_nasm(allocator);
 
     const start_simd = cfo.get_target();
     try cfo.enter();
@@ -91,19 +117,22 @@ pub fn main() !void {
     defer OSHA.clear();
 
     const scalar_add = cfo.get_ptr(start, fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
+    const parse_add = cfo.get_ptr(start_parse, fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
     const simd_add = cfo.get_ptr(start_simd, fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
     const simd2_add = cfo.get_ptr(start_simd2, fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
 
     var timer = try std.time.Timer.start();
     i = 0;
     while (i < 10) : (i += 1) {
+        parse_add(arr1.ptr, arr2.ptr, size);
+        const tid1p = timer.lap();
         scalar_add(arr1.ptr, arr2.ptr, size);
         const tid1 = timer.lap();
         simd_add(arr1.ptr, arr2.ptr, size);
         const tid2 = timer.lap();
         simd2_add(arr1.ptr, arr2.ptr, size);
         const tid3 = timer.lap();
-        print("tidning: {}, {}, {}\n", .{ tid1, tid2, tid3 });
+        print("tidning: {}, {}, {}, {}\n", .{ tid1, tid1p, tid2, tid3 });
         _ = timer.lap();
     }
 
