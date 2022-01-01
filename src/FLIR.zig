@@ -12,6 +12,7 @@ pub const Tag = enum(u8) {
     arg,
     load,
     store,
+    constant,
     vmath,
     ret,
 };
@@ -29,9 +30,14 @@ pub const Inst = struct {
 
 narg: u16,
 inst: ArrayList(Inst),
+constants: ArrayList(f64),
 
 pub fn init(narg: u4, allocator: Allocator) !FLIR {
-    var self: FLIR = .{ .narg = narg, .inst = try ArrayList(Inst).initCapacity(allocator, 16) };
+    var self: FLIR = .{
+        .narg = narg,
+        .inst = try ArrayList(Inst).initCapacity(allocator, 16),
+        .constants = try ArrayList(f64).initCapacity(allocator, 16),
+    };
     var iarg: u4 = 0;
     while (iarg < narg) : (iarg += 1) {
         try self.inst.append(.{ .tag = .arg, .op1 = iarg, .alloc = iarg });

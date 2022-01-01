@@ -262,6 +262,15 @@ fn wd(self: *Self, dword: i32) !void {
     }
 }
 
+fn wq(self: *Self, qword: u64) !void {
+    if (s2) {
+        std.mem.writeIntLittle(u64, self.code[self.s2_pos..][0..8], qword);
+        self.s2_pos += 4;
+    } else {
+        std.mem.writeIntLittle(u64, try self.code.addManyAsArray(8), qword);
+    }
+}
+
 // encodings
 pub fn rex_wrxb(self: *Self, w: bool, r: bool, x: bool, b: bool) !void {
     var value: u8 = 0x40;
@@ -285,13 +294,13 @@ pub fn sib(self: *Self, scale: u2, index: u3, base: u3) !void {
 }
 
 pub const EAddr = struct {
-    base: IPReg, // TODO: optional for RIP+off[+index] ??
+    base: ?IPReg, // null for rip[offset]
     index: ?IPReg = null,
     scale: u2 = 0,
     offset: i32 = 0,
 
     pub inline fn b(self: @This()) bool {
-        return self.base.ext();
+        return if (self.base) |base| base.ext() else false;
     }
     pub inline fn x(self: @This()) bool {
         return if (self.index) |index| index.ext() else false;
@@ -310,6 +319,10 @@ pub fn a(reg: IPReg) EAddr {
 
 pub fn bo(reg: IPReg, offset: i32) EAddr {
     return .{ .base = reg, .offset = offset };
+}
+
+pub fn rel(offset: u32) EAddr {
+    return .{ .base = null, .offset = @bitCast(i32, offset) };
 }
 
 // index quadword array
@@ -333,14 +346,18 @@ pub fn maybe_imm8(imm: i32) ?i8 {
 // with extended indices!
 pub fn modRmEA(self: *Self, reg_or_opx: u3, ea: EAddr) !void {
     const offset8 = maybe_imm8(ea.offset);
-    const mod: u2 = if (ea.offset == 0 and ea.base != .rbp)
+    const mod: u2 = if (ea.base == null or (ea.offset == 0 and ea.base.? != .rbp))
         @as(u2, 0b00)
     else if (offset8 != null)
         @as(u2, 0b01)
     else
         @as(u2, 0b10);
 
-    const rm = ea.base.lowId();
+    // we allow base == null, index = null to encode RIP+off32, but not
+    // yet index without base ( i e scale*index+off )
+    if (ea.base == null and ea.index != null) return error.NotImplemented;
+
+    const rm = if (ea.base) |base| base.lowId() else 0x05;
     try self.modRm(mod, reg_or_opx, if (ea.index) |_| 0x04 else rm);
     if (ea.index == null and rm == 0x04) {
         // no index, but RSP/R12 as base
@@ -352,7 +369,10 @@ pub fn modRmEA(self: *Self, reg_or_opx: u3, ea: EAddr) !void {
         }
         try self.sib(ea.scale, index.lowId(), rm);
     }
-    if (mod != 0b00) {
+    if (ea.base == null) {
+        // rip+off32
+        try self.wd(ea.offset - (@bitCast(i32, self.get_target()) + 4));
+    } else if (mod != 0b00) {
         // TODO: stage2
         // try if (offset8) |off| self.wbi(off) else self.wd(ea.offset);
         if (offset8) |off| (try self.wbi(off)) else (try self.wd(ea.offset));
@@ -781,6 +801,25 @@ test "read/write first arg as 64-bit pointer with offsett" {
     try expectEqual(@as(usize, 33), retval);
     try expectEqual(@as(usize, 33), someint[0]);
     try expectEqual(@as(usize, 79), someint[1]);
+}
+
+test "RIP-relative read" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+    try cfo.wq(0x9090909090909090);
+    const theconst = cfo.get_target();
+    try cfo.wq(0x1122334455667788);
+    // not needed, but put nasm back in style
+    // try cfo.wb(0x00);
+    const entry = cfo.get_target();
+    try cfo.enter();
+    try cfo.movrm(.rax, rel(theconst));
+    try cfo.leave();
+    try cfo.ret();
+
+    try cfo.finalize();
+    const fun = cfo.get_ptr(entry, fn () callconv(.C) u64);
+    try expectEqual(@as(u64, 0x1122334455667788), fun());
 }
 
 test "return intermediate value" {
