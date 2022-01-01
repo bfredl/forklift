@@ -62,6 +62,12 @@ pub fn expr_0(self: *Self) !?u16 {
             const i = self.num() orelse return error.InvalidSyntax;
             return self.tmp[i] orelse return error.UndefTemporary;
         },
+        'k' => {
+            self.pos += 1;
+            const i = self.num() orelse return error.InvalidSyntax;
+            var inst: FLIR.Inst = .{ .tag = .constant, .op1 = i };
+            return try self.flir.put(inst);
+        },
         else => return null,
     }
 }
@@ -149,6 +155,9 @@ pub fn main() !void {
     var flir = try FLIR.init(4, test_allocator);
     defer flir.deinit();
 
+    _ = try flir.add_constant(std.math.pi);
+    _ = try flir.add_constant(std.math.e);
+
     const ret = try parse(&flir, std.mem.span(arg1));
     if (!ret) print("gör du ens\n", .{});
     const anyindex = true;
@@ -159,8 +168,11 @@ pub fn main() !void {
     var cfo = try CFO.init(test_allocator);
     defer cfo.deinit();
     try cfo.enter();
+    var pos = try cfo.lealink(.rax);
     _ = try flir.codegen(&cfo);
     try cfo.leave();
     try cfo.ret();
+    var target = try flir.emit_constants(&cfo);
+    cfo.set_lea(pos, target);
     try cfo.dbg_nasm(test_allocator);
 }

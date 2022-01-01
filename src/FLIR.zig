@@ -69,6 +69,7 @@ pub fn live(self: FLIR, arglive: bool) void {
             .ret => 1,
             .load => 0, // of course this will be more when we track GPRs..
             .store => 1, // of course this will be more when we track GPRs..
+            .constant => 0,
         };
         if (nop > 0) {
             self.set_live(inst.op1, pos);
@@ -135,6 +136,7 @@ pub fn debug_print(self: FLIR) void {
             .vmath => 2,
             .ret => 1,
             .load => 0,
+            .constant => 0,
             .store => 1,
         };
         if (inst.tag == .vmath) {
@@ -145,6 +147,8 @@ pub fn debug_print(self: FLIR) void {
         } else if (inst.tag == .store) {
             const i: []const u8 = if (inst.opspec > 0xF) "i+" else "";
             print(" p{}[{s}{}] <-", .{ inst.opspec & 0xF, i, inst.op2 });
+        } else if (inst.tag == .constant) {
+            print(" c[{}]", .{inst.op1});
         }
         if (nop > 0) {
             print(" %{}", .{inst.op1});
@@ -198,6 +202,10 @@ pub fn codegen(self: FLIR, cfo: *CFO) !u32 {
                 const src = base.o(inst.op1);
                 try cfo.vmovurm(.sd, dst, src);
             },
+            .constant => {
+                const dst = inst.alloc.?;
+                try cfo.vmovurm(.sd, dst, CFO.a(.rax).o(8 * inst.op1));
+            },
             .store => {
                 const src = self.inst.items[inst.op1].alloc.?;
                 const reg: CFO.IPReg = switch (inst.opspec & 0xF) {
@@ -213,5 +221,20 @@ pub fn codegen(self: FLIR, cfo: *CFO) !u32 {
         }
     }
 
+    return target;
+}
+
+pub fn add_constant(self: *FLIR, k: f64) !u16 {
+    try self.constants.append(k);
+    return @intCast(u16, self.constants.items.len - 1);
+}
+
+// TRICKY: we might want to share a single constant block across multiple kernels
+pub fn emit_constants(self: *FLIR, cfo: *CFO) !u32 {
+    try cfo.set_align(8);
+    const target = cfo.get_target();
+    for (self.constants.items) |c| {
+        try cfo.wq(@bitCast(u64, c));
+    }
     return target;
 }

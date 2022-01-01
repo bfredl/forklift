@@ -249,11 +249,11 @@ pub fn wb(self: *Self, opcode: u8) !void {
     }
 }
 
-fn wbi(self: *Self, imm: i8) !void {
+pub fn wbi(self: *Self, imm: i8) !void {
     try self.wb(@bitCast(u8, imm));
 }
 
-fn wd(self: *Self, dword: i32) !void {
+pub fn wd(self: *Self, dword: i32) !void {
     if (s2) {
         std.mem.writeIntLittle(i32, self.code[self.s2_pos..][0..4], dword);
         self.s2_pos += 4;
@@ -262,7 +262,7 @@ fn wd(self: *Self, dword: i32) !void {
     }
 }
 
-fn wq(self: *Self, qword: u64) !void {
+pub fn wq(self: *Self, qword: u64) !void {
     if (s2) {
         std.mem.writeIntLittle(u64, self.code[self.s2_pos..][0..8], qword);
         self.s2_pos += 4;
@@ -271,7 +271,7 @@ fn wq(self: *Self, qword: u64) !void {
     }
 }
 
-fn set_align(self: *Self, alignment: u32) !void {
+pub fn set_align(self: *Self, alignment: u32) !void {
     var residue = self.get_target() & (alignment - 1);
     var padding = alignment - residue;
     if (padding != 0 and padding != alignment) {
@@ -452,7 +452,11 @@ pub fn set_target(self: *Self, pos: u32) !void {
 }
 
 pub fn set_lea_target(self: *Self, pos: u32) void {
-    var off = self.get_target() - (pos + 4);
+    self.set_lea(pos, self.get_target());
+}
+
+pub fn set_lea(self: *Self, pos: u32, target: u32) void {
+    var off = target - (pos + 4);
     self.code.items[pos] = @intCast(u8, off);
     std.mem.writeIntLittle(u32, self.code.items[pos..][0..4], off);
 }
