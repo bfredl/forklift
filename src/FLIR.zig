@@ -15,6 +15,8 @@ pub const Tag = enum(u8) {
     constant,
     vmath,
     ret,
+    loop_start,
+    loop_end,
 };
 
 const ref = u16;
@@ -22,10 +24,11 @@ const ref = u16;
 pub const Inst = struct {
     tag: Tag,
     opspec: u8 = 0,
-    op1: ref,
+    op1: ref = 0,
     op2: ref = 0,
     alloc: ?u4 = null,
     live: ?u16 = null,
+    tmp: u16 = 0,
 };
 
 narg: u16,
@@ -70,6 +73,8 @@ pub fn live(self: FLIR, arglive: bool) void {
             .load => 0, // of course this will be more when we track GPRs..
             .store => 1, // of course this will be more when we track GPRs..
             .constant => 0,
+            .loop_start => 0,
+            .loop_end => 0,
         };
         if (nop > 0) {
             self.set_live(inst.op1, pos);
@@ -138,6 +143,8 @@ pub fn debug_print(self: FLIR) void {
             .load => 0,
             .constant => 0,
             .store => 1,
+            .loop_start => 0,
+            .loop_end => 0,
         };
         if (inst.tag == .vmath) {
             print(".{s}", .{@tagName(@intToEnum(VMathOp, inst.opspec))});
@@ -168,11 +175,25 @@ pub fn debug_print(self: FLIR) void {
 
 pub fn codegen(self: FLIR, cfo: *CFO) !u32 {
     const target = cfo.get_target();
+    const idx = .rcx;
 
     var pos: usize = 0;
+    var loop_pos: ?u32 = null;
+    const stride = 1; // TODO: what is SIMD? :P
+
     while (pos < self.inst.items.len) : (pos += 1) {
         const inst = &self.inst.items[pos];
         switch (inst.tag) {
+            .loop_start => {
+                try cfo.mov(.r10, .rcx);
+                try cfo.arit(.xor, idx, idx);
+                loop_pos = cfo.get_target();
+            },
+            .loop_end => {
+                try cfo.aritri(.add, idx, stride);
+                try cfo.arit(.cmp, idx, .r10);
+                try cfo.jbck(.l, loop_pos orelse return error.UW0TM8);
+            },
             .arg => {
                 if (inst.op1 != @as(u16, inst.alloc.?)) return error.InvalidArgRegister;
             },
@@ -198,7 +219,7 @@ pub fn codegen(self: FLIR, cfo: *CFO) !u32 {
                     2 => .rdx,
                     else => unreachable,
                 };
-                const base = if (inst.opspec > 0xF) CFO.qi(reg, .rcx) else CFO.a(reg);
+                const base = if (inst.opspec > 0xF) CFO.qi(reg, idx) else CFO.a(reg);
                 const src = base.o(inst.op1);
                 try cfo.vmovurm(.sd, dst, src);
             },
