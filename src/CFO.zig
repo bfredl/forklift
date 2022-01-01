@@ -271,6 +271,14 @@ fn wq(self: *Self, qword: u64) !void {
     }
 }
 
+fn set_align(self: *Self, alignment: u32) !void {
+    var residue = self.get_target() & (alignment - 1);
+    var padding = alignment - residue;
+    if (padding != 0 and padding != alignment) {
+        try self.code.appendNTimes(0x90, padding);
+    }
+}
+
 // encodings
 pub fn rex_wrxb(self: *Self, w: bool, r: bool, x: bool, b: bool) !void {
     var value: u8 = 0x40;
@@ -436,11 +444,17 @@ pub fn jfwd(self: *Self, cond: Cond) !u32 {
 }
 
 pub fn set_target(self: *Self, pos: u32) !void {
-    var off = @intCast(u32, self.code.items.len) - (pos + 1);
+    var off = self.get_target() - (pos + 1);
     if (off > 0x7f) {
         return error.InvalidNearJump;
     }
     self.code.items[pos] = @intCast(u8, off);
+}
+
+pub fn set_lea_target(self: *Self, pos: u32) void {
+    var off = self.get_target() - (pos + 4);
+    self.code.items[pos] = @intCast(u8, off);
+    std.mem.writeIntLittle(u32, self.code.items[pos..][0..4], off);
 }
 
 pub fn get_target(self: *Self) u32 {
@@ -520,6 +534,19 @@ pub fn movmr(self: *Self, dst: EAddr, src: IPReg) !void {
 
 pub fn lea(self: *Self, dst: IPReg, src: EAddr) !void {
     try self.op_rm(0x8d, dst, src); // LEA reg, \rm
+}
+
+// load adress of a latter target into a register
+// this is useful i e to keep a pointer to section
+// of constants in an ordinary register
+pub fn lealink(self: *Self, dst: IPReg) !u32 {
+    try self.new_inst(@returnAddress());
+    try self.rex_wrxb(true, dst.ext(), false, false);
+    try self.wb(0x8d);
+    try self.modRm(0x00, dst.lowId(), 0x05);
+    const pos = self.get_target();
+    try self.wd(0); // placeholder
+    return pos;
 }
 
 pub fn movri(self: *Self, dst: IPReg, src: i32) !void {
@@ -820,6 +847,35 @@ test "RIP-relative read" {
     try cfo.finalize();
     const fun = cfo.get_ptr(entry, fn () callconv(.C) u64);
     try expectEqual(@as(u64, 0x1122334455667788), fun());
+}
+
+test "lealink" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+
+    //const OSHA = @import("./OSHA.zig");
+    //OSHA.install(&cfo);
+    //defer OSHA.clear();
+
+    const entry = cfo.get_target();
+    try cfo.enter();
+    const link = try cfo.lealink(.rdx);
+    try cfo.movrm(.rax, a(.rdx));
+    try cfo.movrm(.rcx, a(.rdx).o(8));
+    try cfo.movmr(a(.rdi), .rcx);
+    try cfo.leave();
+    try cfo.ret();
+
+    try cfo.set_align(8);
+    cfo.set_lea_target(link);
+    try cfo.wq(0x8822883344114422);
+    try cfo.wq(0x0104050610405060);
+
+    try cfo.finalize();
+    const fun = cfo.get_ptr(entry, fn (*u64) callconv(.C) u64);
+    var somemem: u64 = undefined;
+    try expectEqual(@as(u64, 0x8822883344114422), fun(&somemem));
+    try expectEqual(@as(u64, 0x0104050610405060), somemem);
 }
 
 test "return intermediate value" {
