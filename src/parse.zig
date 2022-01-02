@@ -158,12 +158,22 @@ pub fn main() !void {
     _ = try flir.add_constant(std.math.pi);
     _ = try flir.add_constant(std.math.e);
 
+    try flir.loop_start();
     const ret = try parse(&flir, std.mem.span(arg1));
+    try flir.loop_end();
     if (!ret) print("gör du ens\n", .{});
+
     const anyindex = true;
     flir.live(anyindex);
-    try flir.scanreg();
-    flir.debug_print();
+    var pressure = try flir.scanreg(false);
+    print("pressure {} of 16\n", .{pressure});
+
+    try flir.hoist_loopy(pressure);
+
+    flir.live(anyindex);
+    pressure = try flir.scanreg(true);
+    print("NEW pressure {} of 16\n", .{pressure});
+    flir.debug_print(false);
 
     var cfo = try CFO.init(test_allocator);
     defer cfo.deinit();
@@ -174,5 +184,5 @@ pub fn main() !void {
     try cfo.ret();
     var target = try flir.emit_constants(&cfo);
     cfo.set_lea(pos, target);
-    try cfo.dbg_nasm(test_allocator);
+    // try cfo.dbg_nasm(test_allocator);
 }

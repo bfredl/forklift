@@ -34,6 +34,8 @@ pub const Inst = struct {
 narg: u16,
 inst: ArrayList(Inst),
 constants: ArrayList(f64),
+pos_loop_start: u16 = 0,
+pos_loop_end: u16 = 0,
 
 pub fn init(narg: u4, allocator: Allocator) !FLIR {
     var self: FLIR = .{
@@ -61,7 +63,15 @@ pub fn put(self: *FLIR, inst: Inst) !u16 {
     return @intCast(u16, self.inst.items.len - 1);
 }
 
-pub fn live(self: FLIR, arglive: bool) void {
+pub fn loop_start(self: *FLIR) !void {
+    _ = try self.put(.{ .tag = .loop_start });
+}
+
+pub fn loop_end(self: *FLIR) !void {
+    _ = try self.put(.{ .tag = .loop_end });
+}
+
+pub fn live(self: *FLIR, arglive: bool) void {
     var pos: u16 = 0;
     while (pos < self.ninst()) : (pos += 1) {
         const inst = &self.inst.items[pos];
@@ -82,15 +92,24 @@ pub fn live(self: FLIR, arglive: bool) void {
                 self.set_live(inst.op2, pos);
             }
         }
+        switch (inst.tag) {
+            .loop_start => {
+                self.pos_loop_start = pos;
+            },
+            .loop_end => {
+                self.pos_loop_end = pos;
+            },
+            else => {},
+        }
     }
     // TODO: lol what is loop analysis
     if (arglive) {
         pos = 0;
-        while (pos < self.narg) : (pos += 1) {
+        while (pos < self.pos_loop_start) : (pos += 1) {
             const inst = &self.inst.items[pos];
-            if (inst.live != null) {
-                inst.live = self.ninst();
-            }
+            if (inst.live) |l| if (l > self.pos_loop_start and l < self.pos_loop_end) {
+                inst.live = self.pos_loop_end;
+            };
         }
     }
 }
@@ -100,9 +119,10 @@ inline fn set_live(self: FLIR, used: u16, user: u16) void {
     inst.live = if (inst.live) |l| math.max(l, user) else user;
 }
 
-pub fn scanreg(self: FLIR) !void {
+pub fn scanreg(self: FLIR, doit: bool) !u5 {
     var active: [16]?u16 = .{null} ** 16;
     var pos: u16 = 0;
+    var maxpressure: u5 = 0;
     while (pos < self.ninst()) : (pos += 1) {
         const inst = &self.inst.items[pos];
         if (inst.live) |end| {
@@ -115,16 +135,69 @@ pub fn scanreg(self: FLIR) !void {
                     return error.TooManyLiveRanges;
                 }
             };
-            inst.alloc = reg;
+            if (doit) inst.alloc = reg;
             active[reg] = end;
+            var pressure: u5 = 0;
+            for (active) |v| {
+                if (!(v == null or v.? <= pos)) {
+                    pressure += 1;
+                }
+            }
+            maxpressure = math.max(maxpressure, pressure);
         } else if (inst.tag == .ret) {
             // not used but it looks good\tm
-            inst.alloc = 0;
+            if (doit) inst.alloc = 0;
         }
     }
+    return maxpressure;
 }
 
-pub fn debug_print(self: FLIR) void {
+// must have run self.live() !
+// pressure can be calculated by self.scanreg(false)
+pub fn hoist_loopy(self: FLIR, pressure: u5) !void {
+    var available: u5 = 16 - pressure;
+    if (available == 0) return;
+    var pos: u16 = 0;
+    var newpos: u16 = 0;
+    while (pos < self.pos_loop_start) : (pos += 1) {
+        const inst = &self.inst.items[pos];
+        inst.tmp = newpos;
+        newpos += 1;
+    }
+    if (self.inst.items[pos].tag != .loop_start) return error.FEEL;
+    pos += 1;
+    while (pos < self.pos_loop_end) : (pos += 1) {
+        const inst = &self.inst.items[pos];
+        if (inst.tag == .constant) {
+            inst.tmp = newpos;
+            newpos += 1;
+            available -= 1;
+            if (available == 0) {
+                break;
+            }
+        }
+    }
+    self.inst.items[self.pos_loop_start].tmp = newpos;
+    newpos += 1;
+    pos = self.pos_loop_start + 1;
+    while (pos < self.pos_loop_end) : (pos += 1) {
+        const inst = &self.inst.items[pos];
+        if (inst.tmp == 0) {
+            inst.tmp = newpos;
+            newpos += 1;
+        }
+    }
+
+    if (pos != newpos) return error.youDunGoofed;
+    while (pos < self.ninst()) : (pos += 1) {
+        const inst = &self.inst.items[pos];
+        inst.tmp = pos;
+    }
+
+    self.debug_print(true);
+}
+
+pub fn debug_print(self: FLIR, tmp: bool) void {
     var pos: u16 = 0;
     print("\n", .{});
     while (pos < self.ninst()) : (pos += 1) {
@@ -133,6 +206,9 @@ pub fn debug_print(self: FLIR) void {
             print(" xmm{} ", .{reg});
         } else {
             print(" ---- ", .{});
+        }
+        if (tmp) {
+            print("{:3}  ", .{inst.tmp});
         }
         const marker: u8 = if (inst.live) |_| ' ' else '!';
         print("%{}{c}= {s}", .{ pos, marker, @tagName(inst.tag) });

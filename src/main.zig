@@ -58,12 +58,12 @@ pub fn main() !void {
     var flir = try FLIR.init(0, allocator);
     defer flir.deinit();
 
-    _ = try flir.put(.{ .tag = .loop_start });
+    try flir.loop_start();
     _ = try parse.parse(&flir, "xi = xi + yi;");
-    _ = try flir.put(.{ .tag = .loop_end });
+    try flir.loop_end();
     flir.live(true);
-    try flir.scanreg();
-    flir.debug_print();
+    _ = try flir.scanreg(true);
+    flir.debug_print(false);
 
     try cfo.enter();
     _ = try flir.codegen(&cfo);
