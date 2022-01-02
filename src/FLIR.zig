@@ -5,6 +5,7 @@ const Allocator = std.mem.Allocator;
 const FLIR = @This();
 const print = std.debug.print;
 const CFO = @import("./CFO.zig");
+const swap = std.mem.swap;
 
 const VMathOp = CFO.VMathOp;
 
@@ -195,6 +196,41 @@ pub fn hoist_loopy(self: FLIR, pressure: u5) !void {
     }
 
     self.debug_print(true);
+
+    pos = 0;
+    while (pos < self.ninst()) : (pos += 1) {
+        const inst = &self.inst.items[pos];
+        const nop = n_op(inst.tag);
+        if (nop > 0) {
+            inst.op1 = self.inst.items[inst.op1].tmp;
+            if (nop > 1) {
+                inst.op2 = self.inst.items[inst.op2].tmp;
+            }
+        }
+    }
+
+    pos = 0;
+    while (pos < self.ninst()) : (pos += 1) {
+        const inst = &self.inst.items[pos];
+        while (inst.tmp != pos) {
+            swap(Inst, inst, &self.inst.items[inst.tmp]);
+        }
+    }
+
+    print("\nVOILA\n", .{});
+}
+
+fn n_op(tag: Tag) u2 {
+    return switch (tag) {
+        .arg => 1,
+        .vmath => 2,
+        .ret => 1,
+        .load => 0,
+        .constant => 0,
+        .store => 1,
+        .loop_start => 0,
+        .loop_end => 0,
+    };
 }
 
 pub fn debug_print(self: FLIR, tmp: bool) void {
@@ -212,16 +248,7 @@ pub fn debug_print(self: FLIR, tmp: bool) void {
         }
         const marker: u8 = if (inst.live) |_| ' ' else '!';
         print("%{}{c}= {s}", .{ pos, marker, @tagName(inst.tag) });
-        const nop: u2 = switch (inst.tag) {
-            .arg => 1,
-            .vmath => 2,
-            .ret => 1,
-            .load => 0,
-            .constant => 0,
-            .store => 1,
-            .loop_start => 0,
-            .loop_end => 0,
-        };
+        const nop = n_op(inst.tag);
         if (inst.tag == .vmath) {
             print(".{s}", .{@tagName(@intToEnum(VMathOp, inst.opspec))});
         } else if (inst.tag == .load) {
