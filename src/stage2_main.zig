@@ -8,8 +8,8 @@ pub fn main2() !void {
     // var cfo = CFO.init(allocator) catch unreachable;
     //
     const size = 1024 * 16;
-    var arr1 = try std.heap.page_allocator.alloc(f64, size);
-    var arr2 = try std.heap.page_allocator.alloc(f64, size);
+    var arr1 = try page_allocator.alloc(f64, size);
+    var arr2 = try page_allocator.alloc(f64, size);
 
     const IPReg = CFO.IPReg;
     const idx: IPReg = .rcx;

@@ -207,6 +207,7 @@ pub fn init_stage2() Self {
     }
     return Self{
         .code = page_allocator.alloc(u8, 4096) catch unreachable,
+        //.inst_off = ArrayList(u32).init(page_allocator),
         .inst_off = {},
         .inst_dbg = {},
         .s2_pos = 0,
