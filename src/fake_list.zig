@@ -27,7 +27,7 @@ pub fn FakeList(comptime T: type) type {
             new_item_ptr.* = item;
         }
 
-        pub fn addManyAsArrayAssumeCapacity(self: *Self, comptime n: usize) *[n]T {
+        pub fn addManyAsArray(self: *Self, comptime n: usize) !*[n]T {
             if (!(self.items.len + n < self.capacity)) return error.OutOfMemory;
             const prev_len = self.items.len;
             self.items.len += n;

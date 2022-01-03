@@ -4,7 +4,7 @@ const ArrayList = std.ArrayList;
 const page_allocator = std.heap.page_allocator;
 const Allocator = std.mem.Allocator;
 
-const fake = false;
+const fake = true;
 const List = if (fake) FakeList else ArrayList;
 
 fn fake_list(T: type, size: usize, allocator: Allocator) List(T) {

@@ -5,20 +5,29 @@ const debug = std.debug;
 const fs = std.fs;
 const Allocator = mem.Allocator;
 const page_allocator = std.heap.page_allocator;
-const ArrayList = std.ArrayList;
 const ArrayListAligned = std.ArrayListAligned;
+const FakeList = @import("./fake_list.zig").FakeList;
 
 const builtin = @import("builtin");
 const s2 = builtin.zig_is_stage2;
 
-code: if (s2) []u8 else ArrayListAligned(u8, 4096),
+const fake = s2;
+const ArrayList = if (fake) FakeList else std.ArrayList;
 
-s2_pos: if (s2) usize else void,
+fn fake_list(T: type, size: usize, allocator: Allocator) ArrayList(T) {
+    if (fake) {
+        return ArrayList(T).initCapacity(allocator, size);
+    } else {
+        return ArrayList(T).initCapacity(allocator, size) catch unreachable;
+    }
+}
+
+code: if (s2) ArrayList(u8) else ArrayListAligned(u8, 4096),
 
 /// offset of each encoded instruction. Might not be needed
 /// but useful for debugging.
-inst_off: if (s2) void else ArrayList(u32),
-inst_dbg: if (s2) void else ArrayList(usize),
+inst_off: ArrayList(u32),
+inst_dbg: ArrayList(usize),
 
 const Self = @This();
 
@@ -206,11 +215,9 @@ pub fn init_stage2() Self {
         return init(page_allocator) catch unreachable;
     }
     return Self{
-        .code = page_allocator.alloc(u8, 4096) catch unreachable,
-        //.inst_off = ArrayList(u32).init(page_allocator),
-        .inst_off = {},
-        .inst_dbg = {},
-        .s2_pos = 0,
+        .code = fake_list(u8, 4096, page_allocator),
+        .inst_off = fake_list(u32, 1024, page_allocator),
+        .inst_dbg = fake_list(usize, 512, page_allocator),
     };
 }
 
@@ -220,7 +227,6 @@ pub fn init(allocator: Allocator) !Self {
         .code = try ArrayListAligned(u8, 4096).initCapacity(page_allocator, 4096),
         .inst_off = ArrayList(u32).init(allocator),
         .inst_dbg = ArrayList(usize).init(allocator),
-        .s2_pos = {},
     };
 }
 
@@ -233,21 +239,14 @@ pub fn deinit(self: *Self) void {
 }
 
 fn new_inst(self: *Self, addr: usize) !void {
-    if (!s2) {
-        var size = @intCast(u32, self.code.items.len);
-        try self.inst_off.append(size);
-        try self.inst_dbg.append(addr);
-    }
+    var size = @intCast(u32, self.get_target());
+    try self.inst_off.append(size);
+    try self.inst_dbg.append(addr);
 }
 
 // TODO: use appendAssumeCapacity in a smart way like arch/x86_64
 pub fn wb(self: *Self, opcode: u8) !void {
-    if (s2) {
-        self.code[self.s2_pos] = opcode;
-        self.s2_pos += 1;
-    } else {
-        try self.code.append(opcode);
-    }
+    try self.code.append(opcode);
 }
 
 pub fn wbi(self: *Self, imm: i8) !void {
@@ -255,21 +254,11 @@ pub fn wbi(self: *Self, imm: i8) !void {
 }
 
 pub fn wd(self: *Self, dword: i32) !void {
-    if (s2) {
-        std.mem.writeIntLittle(i32, self.code[self.s2_pos..][0..4], dword);
-        self.s2_pos += 4;
-    } else {
-        std.mem.writeIntLittle(i32, try self.code.addManyAsArray(4), dword);
-    }
+    std.mem.writeIntLittle(i32, try self.code.addManyAsArray(4), dword);
 }
 
 pub fn wq(self: *Self, qword: u64) !void {
-    if (s2) {
-        std.mem.writeIntLittle(u64, self.code[self.s2_pos..][0..8], qword);
-        self.s2_pos += 4;
-    } else {
-        std.mem.writeIntLittle(u64, try self.code.addManyAsArray(8), qword);
-    }
+    std.mem.writeIntLittle(u64, try self.code.addManyAsArray(8), qword);
 }
 
 pub fn set_align(self: *Self, alignment: u32) !void {
@@ -463,23 +452,18 @@ pub fn set_lea(self: *Self, pos: u32, target: u32) void {
 }
 
 pub fn get_target(self: *Self) u32 {
-    if (s2) {
-        return @intCast(u32, self.s2_pos);
-    } else {
-        return @intCast(u32, self.code.items.len);
-    }
+    return @intCast(u32, self.code.items.len);
 }
 
 // .. and back again
 pub fn jbck(self: *Self, cond: Cond, target: u32) !void {
+    try self.new_inst(@returnAddress());
+    var off = @intCast(i32, target) - (@intCast(i32, self.code.items.len) + 2);
     if (s2) {
-        var off = @intCast(i32, target) - (@intCast(i32, self.s2_pos) + 2);
         try self.wb(0x0f);
         try self.wb(0x80 + cond.off());
         try self.wd(off - 4); // FETING: offset is larger as the jump instruction is larger
     } else {
-        try self.new_inst(@returnAddress());
-        var off = @intCast(i32, target) - (@intCast(i32, self.code.items.len) + 2);
         if (maybe_imm8(off)) |off8| {
             try self.wb(0x70 + cond.off());
             try self.wbi(off8);
@@ -721,7 +705,7 @@ pub fn dbg_nasm(self: *Self, allocator: Allocator) !void {
 
 pub fn finalize(self: *Self) !void {
     if (s2) {
-        if (os.linux.mprotect(self.code.ptr, self.code.len, os.PROT.READ | os.PROT.EXEC) != 0) {
+        if (os.linux.mprotect(self.code.items.ptr, self.code.capacity, os.PROT.READ | os.PROT.EXEC) != 0) {
             return error.ComputarSaysNo;
         }
     } else {
@@ -730,11 +714,7 @@ pub fn finalize(self: *Self) !void {
 }
 
 pub fn get_ptr(self: *Self, target: u32, comptime T: type) T {
-    if (s2) {
-        return @ptrCast(T, self.code[target..].ptr);
-    } else {
-        return @ptrCast(T, self.code.items[target..].ptr);
-    }
+    return @ptrCast(T, self.code.items[target..].ptr);
 }
 
 pub fn test_call2(self: *Self, arg1: usize, arg2: usize) !usize {
