@@ -6,16 +6,12 @@ const fs = std.fs;
 const Allocator = mem.Allocator;
 const page_allocator = std.heap.page_allocator;
 const ArrayListAligned = std.ArrayListAligned;
-const FakeList = @import("./fake_list.zig").FakeList;
 
 const builtin = @import("builtin");
 const s2 = builtin.zig_is_stage2;
-
-const fake = s2;
-const ArrayList = if (fake) FakeList else std.ArrayList;
-
+const ArrayList = @import("./fake_list.zig").ArrayList;
 fn fake_list(T: type, size: usize, allocator: Allocator) ArrayList(T) {
-    if (fake) {
+    if (s2) {
         return ArrayList(T).initCapacity(allocator, size);
     } else {
         return ArrayList(T).initCapacity(allocator, size) catch unreachable;

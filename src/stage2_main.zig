@@ -1,6 +1,8 @@
 const page_allocator = std.heap.page_allocator;
 const std = @import("std");
 const CFO = @import("./CFO.zig");
+const parse = @import("./parse.zig");
+const FLIR = @import("./FLIR.zig");
 
 pub fn main2() !void {
     // wasteful but (doesn't) works :D
@@ -36,6 +38,23 @@ pub fn main2() !void {
     try cfo.leave();
     try cfo.ret();
     try cfo.finalize();
+
+    // const start_parse = cfo.get_target();
+    var flir = FLIR.init_stage2(0, page_allocator);
+    _ = flir;
+    // defer flir.deinit();
+
+    // try flir.loop_start();
+    // _ = try parse.parse(&flir, "xi = xi + yi;");
+    // try flir.loop_end();
+    // flir.live(true);
+    // _ = try flir.scanreg(true);
+    // flir.debug_print(false);
+
+    // try cfo.enter();
+    // _ = try flir.codegen(&cfo);
+    // try cfo.leave();
+    // try cfo.ret();
 
     const runcount: usize = 137;
     var fun = cfo.get_ptr(pos, fn ([*]f64, [*]f64, usize) callconv(.C) usize);

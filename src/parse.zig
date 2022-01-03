@@ -1,6 +1,5 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const ArrayList = std.ArrayList;
 const test_allocator = std.testing.allocator;
 const FLIR = @import("./FLIR.zig");
 const CFO = @import("./CFO.zig");

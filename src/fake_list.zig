@@ -1,6 +1,10 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+const builtin = @import("builtin");
+const s2 = builtin.zig_is_stage2;
+pub const ArrayList = if (s2) FakeList else std.ArrayList;
+
 pub fn FakeList(comptime T: type) type {
     return struct {
         const Self = @This();
@@ -13,6 +17,10 @@ pub fn FakeList(comptime T: type) type {
             var items = mem;
             items.len = 0;
             return Self{ .items = items, .capacity = mem.len };
+        }
+
+        pub fn deinit(self: *Self) void {
+            _ = self.items;
         }
 
         pub fn addOne(self: *Self) !*T {

@@ -1,11 +1,14 @@
 const std = @import("std");
 const math = std.math;
-const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 const FLIR = @This();
 const print = std.debug.print;
 const CFO = @import("./CFO.zig");
 const swap = std.mem.swap;
+
+const builtin = @import("builtin");
+const s2 = builtin.zig_is_stage2;
+const ArrayList = @import("./fake_list.zig").ArrayList;
 
 const VMathOp = CFO.VMathOp;
 
@@ -33,6 +36,7 @@ pub const Inst = struct {
 };
 
 narg: u16,
+theinst: Inst = undefined,
 inst: ArrayList(Inst),
 constants: ArrayList(f64),
 pos_loop_start: u16 = 0,
@@ -44,15 +48,37 @@ pub fn init(narg: u4, allocator: Allocator) !FLIR {
         .inst = try ArrayList(Inst).initCapacity(allocator, 16),
         .constants = try ArrayList(f64).initCapacity(allocator, 16),
     };
-    var iarg: u4 = 0;
-    while (iarg < narg) : (iarg += 1) {
-        try self.inst.append(.{ .tag = .arg, .op1 = iarg, .alloc = iarg });
-    }
+    try self.initialize();
     return self;
+}
+
+pub fn init_stage2(narg: u4, allocator: Allocator) FLIR {
+    _ = allocator;
+    var self: FLIR = .{
+        .narg = narg,
+        .inst = ArrayList(Inst).initCapacity(allocator, 16),
+        .constants = ArrayList(f64).initCapacity(allocator, 16),
+        .pos_loop_start = 0,
+        .pos_loop_end = 0,
+        .theinst = undefined,
+    };
+    self.initialize() catch unreachable;
+    return self;
+}
+
+fn initialize(self: *FLIR) !void {
+    var iarg: u4 = 0;
+    while (iarg < self.narg) : (iarg += 1) {
+        // stage2: no default initializers :(
+        // try self.inst.append(.{ .tag = .arg, .op1 = iarg, .alloc = iarg });
+        const inst = Inst{ .tag = .arg, .op1 = iarg, .alloc = iarg, .tmp = 0, .opspec = 0, .op2 = 0, .live = null };
+        try self.inst.append(inst);
+    }
 }
 
 pub fn deinit(self: FLIR) void {
     self.inst.deinit();
+    self.constants.deinit();
 }
 
 pub inline fn ninst(self: FLIR) u16 {
@@ -216,8 +242,6 @@ pub fn hoist_loopy(self: FLIR, pressure: u5) !void {
             swap(Inst, inst, &self.inst.items[inst.tmp]);
         }
     }
-
-    print("\nVOILA\n", .{});
 }
 
 fn n_op(tag: Tag) u2 {
@@ -234,6 +258,9 @@ fn n_op(tag: Tag) u2 {
 }
 
 pub fn debug_print(self: FLIR, tmp: bool) void {
+    if (s2) {
+        return;
+    }
     var pos: u16 = 0;
     print("\n", .{});
     while (pos < self.ninst()) : (pos += 1) {
