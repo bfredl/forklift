@@ -178,7 +178,7 @@ pub fn main() !void {
     defer cfo.deinit();
     try cfo.enter();
     var pos = try cfo.lealink(.rax);
-    _ = try flir.codegen(&cfo);
+    _ = try flir.codegen(&cfo, false);
     try cfo.leave();
     try cfo.ret();
     var target = try flir.emit_constants(&cfo);

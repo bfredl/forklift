@@ -303,13 +303,14 @@ pub fn debug_print(self: FLIR, tmp: bool) void {
     }
 }
 
-pub fn codegen(self: FLIR, cfo: *CFO) !u32 {
+pub fn codegen(self: FLIR, cfo: *CFO, simd: bool) !u32 {
     const target = cfo.get_target();
     const idx = .rcx;
 
     var pos: usize = 0;
     var loop_pos: ?u32 = null;
-    const stride = 1; // TODO: what is SIMD? :P
+    const stride: u8 = if (simd) 4 else 1;
+    const fm: CFO.FMode = if (simd) .pd4 else .sd;
 
     while (pos < self.inst.items.len) : (pos += 1) {
         const inst = &self.inst.items[pos];
@@ -326,18 +327,19 @@ pub fn codegen(self: FLIR, cfo: *CFO) !u32 {
             },
             .arg => {
                 if (inst.op1 != @as(u16, inst.alloc.?)) return error.InvalidArgRegister;
+                if (inst.live != null and simd) return error.AAA_AAA_AAA;
             },
             .vmath => {
                 // TODO: kill dead instructions completely instead of leaving alloc blank
                 const dst = inst.alloc orelse continue;
                 const src1 = self.inst.items[inst.op1].alloc.?;
                 const src2 = self.inst.items[inst.op2].alloc.?;
-                try cfo.vmathf(@intToEnum(VMathOp, inst.opspec), .sd, dst, src1, src2);
+                try cfo.vmathf(@intToEnum(VMathOp, inst.opspec), fm, dst, src1, src2);
             },
             .ret => {
                 const src = self.inst.items[inst.op1].alloc.?;
                 if (src != 0) {
-                    try cfo.vmovf(.sd, 0, src);
+                    try cfo.vmovf(fm, 0, src);
                 }
                 break;
             },
@@ -351,11 +353,20 @@ pub fn codegen(self: FLIR, cfo: *CFO) !u32 {
                 };
                 const base = if (inst.opspec > 0xF) CFO.qi(reg, idx) else CFO.a(reg);
                 const src = base.o(inst.op1);
-                try cfo.vmovurm(.sd, dst, src);
+                // TODO: use align!
+                if (simd and base.index == null) {
+                    try cfo.vbroadcast(.pd4, dst, src);
+                } else {
+                    try cfo.vmovarm(fm, dst, src);
+                }
             },
             .constant => {
                 const dst = inst.alloc.?;
-                try cfo.vmovurm(.sd, dst, CFO.a(.rax).o(8 * inst.op1));
+                if (simd) {
+                    try cfo.vbroadcast(.pd4, dst, CFO.a(.rax).o(8 * inst.op1));
+                } else {
+                    try cfo.vmovurm(.sd, dst, CFO.a(.rax).o(8 * inst.op1));
+                }
             },
             .store => {
                 const src = self.inst.items[inst.op1].alloc.?;
@@ -367,7 +378,7 @@ pub fn codegen(self: FLIR, cfo: *CFO) !u32 {
                 };
                 const base = if (inst.opspec > 0xF) CFO.qi(reg, .rcx) else CFO.a(reg);
                 const dst = base.o(inst.op2);
-                try cfo.vmovumr(.sd, dst, src);
+                try cfo.vmovamr(fm, dst, src);
             },
         }
     }

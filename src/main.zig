@@ -66,7 +66,7 @@ pub fn main() !void {
     flir.debug_print(false);
 
     try cfo.enter();
-    _ = try flir.codegen(&cfo);
+    _ = try flir.codegen(&cfo, true);
     try cfo.leave();
     try cfo.ret();
 

@@ -178,6 +178,19 @@ pub const FMode = enum(u3) {
     fn scalar(self: @This()) bool {
         return self == @This().ss or self == @This().sd;
     }
+
+    fn double(self: @This()) bool {
+        return @truncate(u1, @enumToInt(self)) == 1;
+    }
+};
+
+const MM = enum(u5) {
+    h0F = 1,
+    h0F38 = 2,
+    h0F3A = 3,
+    fn val(self: @This()) u8 {
+        return @as(u8, @enumToInt(self));
+    }
 };
 
 pub const IMode = enum(u2) {
@@ -384,16 +397,16 @@ pub fn vex2(self: *Self, r: bool, vv: u4, l: bool, pp: PP) !void {
 }
 
 // Note: implements inversion of wrxb, vvvv
-pub fn vex3(self: *Self, w: bool, r: bool, x: bool, b: bool, mm: u5, vv: u4, l: bool, pp: PP) !void {
+pub fn vex3(self: *Self, w: bool, r: bool, x: bool, b: bool, mm: MM, vv: u4, l: bool, pp: PP) !void {
     try self.wb(0xC4);
-    try self.wb(tibflag(u8, r) << 7 | tibflag(u8, x) << 6 | tibflag(u8, b) << 5 | @as(u8, mm));
+    try self.wb(tibflag(u8, r) << 7 | tibflag(u8, x) << 6 | tibflag(u8, b) << 5 | mm.val());
     try self.wb(tibflag(u8, w) << 7 | @as(u8, ~vv) << 3 | @as(u8, @boolToInt(l)) << 2 | pp.val());
 }
 
 pub fn vex0fwig(self: *Self, r: bool, x: bool, b: bool, vv: u4, l: bool, pp: PP) !void {
     // TODO: stage2
-    // try if (x or b) self.vex3(false, r, x, b, 1, vv, l, pp) else self.vex2(r, vv, l, pp);
-    if (x or b) (try self.vex3(false, r, x, b, 1, vv, l, pp)) else (try self.vex2(r, vv, l, pp));
+    // try if (x or b) self.vex3(false, r, x, b, .h0F, vv, l, pp) else self.vex2(r, vv, l, pp);
+    if (x or b) (try self.vex3(false, r, x, b, .h0F, vv, l, pp)) else (try self.vex2(r, vv, l, pp));
 }
 
 // control flow
@@ -611,12 +624,24 @@ pub fn vmovumr(self: *Self, fmode: FMode, dst: EAddr, src: u4) !void {
 }
 
 pub fn vmovarm(self: *Self, fmode: FMode, dst: u4, src: EAddr) !void {
-    try self.vop_rm(0x28, fmode, dst, 0, src);
+    // scalar load/store cannot use vmova* encoding, so don't
+    const op: u8 = if (fmode.scalar()) 0x10 else 0x28;
+    try self.vop_rm(op, fmode, dst, 0, src);
 }
 
 pub fn vmovamr(self: *Self, fmode: FMode, dst: EAddr, src: u4) !void {
-    try self.vop_rm(0x29, fmode, src, 0, dst);
+    const op: u8 = if (fmode.scalar()) 0x11 else 0x29;
+    try self.vop_rm(op, fmode, src, 0, dst);
 }
+
+// note: not all fmodes makes sense (and pd2 is not mentioned in the manual)
+pub fn vbroadcast(self: *Self, fmode: FMode, dst: u4, src: EAddr) !void {
+    try self.new_inst(@returnAddress());
+    try self.vex3(false, dst > 7, src.x(), src.b(), .h0F38, 0, fmode.l(), .h66);
+    try self.wb(if (fmode.double()) 0x19 else 0x18);
+    try self.modRmEA(@truncate(u3, dst), src);
+}
+
 pub fn vmathf(self: *Self, op: VMathOp, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
     try self.vop_rr(0x58 + op.off(), fmode, dst, src1, src2);
 }
