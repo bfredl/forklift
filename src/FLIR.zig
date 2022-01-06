@@ -71,8 +71,8 @@ fn initialize(self: *FLIR) !void {
     while (iarg < self.narg) : (iarg += 1) {
         // stage2: cannot initialize in place
         // try self.inst.append(.{ .tag = .arg, .op1 = iarg, .alloc = iarg });
-        const inst = Inst{ .tag = .arg, .op1 = iarg, .alloc = iarg };
-        try self.inst.append(inst);
+        const inst: Inst = .{ .tag = .arg, .op1 = iarg, .alloc = iarg };
+        _ = try self.put(inst);
     }
 }
 
