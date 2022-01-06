@@ -69,9 +69,9 @@ pub fn init_stage2(narg: u4, allocator: Allocator) FLIR {
 fn initialize(self: *FLIR) !void {
     var iarg: u4 = 0;
     while (iarg < self.narg) : (iarg += 1) {
-        // stage2: no default initializers :(
+        // stage2: cannot initialize in place
         // try self.inst.append(.{ .tag = .arg, .op1 = iarg, .alloc = iarg });
-        const inst = Inst{ .tag = .arg, .op1 = iarg, .alloc = iarg, .tmp = 0, .opspec = 0, .op2 = 0, .live = null };
+        const inst = Inst{ .tag = .arg, .op1 = iarg, .alloc = iarg };
         try self.inst.append(inst);
     }
 }
