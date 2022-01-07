@@ -7,6 +7,8 @@ const print = std.debug.print;
 
 const Self = @This();
 
+const Inst = FLIR.Inst;
+
 flir: *FLIR,
 tmp: [10]?u16 = .{null} ** 10,
 str: []const u8,
@@ -53,7 +55,7 @@ pub fn expr_0(self: *Self) !?u16 {
             self.pos += 1;
             arg += self.idx();
             const op1 = self.num() orelse 0;
-            var inst: FLIR.Inst = .{ .tag = .load, .opspec = arg, .op1 = op1 };
+            var inst: Inst = .{ .tag = .load, .opspec = arg, .op1 = op1 };
             return try self.flir.put(inst);
         },
         't' => {
@@ -64,7 +66,7 @@ pub fn expr_0(self: *Self) !?u16 {
         'k' => {
             self.pos += 1;
             const i = self.num() orelse return error.InvalidSyntax;
-            var inst: FLIR.Inst = .{ .tag = .constant, .op1 = i };
+            var inst: Inst = .{ .tag = .constant, .op1 = i };
             return try self.flir.put(inst);
         },
         else => return null,
@@ -81,7 +83,8 @@ pub fn expr_1(self: *Self) !?u16 {
         };
         self.pos += 1;
         const op = (try self.expr_0()) orelse return error.EXPR1;
-        val = try self.flir.put(.{ .tag = .vmath, .opspec = theop.off(), .op1 = val, .op2 = op });
+        const inst: Inst = .{ .tag = .vmath, .opspec = theop.off(), .op1 = val, .op2 = op };
+        val = try self.flir.put(inst);
     }
     return val;
 }
@@ -122,7 +125,7 @@ pub fn stmt(self: *Self) !?bool {
     if (self.nonws() != @as(u8, ';')) return error.SyntaxError;
     self.pos += 1;
 
-    const inst: FLIR.Inst = switch (char) {
+    const inst: Inst = switch (char) {
         'r' => .{ .tag = .ret, .op1 = res },
         'x'...'z' => .{ .tag = .store, .opspec = i + char - 'x', .op1 = res, .op2 = extra },
         't' => {

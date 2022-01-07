@@ -11,7 +11,7 @@ const ArrayList = @import("./fake_list.zig").ArrayList;
 // actually invalid refs!
 const DEAD: u16 = 0xFEFF;
 
-fn w(s: usize) u16 {
+fn uv(s: usize) u16 {
     return @intCast(u16, s);
 }
 
@@ -55,7 +55,7 @@ fn predlink(self: *Self, s: u16, i: u16) void {
     // so the end result is the start index
     if (n[s].predref == 0) {
         self.refs.appendNTimesAssumeCapacity(DEAD, n[s].npred);
-        n[s].predref = w(self.refs.items.len);
+        n[s].predref = uv(self.refs.items.len);
     }
     n[s].predref -= 1;
     self.refs.items[n[s].predref] = i;
@@ -118,7 +118,21 @@ fn dominators(self: *Self) !void {
     }
 
     var i = qi - 1;
-    while (i >= 1) : (i -= 1) {}
+    while (i >= 1) : (i -= 1) {
+        var w = self.dfs[i];
+        for (self.preds(w)) |v| {
+            var u = eval(v);
+            if (n[s[u].sdom].dfnum < n[s[w].sdom].dfnum) {
+                s[w].sdom = s[u].sdom;
+            }
+        }
+    }
+}
+
+fn eval(self: *Self, v: u16) u16 {
+    _ = self;
+    _ = v;
+    return undefined;
 }
 
 const test_allocator = std.testing.allocator;
@@ -144,7 +158,7 @@ test "aa" {
     print("preds:\n", .{});
     for (self.n.items) |_, i| {
         print("{} :", .{i});
-        for (self.preds(w(i))) |pred| {
+        for (self.preds(uv(i))) |pred| {
             print(" {}", .{pred});
         }
         print("\n", .{});
