@@ -7,15 +7,26 @@ const Self = @This();
 
 const ArrayList = @import("./fake_list.zig").ArrayList;
 
+// filler value for unintialized refs. not a sentinel for
+// actually invalid refs!
+const DEAD: u16 = 0xFEFF;
+
+fn w(s: usize) u16 {
+    return @intCast(u16, s);
+}
+
 pub const Node = struct {
     s: [2]u16, // sucessors
     dfnum: u16 = 0,
     idom: u16 = 0,
+    predref: u16 = 0,
+    npred: u16 = 0,
 };
 
 a: Allocator,
 n: ArrayList(Node),
 dfs: []u16,
+refs: ArrayList(u16),
 
 const DomState = struct {
     sdom: u16,
@@ -28,22 +39,63 @@ fn init(n: u16, allocator: Allocator) !Self {
         .a = allocator,
         .n = try ArrayList(Node).initCapacity(allocator, n),
         .dfs = &.{},
+        .refs = try ArrayList(u16).initCapacity(allocator, 4 * n),
     };
 }
 
 fn deinit(self: *Self) void {
     self.n.deinit();
     self.a.free(self.dfs);
+    self.refs.deinit();
 }
 
-fn dominators(self: *Self, allocator: Allocator) !void {
+fn predlink(self: *Self, s: u16, i: u16) void {
     const n = self.n.items;
-    const s = try allocator.alloc(DomState, n.len);
-    defer allocator.free(s);
+    // tricky: build the reflist per node backwards,
+    // so the end result is the start index
+    if (n[s].predref == 0) {
+        self.refs.appendNTimesAssumeCapacity(DEAD, n[s].npred);
+        n[s].predref = w(self.refs.items.len);
+    }
+    n[s].predref -= 1;
+    self.refs.items[n[s].predref] = i;
+}
 
-    self.dfs = try allocator.alloc(u16, n.len);
+fn calc_preds(self: *Self) void {
+    const n = self.n.items;
+    // TODO: policy for rebuilding refs from scratch?
+    if (self.refs.items.len > 0) unreachable;
+    for (n) |v| {
+        if (v.s[0] > 0) {
+            n[v.s[0]].npred += 1;
+        }
+        if (v.s[1] > 0 and v.s[1] != v.s[0]) {
+            n[v.s[1]].npred += 1;
+        }
+    }
+    for (n) |v, i| {
+        if (v.s[0] > 0) {
+            self.predlink(v.s[0], @intCast(u16, i));
+        }
+        if (v.s[1] > 0 and v.s[1] != v.s[0]) {
+            self.predlink(v.s[1], @intCast(u16, i));
+        }
+    }
+}
 
-    var stack = try ArrayList(u16).initCapacity(allocator, n.len);
+fn preds(self: *Self, i: u16) []u16 {
+    const v = self.n.items[i];
+    return self.refs.items[v.predref..][0..v.npred];
+}
+
+fn dominators(self: *Self) !void {
+    const n = self.n.items;
+    const s = try self.a.alloc(DomState, n.len);
+    defer self.a.free(s);
+
+    self.dfs = try self.a.alloc(u16, n.len);
+
+    var stack = try ArrayList(u16).initCapacity(self.a, n.len);
     defer stack.deinit();
     var qi: u16 = 0;
     stack.appendAssumeCapacity(0);
@@ -64,6 +116,9 @@ fn dominators(self: *Self, allocator: Allocator) !void {
             }
         }
     }
+
+    var i = qi - 1;
+    while (i >= 1) : (i -= 1) {}
 }
 
 const test_allocator = std.testing.allocator;
@@ -84,5 +139,16 @@ test "aa" {
     self.p(7, 0);
     self.p(5, 0);
 
-    try self.dominators(test_allocator);
+    self.calc_preds();
+
+    print("preds:\n", .{});
+    for (self.n.items) |_, i| {
+        print("{} :", .{i});
+        for (self.preds(w(i))) |pred| {
+            print(" {}", .{pred});
+        }
+        print("\n", .{});
+    }
+
+    try self.dominators();
 }
