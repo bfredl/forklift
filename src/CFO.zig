@@ -334,9 +334,7 @@ pub fn rel(offset: u32) EAddr {
 
 // index quadword array
 pub fn qi(base: IPReg, index: IPReg) EAddr {
-    // stage2: lol no default fields
-    // return .{ .base = base, .index = index, .scale = 3 };
-    return .{ .base = base, .index = index, .scale = 3, .offset = 0 };
+    return .{ .base = base, .index = index, .scale = 3 };
 }
 
 pub fn bi(base: IPReg, index: IPReg) EAddr {
