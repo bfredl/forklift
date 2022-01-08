@@ -28,12 +28,6 @@ n: ArrayList(Node),
 dfs: []u16,
 refs: ArrayList(u16),
 
-const DomState = struct {
-    sdom: u16,
-    ancestor: ?u16,
-    parent: u16,
-};
-
 fn init(n: u16, allocator: Allocator) !Self {
     return Self{
         .a = allocator,
@@ -88,6 +82,14 @@ fn preds(self: *Self, i: u16) []u16 {
     return self.refs.items[v.predref..][0..v.npred];
 }
 
+const DomState = struct {
+    sdom: u16,
+    ancestor: ?u16,
+    parent: u16,
+    bucket: u16,
+    bucklink: u16,
+};
+
 fn dominators(self: *Self) !void {
     const n = self.n.items;
     const s = try self.a.alloc(DomState, n.len);
@@ -106,10 +108,13 @@ fn dominators(self: *Self) !void {
         self.dfs[qi] = v;
         s[v].sdom = v;
         s[v].ancestor = null;
+        s[v].bucklink = 0;
+        s[v].bucket = 0;
         print("dfs[{}] = {};\n", .{ qi, v });
 
         for (n[v].s) |si| {
             // origin cannot be revisited anyway
+            // TODO: handle s[1] == s[0] or forbid it?
             if (si > 0 and n[si].dfnum == 0) {
                 s[si].parent = v;
                 stack.appendAssumeCapacity(si);
@@ -120,19 +125,57 @@ fn dominators(self: *Self) !void {
     var i = qi - 1;
     while (i >= 1) : (i -= 1) {
         var w = self.dfs[i];
+        print("w: {} from {}. naive: {}\n", .{ w, s[w].parent, s[w].sdom });
         for (self.preds(w)) |v| {
-            var u = eval(v);
+            var u = self.eval(s, v);
             if (n[s[u].sdom].dfnum < n[s[w].sdom].dfnum) {
                 s[w].sdom = s[u].sdom;
             }
         }
+        print("w: {} actual: {}\n", .{ w, s[w].sdom });
+
+        if (s[w].sdom != s[w].parent) {
+            s[w].bucklink = s[s[w].sdom].bucket;
+            s[s[w].sdom].bucket = w;
+            print("buck[{}] <- {}\n", .{ s[w].sdom, w });
+        }
+
+        s[w].ancestor = s[w].parent;
+
+        var wp = s[w].parent;
+        while (s[wp].bucket != 0) {
+            var v = s[wp].bucket;
+            s[wp].bucket = s[v].bucklink;
+            print("{} <- buck[{}]\n", .{ v, wp });
+            var u = self.eval(s, v);
+            if (n[s[u].sdom].dfnum < n[s[w].sdom].dfnum) {
+                n[v].idom = u;
+            } else {
+                n[v].idom = wp;
+            }
+        }
+    }
+
+    i = 1;
+    while (i < qi) : (i += 1) {
+        var w = self.dfs[i];
+        if (n[w].idom != s[w].sdom) {
+            n[w].idom = n[n[w].idom].idom;
+        }
     }
 }
 
-fn eval(self: *Self, v: u16) u16 {
-    _ = self;
-    _ = v;
-    return undefined;
+fn eval(self: *Self, s: []DomState, v0: u16) u16 {
+    const n = self.n.items;
+    var v = v0;
+    var u = v;
+    while (s[v].ancestor) |a| {
+        if (n[s[v].sdom].dfnum < n[s[v].sdom].dfnum) {
+            u = v;
+        }
+        v = a;
+    }
+    return u;
 }
 
 const test_allocator = std.testing.allocator;
@@ -165,4 +208,10 @@ test "aa" {
     }
 
     try self.dominators();
+
+    print("doms:\n", .{});
+    for (self.n.items) |v, i| {
+        print("{} : {}", .{ i, v.idom });
+        print("\n", .{});
+    }
 }
