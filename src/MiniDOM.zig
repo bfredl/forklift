@@ -132,28 +132,33 @@ fn dominators(self: *Self) !void {
         print("\nw: {} from {}\n    naive: {}\n", .{ w, s[w].parent, s[w].sdom });
         for (self.preds(w)) |v| {
             var u = self.eval(s, v);
-            print("    pred {} evals to {}\n", .{ v, u });
             if (n[s[u].sdom].dfnum < n[s[w].sdom].dfnum) {
                 s[w].sdom = s[u].sdom;
             }
         }
         print(" actual: {}\n", .{s[w].sdom});
 
+        var wp = s[w].parent;
+
         if (true or s[w].sdom != s[w].parent) {
+            if (s[w].bucklink != 0) return error.AAAAAA;
             s[w].bucklink = s[s[w].sdom].bucket;
             s[s[w].sdom].bucket = w;
             print("buck[{}] <- {}\n", .{ s[w].sdom, w });
+        } else {
+            n[w].idom = wp;
         }
 
         s[w].ancestor = s[w].parent;
 
-        var wp = s[w].parent;
         while (s[wp].bucket != 0) {
             var v = s[wp].bucket;
             s[wp].bucket = s[v].bucklink;
+            s[v].bucklink = 0;
             print("{} <- buck[{}]\n", .{ v, wp });
             var u = self.eval(s, v);
-            if (n[s[u].sdom].dfnum < n[s[w].sdom].dfnum) {
+            print("it eval {}\n", .{u});
+            if (n[s[u].sdom].dfnum < n[s[v].sdom].dfnum) {
                 n[v].idom = u;
             } else {
                 n[v].idom = wp;
