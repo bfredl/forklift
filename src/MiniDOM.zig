@@ -1,6 +1,7 @@
 const std = @import("std");
 const math = std.math;
 const Allocator = std.mem.Allocator;
+const mem = std.mem;
 const print = std.debug.print;
 
 const Self = @This();
@@ -83,17 +84,19 @@ fn preds(self: *Self, i: u16) []u16 {
 }
 
 const DomState = struct {
-    sdom: u16,
-    ancestor: ?u16,
-    parent: u16,
-    bucket: u16,
-    bucklink: u16,
+    sdom: u16 = undefined,
+    ancestor: ?u16 = null,
+    parent: u16 = undefined,
+    bucket: u16 = 0,
+    bucklink: u16 = 0,
+    label: u16 = undefined,
 };
 
 fn dominators(self: *Self) !void {
     const n = self.n.items;
     const s = try self.a.alloc(DomState, n.len);
     defer self.a.free(s);
+    mem.set(DomState, s, .{});
 
     self.dfs = try self.a.alloc(u16, n.len);
 
@@ -112,9 +115,7 @@ fn dominators(self: *Self) !void {
         self.dfs[qi] = v;
         qi += 1;
         s[v].sdom = v;
-        s[v].ancestor = null;
-        s[v].bucklink = 0;
-        s[v].bucket = 0;
+        s[v].label = v;
 
         for (n[v].s) |si| {
             // origin cannot be revisited anyway
@@ -137,7 +138,7 @@ fn dominators(self: *Self) !void {
 
         var wp = s[w].parent;
 
-        if (true or s[w].sdom != s[w].parent) {
+        if (s[w].sdom != s[w].parent) {
             if (s[w].bucklink != 0) return error.AAAAAA;
             s[w].bucklink = s[s[w].sdom].bucket;
             s[s[w].sdom].bucket = w;
@@ -163,12 +164,12 @@ fn dominators(self: *Self) !void {
     while (i < qi) : (i += 1) {
         var w = self.dfs[i];
         if (n[w].idom != s[w].sdom) {
-            // n[w].idom = n[n[w].idom].idom;
+            n[w].idom = n[n[w].idom].idom;
         }
     }
 }
 
-fn eval(self: *Self, s: []DomState, v0: u16) u16 {
+fn eval_slow(self: *Self, s: []DomState, v0: u16) u16 {
     const n = self.n.items;
     var v = v0;
     var u = v;
@@ -179,6 +180,20 @@ fn eval(self: *Self, s: []DomState, v0: u16) u16 {
         v = a;
     }
     return u;
+}
+
+fn eval(self: *Self, s: []DomState, v: u16) u16 {
+    const n = self.n.items;
+    if (s[v].ancestor) |a| {
+        _ = self.eval(s, a);
+        if (s[a].ancestor) |aa| {
+            if (n[s[s[a].label].sdom].dfnum < n[s[s[v].label].sdom].dfnum) {
+                s[v].label = s[a].label;
+                s[v].ancestor = aa;
+            }
+        }
+    }
+    return s[v].label;
 }
 
 const test_allocator = std.testing.allocator;
