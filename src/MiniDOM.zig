@@ -101,14 +101,13 @@ fn dominators(self: *Self) !void {
     defer stack.deinit();
     var qi: u16 = 0;
     stack.appendAssumeCapacity(0);
-    print("\n", .{});
     while (stack.items.len > 0) {
         const v = stack.pop();
         if (n[v].dfnum > 0) {
             // already visited
             continue;
         }
-        print("dfs[{}] = {};\n", .{ qi, v });
+        if (false) print("dfs[{}] = {};\n", .{ qi, v });
         n[v].dfnum = qi;
         self.dfs[qi] = v;
         qi += 1;
@@ -129,14 +128,12 @@ fn dominators(self: *Self) !void {
     var i = qi - 1;
     while (i >= 1) : (i -= 1) {
         var w = self.dfs[i];
-        print("\nw: {} from {}\n    naive: {}\n", .{ w, s[w].parent, s[w].sdom });
         for (self.preds(w)) |v| {
             var u = self.eval(s, v);
             if (n[s[u].sdom].dfnum < n[s[w].sdom].dfnum) {
                 s[w].sdom = s[u].sdom;
             }
         }
-        print(" actual: {}\n", .{s[w].sdom});
 
         var wp = s[w].parent;
 
@@ -144,26 +141,21 @@ fn dominators(self: *Self) !void {
             if (s[w].bucklink != 0) return error.AAAAAA;
             s[w].bucklink = s[s[w].sdom].bucket;
             s[s[w].sdom].bucket = w;
-            print("buck[{}] <- {}\n", .{ s[w].sdom, w });
         } else {
             n[w].idom = wp;
         }
 
         s[w].ancestor = s[w].parent;
-
         while (s[wp].bucket != 0) {
             var v = s[wp].bucket;
             s[wp].bucket = s[v].bucklink;
             s[v].bucklink = 0;
-            print("{} <- buck[{}]\n", .{ v, wp });
             var u = self.eval(s, v);
-            print("it eval {}\n", .{u});
             if (n[s[u].sdom].dfnum < n[s[v].sdom].dfnum) {
                 n[v].idom = u;
             } else {
                 n[v].idom = wp;
             }
-            print("idom[{}] := {}\n", .{ v, n[v].idom });
         }
     }
 
@@ -171,7 +163,7 @@ fn dominators(self: *Self) !void {
     while (i < qi) : (i += 1) {
         var w = self.dfs[i];
         if (n[w].idom != s[w].sdom) {
-            n[w].idom = n[n[w].idom].idom;
+            // n[w].idom = n[n[w].idom].idom;
         }
     }
 }
@@ -201,6 +193,8 @@ fn p(self: *Self, s1: u16, s2: u16) void {
     self.n.appendAssumeCapacity(.{ .s = .{ z1, z2 } });
 }
 
+const expectEqual = std.testing.expectEqual;
+
 test "aa" {
     var self = try init(8, test_allocator);
     defer self.deinit();
@@ -215,20 +209,35 @@ test "aa" {
 
     self.calc_preds();
 
-    print("preds:\n", .{});
-    for (self.n.items) |_, i| {
-        print("{} :", .{i});
-        for (self.preds(uv(i))) |pred| {
-            print(" {}", .{pred});
+    if (false) {
+        print("preds:\n", .{});
+        for (self.n.items) |_, i| {
+            print("{} :", .{i});
+            for (self.preds(uv(i))) |pred| {
+                print(" {}", .{pred});
+            }
+            print("\n", .{});
         }
-        print("\n", .{});
     }
 
     try self.dominators();
 
+    var idoms: [8]u16 = .{
+        0,
+        0,
+        1,
+        1,
+        3,
+        1,
+        2,
+        6,
+    };
+
     print("doms:\n", .{});
     for (self.n.items) |v, i| {
-        print("{} : {}", .{ i, v.idom });
-        print("\n", .{});
+        expectEqual(idoms[i], v.idom) catch {
+            print("index {}\n", .{i});
+            return error.IDomFail;
+        };
     }
 }
