@@ -102,19 +102,23 @@ fn dominators(self: *Self) !void {
     var qi: u16 = 0;
     stack.appendAssumeCapacity(0);
     print("\n", .{});
-    while (stack.items.len > 0) : (qi += 1) {
+    while (stack.items.len > 0) {
         const v = stack.pop();
+        if (n[v].dfnum > 0) {
+            // already visited
+            continue;
+        }
+        print("dfs[{}] = {};\n", .{ qi, v });
         n[v].dfnum = qi;
         self.dfs[qi] = v;
+        qi += 1;
         s[v].sdom = v;
         s[v].ancestor = null;
         s[v].bucklink = 0;
         s[v].bucket = 0;
-        print("dfs[{}] = {};\n", .{ qi, v });
 
         for (n[v].s) |si| {
             // origin cannot be revisited anyway
-            // TODO: handle s[1] == s[0] or forbid it?
             if (si > 0 and n[si].dfnum == 0) {
                 s[si].parent = v;
                 stack.appendAssumeCapacity(si);
@@ -125,16 +129,17 @@ fn dominators(self: *Self) !void {
     var i = qi - 1;
     while (i >= 1) : (i -= 1) {
         var w = self.dfs[i];
-        print("w: {} from {}. naive: {}\n", .{ w, s[w].parent, s[w].sdom });
+        print("\nw: {} from {}\n    naive: {}\n", .{ w, s[w].parent, s[w].sdom });
         for (self.preds(w)) |v| {
             var u = self.eval(s, v);
+            print("    pred {} evals to {}\n", .{ v, u });
             if (n[s[u].sdom].dfnum < n[s[w].sdom].dfnum) {
                 s[w].sdom = s[u].sdom;
             }
         }
-        print("w: {} actual: {}\n", .{ w, s[w].sdom });
+        print(" actual: {}\n", .{s[w].sdom});
 
-        if (s[w].sdom != s[w].parent) {
+        if (true or s[w].sdom != s[w].parent) {
             s[w].bucklink = s[s[w].sdom].bucket;
             s[s[w].sdom].bucket = w;
             print("buck[{}] <- {}\n", .{ s[w].sdom, w });
@@ -153,6 +158,7 @@ fn dominators(self: *Self) !void {
             } else {
                 n[v].idom = wp;
             }
+            print("idom[{}] := {}\n", .{ v, n[v].idom });
         }
     }
 
@@ -170,7 +176,7 @@ fn eval(self: *Self, s: []DomState, v0: u16) u16 {
     var v = v0;
     var u = v;
     while (s[v].ancestor) |a| {
-        if (n[s[v].sdom].dfnum < n[s[v].sdom].dfnum) {
+        if (n[s[v].sdom].dfnum < n[s[u].sdom].dfnum) {
             u = v;
         }
         v = a;
@@ -181,7 +187,13 @@ fn eval(self: *Self, s: []DomState, v0: u16) u16 {
 const test_allocator = std.testing.allocator;
 
 fn p(self: *Self, s1: u16, s2: u16) void {
-    self.n.appendAssumeCapacity(.{ .s = .{ s1, s2 } });
+    var z1: u16 = s1;
+    var z2: u16 = s2;
+    if (true and s2 != 0) {
+        z1 = s2;
+        z2 = s1;
+    }
+    self.n.appendAssumeCapacity(.{ .s = .{ z1, z2 } });
 }
 
 test "aa" {
