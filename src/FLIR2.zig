@@ -69,7 +69,7 @@ fn n_op(tag: Tag) u2 {
         .variable => 0,
         .phi => 0, // or one??
         .constant => 0,
-        .load => 1,
+        .load => 2,
         .store => 2,
         .iadd => 2,
         .ilessthan => 1,
@@ -242,6 +242,12 @@ fn print_blk(self: *Self, b: u16) void {
             continue;
         }
         print("  %{} = {s}", .{ toref(b, uv(idx)), @tagName(i.tag) });
+
+        if (i.tag == .vmath) {
+            print(".{s}", .{@tagName(@intToEnum(VMathOp, i.spec))});
+        } else if (i.tag == .constant) {
+            print(" c[{}]", .{i.op1});
+        }
         const nop = n_op(i.tag);
         if (nop > 0) {
             print(" %{}", .{i.op1});
@@ -275,6 +281,12 @@ test "printa" {
     self.n.items[node].s[0] = node2;
 
     const add = try self.addInst(node2, .{ .tag = .iadd, .op1 = arg1, .op2 = arg2 });
+    const zero = try self.addInst(node2, .{ .tag = .constant, .op1 = 0, .op2 = 0 });
+    const load1 = try self.addInst(node2, .{ .tag = .load, .op1 = arg1, .op2 = zero });
+    const load2 = try self.addInst(node2, .{ .tag = .load, .op1 = arg2, .op2 = zero });
+    const vadd = try self.addInst(node2, .{ .tag = .vmath, .spec = VMathOp.add.off(), .op1 = load1, .op2 = load2 });
+    _ = vadd;
+
     _ = try self.addInst(node2, .{ .tag = .ret, .op1 = add, .op2 = 0 });
 
     self.debug_print();
