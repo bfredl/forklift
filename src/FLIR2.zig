@@ -37,10 +37,14 @@ pub const Node = struct {
 pub const Tag = enum(u8) {
     empty = 0, // empty slot. must not be refered to!
     arg,
+    variable,
     phi,
     constant,
+    load,
+    store,
     iadd, // imath group?
     ilessthan, // icmp group?
+    vmath,
     ret,
 };
 
@@ -55,6 +59,24 @@ pub const Inst = struct {
         return self.tag == .empty;
     }
 };
+
+// number of op:s which are inst references.
+// otherwise they can store whatever data
+fn n_op(tag: Tag) u2 {
+    return switch (tag) {
+        .empty => 0,
+        .arg => 1, // fake??
+        .variable => 0,
+        .phi => 0, // or one??
+        .constant => 0,
+        .load => 1,
+        .store => 2,
+        .iadd => 2,
+        .ilessthan => 1,
+        .vmath => 2,
+        .ret => 1,
+    };
+}
 
 pub const EMPTY: Inst = .{ .tag = .empty, .op1 = 0, .op2 = 0 };
 
@@ -216,9 +238,18 @@ fn print_blk(self: *Self, b: u16) void {
     const blk = self.b.items[b];
 
     for (blk.i) |i, idx| {
-        if (i.tag != .empty) {
-            print("  %{} = {s} %{}, %{}\n", .{ toref(b, uv(idx)), @tagName(i.tag), i.op1, i.op2 });
+        if (i.tag == .empty) {
+            continue;
         }
+        print("  %{} = {s}", .{ toref(b, uv(idx)), @tagName(i.tag) });
+        const nop = n_op(i.tag);
+        if (nop > 0) {
+            print(" %{}", .{i.op1});
+            if (nop > 1) {
+                print(", %{}", .{i.op2});
+            }
+        }
+        print("\n", .{});
     }
 
     if (blk.next()) |next| {
