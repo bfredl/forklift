@@ -12,6 +12,13 @@ const ArrayList = @import("./fake_list.zig").ArrayList;
 
 const VMathOp = CFO.VMathOp;
 
+a: Allocator,
+// TODO: unmanage all these:
+n: ArrayList(Node),
+b: ArrayList(Block),
+dfs: []u16,
+refs: ArrayList(u16),
+
 pub fn uv(s: usize) u16 {
     return @intCast(u16, s);
 }
@@ -22,16 +29,45 @@ pub const Node = struct {
     idom: u16 = 0,
     predref: u16 = 0,
     npred: u16 = 0,
+    firstblk: u16,
+    foo: u16 = 0,
 };
 
-a: Allocator,
-n: ArrayList(Node),
-dfs: []u16,
-refs: ArrayList(u16),
+pub const Tag = enum(u8) {
+    empty = 0, // empty slot. must not be refered to!
+    arg,
+    phi,
+    constant,
+    iadd, // imath group?
+    ilessthan, // icmp group?
+};
+
+pub const Inst = struct {
+    Tag: u8,
+    spec: u8 = 0,
+    op1: u16,
+    op2: u16,
+    reindex: u16 = 0,
+};
+
+pub const EMPTY: Inst = .{ .tag = .empty, .op1 = 0, .op2 = 0 };
+
+pub const Block = struct {
+    node: u16,
+    succ: u16 = NoBlk,
+    i: [4]Inst = .{EMPTY},
+};
+
+test "sizey" {
+    // @compileLog(@sizeOf(Block));
+    std.debug.assert(@sizeOf(Block) <= 64);
+}
 
 // filler value for unintialized refs. not a sentinel for
 // actually invalid refs!
 const DEAD: u16 = 0xFEFF;
+// we cannot have more than 2^14 blocks anyway
+const NoBlk: u16 = 0xFFFF;
 
 pub fn init(n: u16, allocator: Allocator) !Self {
     return Self{
@@ -39,6 +75,7 @@ pub fn init(n: u16, allocator: Allocator) !Self {
         .n = try ArrayList(Node).initCapacity(allocator, n),
         .dfs = &.{},
         .refs = try ArrayList(u16).initCapacity(allocator, 4 * n),
+        .blk = try ArrayList(Block).initCapacity(allocator, 2 * n),
     };
 }
 
@@ -80,6 +117,13 @@ pub fn calc_preds(self: *Self) void {
             self.predlink(v.s[1], @intCast(u16, i));
         }
     }
+}
+
+pub fn addBlk(self: *Self) !u16 {
+
+}
+
+pub fn addInst(self: Self, tag: Tag, op1: u16, op2: u16) !u16 {
 }
 
 pub fn preds(self: *Self, i: u16) []u16 {
