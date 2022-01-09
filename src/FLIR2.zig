@@ -24,12 +24,13 @@ pub fn uv(s: usize) u16 {
 }
 
 pub const Node = struct {
-    s: [2]u16, // sucessors
+    s: [2]u16 = .{ 0, 0 }, // sucessors
     dfnum: u16 = 0,
     idom: u16 = 0,
     predref: u16 = 0,
     npred: u16 = 0,
     firstblk: u16,
+    lastblk: u16,
     foo: u16 = 0,
 };
 
@@ -40,23 +41,39 @@ pub const Tag = enum(u8) {
     constant,
     iadd, // imath group?
     ilessthan, // icmp group?
+    ret,
 };
 
 pub const Inst = struct {
-    Tag: u8,
+    tag: Tag,
     spec: u8 = 0,
     op1: u16,
     op2: u16,
     reindex: u16 = 0,
+
+    fn free(self: @This()) bool {
+        return self.tag == .empty;
+    }
 };
 
 pub const EMPTY: Inst = .{ .tag = .empty, .op1 = 0, .op2 = 0 };
 
+pub const BLK_SIZE = 4;
+pub const BLK_SHIFT = 2;
 pub const Block = struct {
     node: u16,
     succ: u16 = NoBlk,
-    i: [4]Inst = .{EMPTY},
+    i: [BLK_SIZE]Inst = .{EMPTY} ** BLK_SIZE,
+
+    fn next(self: @This()) ?u16 {
+        return if (self.succ != NoBlk) self.succ else null;
+    }
 };
+
+fn toref(blkid: u16, idx: u16) u16 {
+    std.debug.assert(idx < BLK_SIZE);
+    return (blkid << BLK_SHIFT) | idx;
+}
 
 test "sizey" {
     // @compileLog(@sizeOf(Block));
@@ -75,7 +92,7 @@ pub fn init(n: u16, allocator: Allocator) !Self {
         .n = try ArrayList(Node).initCapacity(allocator, n),
         .dfs = &.{},
         .refs = try ArrayList(u16).initCapacity(allocator, 4 * n),
-        .blk = try ArrayList(Block).initCapacity(allocator, 2 * n),
+        .b = try ArrayList(Block).initCapacity(allocator, 2 * n),
     };
 }
 
@@ -83,6 +100,66 @@ pub fn deinit(self: *Self) void {
     self.n.deinit();
     self.a.free(self.dfs);
     self.refs.deinit();
+    self.b.deinit();
+}
+
+pub fn addNode(self: *Self) !u16 {
+    const n = try self.n.addOne();
+    const b = try self.b.addOne();
+    var nodeid = uv(self.n.items.len - 1);
+    var blkid = uv(self.b.items.len - 1);
+    n.* = .{ .firstblk = blkid, .lastblk = blkid };
+    b.* = .{ .node = nodeid };
+    return nodeid;
+}
+
+// add inst to the end of block
+pub fn addInst(self: *Self, node: u16, inst: Inst) !u16 {
+    const n = &self.n.items[node];
+    // must exist:
+    var blkid = n.lastblk;
+    var blk = &self.b.items[blkid];
+
+    // TODO: later we can add more constraints for where "empty" ins can be
+    var lastfree: u8 = BLK_SIZE;
+    var i: u8 = BLK_SIZE - 1;
+    while (true) : (i -= 1) {
+        if (blk.i[@intCast(u8, i)].free()) {
+            lastfree = i;
+        } else {
+            break;
+        }
+        if (i == 0) {
+            break;
+        }
+    }
+
+    if (lastfree == BLK_SIZE) {
+        blkid = uv(self.b.items.len);
+        blk.succ = blkid;
+        blk = try self.b.addOne();
+        blk.* = .{ .node = node };
+        n.lastblk = blkid;
+        lastfree = 0;
+    }
+
+    blk.i[lastfree] = inst;
+    return toref(blkid, lastfree);
+}
+
+pub fn preds(self: *Self, i: u16) []u16 {
+    const v = self.n.items[i];
+    return self.refs.items[v.predref..][0..v.npred];
+}
+
+pub fn p(self: *Self, s1: u16, s2: u16) void {
+    var z1: u16 = s1;
+    var z2: u16 = s2;
+    if (true and s2 != 0) {
+        z1 = s2;
+        z2 = s1;
+    }
+    self.n.appendAssumeCapacity(.{ .s = .{ z1, z2 } });
 }
 
 fn predlink(self: *Self, s: u16, i: u16) void {
@@ -119,24 +196,55 @@ pub fn calc_preds(self: *Self) void {
     }
 }
 
-pub fn addBlk(self: *Self) !u16 {
-
-}
-
-pub fn addInst(self: Self, tag: Tag, op1: u16, op2: u16) !u16 {
-}
-
-pub fn preds(self: *Self, i: u16) []u16 {
-    const v = self.n.items[i];
-    return self.refs.items[v.predref..][0..v.npred];
-}
-
-pub fn p(self: *Self, s1: u16, s2: u16) void {
-    var z1: u16 = s1;
-    var z2: u16 = s2;
-    if (true and s2 != 0) {
-        z1 = s2;
-        z2 = s1;
+pub fn debug_print(self: *Self) void {
+    if (stage2) {
+        return;
     }
-    self.n.appendAssumeCapacity(.{ .s = .{ z1, z2 } });
+    print("\n", .{});
+    for (self.n.items) |*b, i| {
+        print("node {}:\n", .{i});
+
+        self.print_blk(b.firstblk);
+
+        if (!(b.s[0] == i + 1 and b.s[1] == 0)) {
+            print("succ: {any}\n", .{b.s});
+        }
+    }
+}
+
+fn print_blk(self: *Self, b: u16) void {
+    const blk = self.b.items[b];
+
+    for (blk.i) |i, idx| {
+        if (i.tag != .empty) {
+            print("  %{} = {s} %{}, %{}\n", .{ toref(b, uv(idx)), @tagName(i.tag), i.op1, i.op2 });
+        }
+    }
+
+    if (blk.next()) |next| {
+        return self.print_blk(next);
+    }
+}
+
+const test_allocator = std.testing.allocator;
+const expectEqual = std.testing.expectEqual;
+
+test "printa" {
+    var self = try Self.init(8, test_allocator);
+    defer self.deinit();
+
+    const node = try self.addNode();
+    try expectEqual(uv(0), node);
+
+    const arg1 = try self.addInst(node, .{ .tag = .arg, .op1 = 0, .op2 = 0 });
+    const arg2 = try self.addInst(node, .{ .tag = .arg, .op1 = 1, .op2 = 0 });
+
+    const node2 = try self.addNode();
+    try expectEqual(uv(1), node2);
+    self.n.items[node].s[0] = node2;
+
+    const add = try self.addInst(node2, .{ .tag = .iadd, .op1 = arg1, .op2 = arg2 });
+    _ = try self.addInst(node2, .{ .tag = .ret, .op1 = add, .op2 = 0 });
+
+    self.debug_print();
 }
