@@ -38,6 +38,7 @@ pub const Tag = enum(u8) {
     empty = 0, // empty slot. must not be refered to!
     arg,
     variable,
+    putvar, // non-phi assignment
     phi,
     constant,
     load,
@@ -53,6 +54,8 @@ pub const Inst = struct {
     spec: u8 = 0,
     op1: u16,
     op2: u16,
+    // maybe only for store which is not used otherwise?
+    op3: u16 = 0,
     reindex: u16 = 0,
 
     fn free(self: @This()) bool {
@@ -67,10 +70,11 @@ fn n_op(tag: Tag) u2 {
         .empty => 0,
         .arg => 1, // fake??
         .variable => 0,
+        .putvar => 2,
         .phi => 0, // or one??
         .constant => 0,
-        .load => 2,
-        .store => 2,
+        .load => 2, // base, idx
+        .store => 3, // base, idx, val
         .iadd => 2,
         .ilessthan => 1,
         .vmath => 2,
@@ -253,6 +257,9 @@ fn print_blk(self: *Self, b: u16) void {
             print(" %{}", .{i.op1});
             if (nop > 1) {
                 print(", %{}", .{i.op2});
+                if (nop > 2) {
+                    print(" <- %{}", .{i.op3});
+                }
             }
         }
         print("\n", .{});
@@ -288,6 +295,44 @@ test "printa" {
     _ = vadd;
 
     _ = try self.addInst(node2, .{ .tag = .ret, .op1 = add, .op2 = 0 });
+
+    self.debug_print();
+}
+
+test "loopvar" {
+    var self = try Self.init(8, test_allocator);
+    defer self.deinit();
+
+    const start = try self.addNode();
+
+    const arg1 = try self.addInst(start, .{ .tag = .arg, .op1 = 0, .op2 = 0 });
+    const arg2 = try self.addInst(start, .{ .tag = .arg, .op1 = 1, .op2 = 0 });
+    const arg3 = try self.addInst(start, .{ .tag = .arg, .op1 = 2, .op2 = 0 });
+
+    const var_i = try self.addInst(start, .{ .tag = .variable, .op1 = 0, .op2 = 0 });
+    const const_0 = try self.addInst(start, .{ .tag = .constant, .op1 = 0, .op2 = 0 });
+
+    _ = try self.addInst(start, .{ .tag = .putvar, .op1 = var_i, .op2 = const_0 });
+
+    const loop = try self.addNode();
+    // NB: assumes count > 0, always do first iteration
+    self.n.items[start].s[0] = loop;
+
+    const val = try self.addInst(loop, .{ .tag = .load, .op1 = arg1, .op2 = var_i });
+    const newval = try self.addInst(loop, .{ .tag = .vmath, .spec = VMathOp.mul.off(), .op1 = val, .op2 = val });
+    _ = try self.addInst(loop, .{ .tag = .store, .op1 = arg2, .op2 = var_i, .op3 = newval });
+
+    const const_1 = try self.addInst(loop, .{ .tag = .constant, .op1 = 1, .op2 = 0 });
+    const iadd = try self.addInst(loop, .{ .tag = .iadd, .op1 = var_i, .op2 = const_1 });
+    _ = try self.addInst(loop, .{ .tag = .putvar, .op1 = var_i, .op2 = iadd });
+    _ = try self.addInst(loop, .{ .tag = .ilessthan, .op1 = var_i, .op2 = arg3 });
+
+    // if true
+    self.n.items[loop].s[0] = loop;
+    const end = try self.addNode();
+    self.n.items[loop].s[1] = end;
+
+    _ = try self.addInst(end, .{ .tag = .ret, .op1 = const_0, .op2 = 0 });
 
     self.debug_print();
 }
