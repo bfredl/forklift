@@ -188,14 +188,15 @@ pub fn p(self: *Self, s1: u16, s2: u16) void {
     self.n.appendAssumeCapacity(.{ .s = .{ z1, z2 } });
 }
 
-fn predlink_check(self: *Self, i: u16, si: u1, split: bool) void {
-    const n = self.n.items;
+fn predlink(self: *Self, i: u16, si: u1, split: bool) !void {
+    var n = self.n.items;
     const s = n[i].s[si];
     if (s == 0) return;
 
-    if (split and n[s].npred > 0) {
+    if (split and n[s].npred > 1) {
         const inter = try self.addNode();
-        inter.npred = 1;
+        n = self.n.items; // haii
+        n[inter].npred = 1;
         n[i].s[si] = inter;
         n[inter].s[0] = s;
         addpred(self, s, inter);
@@ -217,7 +218,7 @@ fn addpred(self: *Self, s: u16, i: u16) void {
     self.refs.items[n[s].predref] = i;
 }
 
-pub fn calc_preds(self: *Self) void {
+pub fn calc_preds(self: *Self) !void {
     const n = self.n.items;
     // TODO: policy for rebuilding refs from scratch?
     if (self.refs.items.len > 0) unreachable;
@@ -233,8 +234,8 @@ pub fn calc_preds(self: *Self) void {
         const shared = v.s[1] > 0 and v.s[1] == v.s[0];
         if (shared) return error.NotSureAboutThis;
         const split = v.s[1] > 0;
-        self.predlink(@intCast(u16, i), 0, split);
-        self.predlink(@intCast(u16, i), 1, split);
+        try self.predlink(@intCast(u16, i), 0, split);
+        try self.predlink(@intCast(u16, i), 1, split);
     }
 }
 
@@ -248,8 +249,12 @@ pub fn debug_print(self: *Self) void {
 
         self.print_blk(b.firstblk);
 
-        if (!(b.s[0] == i + 1 and b.s[1] == 0)) {
-            print("succ: {any}\n", .{b.s});
+        if (b.s[1] == 0) {
+            if (b.s[0] != i + 1) {
+                print("  jump {}\n", .{b.s[0]});
+            }
+        } else {
+            print("  split: {any}\n", .{b.s});
         }
     }
 }
@@ -349,6 +354,8 @@ test "loopvar" {
     self.n.items[loop].s[1] = end;
 
     _ = try self.addInst(end, .{ .tag = .ret, .op1 = const_0, .op2 = 0 });
+
+    try self.calc_preds();
 
     self.debug_print();
 }

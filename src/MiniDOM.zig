@@ -138,7 +138,7 @@ test "aa" {
     self.p(7, 0);
     self.p(5, 0);
 
-    self.calc_preds();
+    try self.calc_preds();
 
     if (false) {
         print("preds:\n", .{});
