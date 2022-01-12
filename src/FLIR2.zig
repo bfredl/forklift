@@ -188,7 +188,24 @@ pub fn p(self: *Self, s1: u16, s2: u16) void {
     self.n.appendAssumeCapacity(.{ .s = .{ z1, z2 } });
 }
 
-fn predlink(self: *Self, s: u16, i: u16) void {
+fn predlink_check(self: *Self, i: u16, si: u1, split: bool) void {
+    const n = self.n.items;
+    const s = n[i].s[si];
+    if (s == 0) return;
+
+    if (split and n[s].npred > 0) {
+        const inter = try self.addNode();
+        inter.npred = 1;
+        n[i].s[si] = inter;
+        n[inter].s[0] = s;
+        addpred(self, s, inter);
+        addpred(self, inter, i);
+    } else {
+        addpred(self, s, i);
+    }
+}
+
+fn addpred(self: *Self, s: u16, i: u16) void {
     const n = self.n.items;
     // tricky: build the reflist per node backwards,
     // so the end result is the start index
@@ -213,12 +230,11 @@ pub fn calc_preds(self: *Self) void {
         }
     }
     for (n) |v, i| {
-        if (v.s[0] > 0) {
-            self.predlink(v.s[0], @intCast(u16, i));
-        }
-        if (v.s[1] > 0 and v.s[1] != v.s[0]) {
-            self.predlink(v.s[1], @intCast(u16, i));
-        }
+        const shared = v.s[1] > 0 and v.s[1] == v.s[0];
+        if (shared) return error.NotSureAboutThis;
+        const split = v.s[1] > 0;
+        self.predlink(@intCast(u16, i), 0, split);
+        self.predlink(@intCast(u16, i), 1, split);
     }
 }
 
