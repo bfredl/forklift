@@ -18,6 +18,8 @@ n: ArrayList(Node),
 b: ArrayList(Block),
 dfs: []u16,
 refs: ArrayList(u16),
+narg: u16 = 0,
+nvar: u16 = 0,
 
 pub fn uv(s: usize) u16 {
     return @intCast(u16, s);
@@ -173,6 +175,44 @@ pub fn addInst(self: *Self, node: u16, inst: Inst) !u16 {
     return toref(blkid, lastfree);
 }
 
+pub fn const_int(self: *Self, node: u16, val: u16) !u16 {
+    // TODO: actually store constants in a buffer, or something
+    return self.addInst(node, .{ .tag = .constant, .op1 = val, .op2 = 0 });
+}
+
+pub fn binop(self: *Self, node: u16, tag: Tag, op1: u16, op2: u16) !u16 {
+    return self.addInst(node, .{ .tag = tag, .op1 = op1, .op2 = op2 });
+}
+
+pub fn vBinop(self: *Self, node: u16, vop: VMathOp, op1: u16, op2: u16) !u16 {
+    return self.addInst(node, .{ .tag = .vmath, .spec = vop.off(), .op1 = op1, .op2 = op2 });
+}
+
+pub fn putvar(self: *Self, node: u16, op1: u16, op2: u16) !void {
+    _ = try self.binop(node, .putvar, op1, op2);
+}
+
+pub fn ret(self: *Self, node: u16, val: u16) !void {
+    // TODO: actually store constants in a buffer, or something
+    _ = try self.addInst(node, .{ .tag = .ret, .op1 = val, .op2 = 0 });
+}
+
+// TODO: maintain wf of block 0: first all args, then all vars.
+
+pub fn arg(self: *Self) !u16 {
+    if (self.n.items.len == 0) return error.EEEEE;
+    const inst = try self.addInst(0, .{ .tag = .arg, .op1 = self.narg, .op2 = 0 });
+    self.narg += 1;
+    return inst;
+}
+
+pub fn variable(self: *Self) !u16 {
+    if (self.n.items.len == 0) return error.EEEEE;
+    const inst = try self.addInst(0, .{ .tag = .variable, .op1 = self.nvar, .op2 = 0 });
+    self.nvar += 1;
+    return inst;
+}
+
 pub fn preds(self: *Self, i: u16) []u16 {
     const v = self.n.items[i];
     return self.refs.items[v.predref..][0..v.npred];
@@ -326,34 +366,34 @@ test "loopvar" {
 
     const start = try self.addNode();
 
-    const arg1 = try self.addInst(start, .{ .tag = .arg, .op1 = 0, .op2 = 0 });
-    const arg2 = try self.addInst(start, .{ .tag = .arg, .op1 = 1, .op2 = 0 });
-    const arg3 = try self.addInst(start, .{ .tag = .arg, .op1 = 2, .op2 = 0 });
+    const arg1 = try self.arg();
+    const arg2 = try self.arg();
+    const arg3 = try self.arg();
 
-    const var_i = try self.addInst(start, .{ .tag = .variable, .op1 = 0, .op2 = 0 });
-    const const_0 = try self.addInst(start, .{ .tag = .constant, .op1 = 0, .op2 = 0 });
+    const var_i = try self.variable();
+    const const_0 = try self.const_int(start, 0);
 
-    _ = try self.addInst(start, .{ .tag = .putvar, .op1 = var_i, .op2 = const_0 });
+    try self.putvar(start, var_i, const_0);
 
     const loop = try self.addNode();
     // NB: assumes count > 0, always do first iteration
     self.n.items[start].s[0] = loop;
 
-    const val = try self.addInst(loop, .{ .tag = .load, .op1 = arg1, .op2 = var_i });
-    const newval = try self.addInst(loop, .{ .tag = .vmath, .spec = VMathOp.mul.off(), .op1 = val, .op2 = val });
+    const val = try self.binop(loop, .load, arg1, var_i);
+    const newval = try self.vBinop(loop, .mul, val, val);
     _ = try self.addInst(loop, .{ .tag = .store, .op1 = arg2, .op2 = var_i, .op3 = newval });
 
-    const const_1 = try self.addInst(loop, .{ .tag = .constant, .op1 = 1, .op2 = 0 });
-    const iadd = try self.addInst(loop, .{ .tag = .iadd, .op1 = var_i, .op2 = const_1 });
-    _ = try self.addInst(loop, .{ .tag = .putvar, .op1 = var_i, .op2 = iadd });
-    _ = try self.addInst(loop, .{ .tag = .ilessthan, .op1 = var_i, .op2 = arg3 });
+    const const_1 = try self.const_int(loop, 1);
+    const iadd = try self.binop(loop, .iadd, var_i, const_1);
+    try self.putvar(loop, var_i, iadd);
+    _ = try self.binop(loop, .ilessthan, var_i, arg3);
 
     // if true
     self.n.items[loop].s[0] = loop;
     const end = try self.addNode();
     self.n.items[loop].s[1] = end;
 
-    _ = try self.addInst(end, .{ .tag = .ret, .op1 = const_0, .op2 = 0 });
+    try self.ret(end, const_0);
 
     try self.calc_preds();
 
