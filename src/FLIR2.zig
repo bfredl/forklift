@@ -73,7 +73,7 @@ fn n_op(tag: Tag) u2 {
         .arg => 1, // fake??
         .variable => 0,
         .putvar => 2,
-        .phi => 0, // or one??
+        .phi => 1,
         .constant => 0,
         .load => 2, // base, idx
         .store => 3, // base, idx, val
@@ -175,6 +175,37 @@ pub fn addInst(self: *Self, node: u16, inst: Inst) !u16 {
     return toref(blkid, lastfree);
 }
 
+// add inst to the beginning of the block, _without_ renumbering any exiting instruction
+pub fn preInst(self: *Self, node: u16, inst: Inst) !u16 {
+    const n = &self.n.items[node];
+    var blkid = n.firstblk;
+    var blk = &self.b.items[blkid];
+
+    var firstfree: i8 = -1;
+    var i: i8 = 0;
+    while (i < BLK_SIZE) : (i += 1) {
+        if (blk.i[@intCast(u8, i)].free()) {
+            firstfree = i;
+        } else {
+            break;
+        }
+    }
+
+    if (firstfree == -1) {
+        const nextblk = blkid;
+        blkid = uv(self.b.items.len);
+        blk = try self.b.addOne();
+        blk.* = .{ .node = node, .succ = nextblk };
+        n.firstblk = blkid;
+        firstfree = BLK_SIZE - 1;
+    }
+
+    const free = @intCast(u8, firstfree);
+
+    blk.i[free] = inst;
+    return toref(blkid, free);
+}
+
 pub fn const_int(self: *Self, node: u16, val: u16) !u16 {
     // TODO: actually store constants in a buffer, or something
     return self.addInst(node, .{ .tag = .constant, .op1 = val, .op2 = 0 });
@@ -195,6 +226,10 @@ pub fn putvar(self: *Self, node: u16, op1: u16, op2: u16) !void {
 pub fn ret(self: *Self, node: u16, val: u16) !void {
     // TODO: actually store constants in a buffer, or something
     _ = try self.addInst(node, .{ .tag = .ret, .op1 = val, .op2 = 0 });
+}
+
+pub fn prePhi(self: *Self, node: u16, varid: u16) !u16 {
+    return self.preInst(node, .{ .tag = .phi, .op1 = varid, .op2 = 0 });
 }
 
 // TODO: maintain wf of block 0: first all args, then all vars.
@@ -396,6 +431,9 @@ test "loopvar" {
     try self.ret(end, const_0);
 
     try self.calc_preds();
+
+    // sometime later..
+    _ = try self.prePhi(loop, var_i);
 
     self.debug_print();
 }
