@@ -325,7 +325,9 @@ pub fn debug_print(self: *Self) void {
         self.print_blk(b.firstblk);
 
         if (b.s[1] == 0) {
-            if (b.s[0] != i + 1) {
+            if (b.s[0] == 0) {
+                print("  diverge\n", .{});
+            } else if (b.s[0] != i + 1) {
                 print("  jump {}\n", .{b.s[0]});
             }
         } else {
@@ -435,5 +437,43 @@ test "loopvar" {
     // sometime later..
     _ = try self.prePhi(loop, var_i);
 
+    self.debug_print();
+}
+
+test "diamondvar" {
+    var self = try Self.init(8, test_allocator);
+    defer self.deinit();
+
+    const start = try self.addNode();
+    const arg1 = try self.arg();
+    const arg2 = try self.arg();
+    const v = try self.variable();
+
+    const const_0 = try self.const_int(start, 0);
+    const const_42 = try self.const_int(start, 42);
+    try self.putvar(start, v, const_42);
+    _ = try self.binop(start, .ilessthan, arg1, const_0);
+
+    const left = try self.addNode();
+    self.n.items[start].s[0] = left;
+    const addl = try self.binop(left, .iadd, v, arg2);
+    try self.putvar(left, v, addl);
+
+    const right = try self.addNode();
+    self.n.items[start].s[1] = right;
+    const addr = try self.binop(right, .iadd, v, arg1);
+    try self.putvar(right, v, addr);
+
+    const end = try self.addNode();
+    self.n.items[left].s[0] = end;
+    self.n.items[right].s[0] = end;
+
+    const const_77 = try self.const_int(end, 77);
+    const adde = try self.binop(end, .iadd, v, const_77);
+    try self.putvar(end, v, adde);
+
+    try self.ret(end, v);
+
+    try self.calc_preds();
     self.debug_print();
 }
