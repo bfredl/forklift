@@ -51,6 +51,7 @@ fn dominators(self: *FLIR) !void {
             }
         }
     }
+    self.n_dfs = qi;
 
     var i = qi - 1;
     while (i >= 1) : (i -= 1) {

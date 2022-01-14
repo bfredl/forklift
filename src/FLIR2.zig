@@ -17,6 +17,11 @@ a: Allocator,
 n: ArrayList(Node),
 b: ArrayList(Block),
 dfs: []u16,
+// number of reachable blocks (and thus valid entries in dfs)
+// non-reachables might not have been pruned yet, so use this
+// instead of dfs.size!
+// TODO: or just make dfs ArrayListUnmanagable with the rest..
+n_dfs: u16 = 0,
 refs: ArrayList(u16),
 narg: u16 = 0,
 nvar: u16 = 0,
@@ -70,7 +75,7 @@ pub const Inst = struct {
 fn n_op(tag: Tag) u2 {
     return switch (tag) {
         .empty => 0,
-        .arg => 1, // fake??
+        .arg => 0,
         .variable => 0,
         .putvar => 2,
         .phi => 1,
@@ -78,7 +83,7 @@ fn n_op(tag: Tag) u2 {
         .load => 2, // base, idx
         .store => 3, // base, idx, val
         .iadd => 2,
-        .ilessthan => 1,
+        .ilessthan => 2,
         .vmath => 2,
         .ret => 1,
     };
@@ -90,11 +95,11 @@ pub const BLK_SIZE = 4;
 pub const BLK_SHIFT = 2;
 pub const Block = struct {
     node: u16,
-    succ: u16 = NoBlk,
+    succ: u16 = NoRef,
     i: [BLK_SIZE]Inst = .{EMPTY} ** BLK_SIZE,
 
     fn next(self: @This()) ?u16 {
-        return if (self.succ != NoBlk) self.succ else null;
+        return if (self.succ != NoRef) self.succ else null;
     }
 };
 
@@ -111,8 +116,9 @@ test "sizey" {
 // filler value for unintialized refs. not a sentinel for
 // actually invalid refs!
 const DEAD: u16 = 0xFEFF;
-// we cannot have more than 2^14 blocks anyway
-const NoBlk: u16 = 0xFFFF;
+// For blocks: we cannot have more than 2^14 blocks anyway
+// for vars: don't allocate last block!
+const NoRef: u16 = 0xFFFF;
 
 pub fn init(n: u16, allocator: Allocator) !Self {
     return Self{
@@ -311,6 +317,50 @@ pub fn calc_preds(self: *Self) !void {
         const split = v.s[1] > 0;
         try self.predlink(@intCast(u16, i), 0, split);
         try self.predlink(@intCast(u16, i), 1, split);
+    }
+}
+
+// Simple and Eﬃcient Construction of Static Single Assignment Form
+// Matthias Braun et al, 2013
+pub fn ssa_gvn(self: *Self) void {
+    const n = self.n.items;
+    const vardef = self.a.alloc(u16, self.n.items.size * self.nvar);
+    std.mem.set(vardef, NoRef);
+    for (self.dfs[0..self.n_dfs]) |i| {
+        self.ssa_gvn_blk(self, vardef, n[i].firstblk);
+    }
+}
+
+fn ssa_gvn_blk(self: *Self, vardef: []u16, b: u16) void {
+    const blk = self.b.items[b];
+    const n = blk.node;
+
+    for (blk.i) |*i| {
+        if (i.tag == .putvar) {
+            vardef[self.vdi(blk, i.op1)] = i.op2;
+        } else if (.tag == .phi) {
+            // TODO: likely we'll never need to consider an existing
+            // phi node here but verify this!
+        } else {
+            const nop = n_op(i.tag);
+            if (nop > 0) {
+                i.op1 = self.ssa_gvn_readvar(vardef, n, i.op1);
+                if (nop > 1) {
+                    i.op2 = self.ssa_gvn_readvar(vardef, n, i.op2);
+                    // TODO: delet this:
+                    if (nop > 2) {
+                        i.op3 = self.ssa_gvn_readvar(vardef, n, i.op3);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn ssa_gvn_readvar(self: *Self, node: u16, v: u16) u16 {
+    const vd = self.vardef[self.vdi(node, v)];
+    if (vd.* != NoRef) {
+        return vd.*;
     }
 }
 
