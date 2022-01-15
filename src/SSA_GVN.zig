@@ -34,6 +34,8 @@ fn ssa(self: Self) !void {
     for (self.f.dforder()) |i| {
         try self.resolve_blk(n[i].firstblk);
     }
+
+    try self.delete_vars(self.f.n.items[0].firstblk);
 }
 
 fn fill_blk(self: Self, b: u16) !void {
@@ -138,4 +140,18 @@ fn resolve_phi(self: Self, b: u16, idx: u16) !void {
     }
     i.op1 = 0;
     i.spec = 1;
+}
+
+fn delete_vars(self: Self, b: u16) !void {
+    const blk = &self.f.b.items[b];
+    for (blk.i) |*i| {
+        if (i.tag == .variable) {
+            i.tag = .empty;
+        }
+    }
+
+    // TODO: more like a loop?
+    if (blk.next()) |next| {
+        return self.resolve_blk(next);
+    }
 }
