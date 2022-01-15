@@ -48,6 +48,8 @@ pub const Tag = enum(u8) {
     variable,
     putvar, // non-phi assignment
     phi,
+    putphi, // assign to phi of (only) sucessor
+    renum,
     constant,
     load,
     store,
@@ -80,7 +82,9 @@ fn n_op(tag: Tag) u2 {
         .variable => 0,
         .putvar => 2,
         .phi => 1,
+        .putphi => 2, // fast nej, bara en?
         .constant => 0,
+        .renum => 1,
         .load => 2, // base, idx
         .store => 3, // base, idx, val
         .iadd => 2,
@@ -351,6 +355,14 @@ pub fn ssa_gvn(self: *Self) !void {
     for (self.dfs[0..self.n_dfs]) |i| {
         try self.ssa_gvn_blk(vardef, n[i].firstblk);
     }
+
+    // at this point all nodes have been _filled_ but join nodes (npred > 1)
+    // have not been _sealed_, in the terminology of Braun 2013
+    // TODO: keep a worklist of unfinished phi nodes, more effective +
+    // otherwise will need multiple passes until a fix point
+    for (self.dfs[0..self.n_dfs]) |i| {
+        try self.ssa_gvn_resolve_blk(vardef, n[i].firstblk);
+    }
 }
 
 fn ssa_gvn_blk(self: *Self, vardef: []u16, b: u16) !void {
@@ -361,12 +373,12 @@ fn ssa_gvn_blk(self: *Self, vardef: []u16, b: u16) !void {
         if (i.tag == .putvar) {
             const ivar = self.iref(i.op1) orelse return error.UW0tM8;
             vardef[self.vdi(n, ivar.op1)] = i.op2;
-            print("PUTTA: [{},{}] := {}\n", .{ n, ivar.op1, i.op2 });
+            // print("PUTTA: [{},{}] := {}\n", .{ n, ivar.op1, i.op2 });
         } else if (.tag == .phi) {
             // TODO: likely we'll never need to consider an existing
             // phi node here but verify this!
         } else {
-            print("THE: {}\n", .{i.*});
+            // print("THE: {}\n", .{i.*});
             const nop = n_op(i.tag);
             if (nop > 0) {
                 i.op1 = try self.ssa_gvn_checkvar(vardef, n, i.op1);
@@ -403,7 +415,7 @@ fn ssa_gvn_checkvar(self: *Self, vardef: []u16, node: u16, ref: u16) !u16 {
 const MaybePhi = @typeInfo(@TypeOf(prePhi)).Fn.return_type.?;
 fn ssa_gvn_readvar(self: *Self, vardef: []u16, node: u16, v: u16) MaybePhi {
     const vd = &vardef[self.vdi(node, v)];
-    print("LESA: [{},{}] == {}\n", .{ node, v, vd.* });
+    // print("LESA: [{},{}] == {}\n", .{ node, v, vd.* });
     if (vd.* != NoRef) {
         return vd.*;
     }
@@ -425,8 +437,36 @@ fn ssa_gvn_readvar(self: *Self, vardef: []u16, node: u16, v: u16) MaybePhi {
         }
     };
     vd.* = def;
-    print("CACHEA: [{},{}] := {}\n", .{ node, v, def });
+    // print("CACHEA: [{},{}] := {}\n", .{ node, v, def });
     return def;
+}
+
+fn ssa_gvn_resolve_blk(self: *Self, vardef: []u16, b: u16) !void {
+    const blk = &self.b.items[b];
+
+    for (blk.i) |*i, idx| {
+        if (i.tag == .phi) {
+            try self.ssa_gvn_resolve_phi(vardef, b, uv(idx));
+        }
+    }
+    // TODO: more like a loop?
+    if (blk.next()) |next| {
+        return self.ssa_gvn_resolve_blk(vardef, next);
+    }
+}
+fn ssa_gvn_resolve_phi(self: *Self, vardef: []u16, b: u16, idx: u16) !void {
+    // const n = self.n.items[blk.node];
+    const blk = &self.b.items[b];
+    const i = &blk.i[idx];
+    if (i.spec == 1) return;
+    const ivar = self.iref(i.op1) orelse return error.GLUGG;
+    var onlyref: ?u16 = null;
+    for (self.preds(blk.node)) |v| {
+        const ref = try self.ssa_gvn_readvar(vardef, v, ivar.op1);
+        _ = try self.binop(v, .putphi, toref(b, idx), ref);
+        onlyref = if (onlyref) |only| if (only == ref) only else NoRef else ref;
+    }
+    i.spec = 1;
 }
 
 pub fn debug_print(self: *Self, novar: bool) void {
@@ -598,5 +638,5 @@ test "diamondvar" {
     // as a separate step!
     try @import("./MiniDOM.zig").dominators(&self);
     try self.ssa_gvn();
-    self.debug_print(false);
+    self.debug_print(true);
 }
