@@ -82,7 +82,7 @@ pub fn n_op(tag: Tag) u2 {
         .arg => 0,
         .variable => 0,
         .putvar => 2,
-        .phi => 1,
+        .phi => 0,
         .putphi => 2, // fast nej, bara en?
         .constant => 0,
         .renum => 1,
@@ -349,7 +349,7 @@ pub fn calc_preds(self: *Self) !void {
     }
 }
 
-pub fn debug_print(self: *Self, novar: bool) void {
+pub fn debug_print(self: *Self) void {
     if (stage2) {
         return;
     }
@@ -357,7 +357,7 @@ pub fn debug_print(self: *Self, novar: bool) void {
     for (self.n.items) |*b, i| {
         print("node {} (npred {}):\n", .{ i, b.npred });
 
-        self.print_blk(b.firstblk, novar);
+        self.print_blk(b.firstblk);
 
         if (b.s[1] == 0) {
             if (b.s[0] == 0) {
@@ -371,14 +371,11 @@ pub fn debug_print(self: *Self, novar: bool) void {
     }
 }
 
-fn print_blk(self: *Self, b: u16, novar: bool) void {
+fn print_blk(self: *Self, b: u16) void {
     const blk = self.b.items[b];
 
     for (blk.i) |i, idx| {
         if (i.tag == .empty) {
-            continue;
-        }
-        if (novar and (i.tag == .putvar or i.tag == .variable)) {
             continue;
         }
         print("  %{} = {s}", .{ toref(b, uv(idx)), @tagName(i.tag) });
@@ -402,7 +399,7 @@ fn print_blk(self: *Self, b: u16, novar: bool) void {
     }
 
     if (blk.next()) |next| {
-        return self.print_blk(next, novar);
+        return self.print_blk(next);
     }
 }
 
@@ -432,7 +429,7 @@ test "printa" {
 
     _ = try self.addInst(node2, .{ .tag = .ret, .op1 = add, .op2 = 0 });
 
-    self.debug_print(false);
+    self.debug_print();
 }
 
 test "loopvar" {
@@ -475,7 +472,7 @@ test "loopvar" {
     // sometime later..
     _ = try self.prePhi(loop, var_i);
 
-    self.debug_print(false);
+    self.debug_print();
 }
 
 test "diamondvar" {
@@ -513,10 +510,10 @@ test "diamondvar" {
     try self.ret(end, v);
 
     try self.calc_preds();
-    self.debug_print(false);
+    self.debug_print();
     // TODO: we only use the dfs search, break it out
     // as a separate step!
     try @import("./MiniDOM.zig").dominators(&self);
     try SSA_GVN.ssa_gvn(&self);
-    self.debug_print(true);
+    self.debug_print();
 }
