@@ -5,6 +5,7 @@ const Self = @This();
 const print = std.debug.print;
 const CFO = @import("./CFO.zig");
 const swap = std.mem.swap;
+const SSA_GVN = @import("./SSA_GVN.zig");
 
 const builtin = @import("builtin");
 const stage2 = builtin.zig_is_stage2;
@@ -75,7 +76,7 @@ pub const Inst = struct {
 
 // number of op:s which are inst references.
 // otherwise they can store whatever data
-fn n_op(tag: Tag) u2 {
+pub fn n_op(tag: Tag) u2 {
     return switch (tag) {
         .empty => 0,
         .arg => 0,
@@ -103,12 +104,12 @@ pub const Block = struct {
     succ: u16 = NoRef,
     i: [BLK_SIZE]Inst = .{EMPTY} ** BLK_SIZE,
 
-    fn next(self: @This()) ?u16 {
+    pub fn next(self: @This()) ?u16 {
         return if (self.succ != NoRef) self.succ else null;
     }
 };
 
-fn toref(blkid: u16, idx: u16) u16 {
+pub fn toref(blkid: u16, idx: u16) u16 {
     assert(idx < BLK_SIZE);
     return (blkid << BLK_SHIFT) | idx;
 }
@@ -122,7 +123,7 @@ fn fromref(ref: u16) struct { block: u16, idx: u16 } {
     };
 }
 
-fn iref(self: *Self, ref: u16) ?*Inst {
+pub fn iref(self: *Self, ref: u16) ?*Inst {
     if (ref == NoRef) {
         return null;
     }
@@ -138,10 +139,10 @@ test "sizey" {
 
 // filler value for unintialized refs. not a sentinel for
 // actually invalid refs!
-const DEAD: u16 = 0xFEFF;
+pub const DEAD: u16 = 0xFEFF;
 // For blocks: we cannot have more than 2^14 blocks anyway
 // for vars: don't allocate last block!
-const NoRef: u16 = 0xFFFF;
+pub const NoRef: u16 = 0xFFFF;
 
 pub fn init(n: u16, allocator: Allocator) !Self {
     return Self{
@@ -277,6 +278,10 @@ pub fn variable(self: *Self) !u16 {
     return inst;
 }
 
+pub fn dforder(self: *Self) []u16 {
+    return self.dfs[0..self.n_dfs];
+}
+
 pub fn preds(self: *Self, i: u16) []u16 {
     const v = self.n.items[i];
     return self.refs.items[v.predref..][0..v.npred];
@@ -342,131 +347,6 @@ pub fn calc_preds(self: *Self) !void {
         try self.predlink(@intCast(u16, i), 0, split);
         try self.predlink(@intCast(u16, i), 1, split);
     }
-}
-
-// Simple and Eﬃcient Construction of Static Single Assignment Form
-// Matthias Braun et al, 2013
-pub fn ssa_gvn(self: *Self) !void {
-    const n = self.n.items;
-    const vardef = try self.a.alloc(u16, self.n.items.len * self.nvar);
-    defer self.a.free(vardef);
-
-    std.mem.set(u16, vardef, NoRef);
-    for (self.dfs[0..self.n_dfs]) |i| {
-        try self.ssa_gvn_blk(vardef, n[i].firstblk);
-    }
-
-    // at this point all nodes have been _filled_ but join nodes (npred > 1)
-    // have not been _sealed_, in the terminology of Braun 2013
-    // TODO: keep a worklist of unfinished phi nodes, more effective +
-    // otherwise will need multiple passes until a fix point
-    for (self.dfs[0..self.n_dfs]) |i| {
-        try self.ssa_gvn_resolve_blk(vardef, n[i].firstblk);
-    }
-}
-
-fn ssa_gvn_blk(self: *Self, vardef: []u16, b: u16) !void {
-    const blk = &self.b.items[b];
-    const n = blk.node;
-
-    for (blk.i) |*i| {
-        if (i.tag == .putvar) {
-            const ivar = self.iref(i.op1) orelse return error.UW0tM8;
-            vardef[self.vdi(n, ivar.op1)] = i.op2;
-            // print("PUTTA: [{},{}] := {}\n", .{ n, ivar.op1, i.op2 });
-        } else if (.tag == .phi) {
-            // TODO: likely we'll never need to consider an existing
-            // phi node here but verify this!
-        } else {
-            // print("THE: {}\n", .{i.*});
-            const nop = n_op(i.tag);
-            if (nop > 0) {
-                i.op1 = try self.ssa_gvn_checkvar(vardef, n, i.op1);
-                if (nop > 1) {
-                    i.op2 = try self.ssa_gvn_checkvar(vardef, n, i.op2);
-                    // TODO: delet this:
-                    if (nop > 2) {
-                        i.op3 = try self.ssa_gvn_checkvar(vardef, n, i.op3);
-                    }
-                }
-            }
-        }
-    }
-
-    // TODO: more like a loop?
-    if (blk.next()) |next| {
-        return self.ssa_gvn_blk(vardef, next);
-    }
-}
-
-fn vdi(self: *Self, node: u16, v: u16) u16 {
-    return self.nvar * node + v;
-}
-
-fn ssa_gvn_checkvar(self: *Self, vardef: []u16, node: u16, ref: u16) !u16 {
-    const i = self.iref(ref) orelse return NoRef;
-    if (i.tag == .variable) {
-        return self.ssa_gvn_readvar(vardef, node, i.op1);
-    } else {
-        return ref;
-    }
-}
-
-const MaybePhi = @typeInfo(@TypeOf(prePhi)).Fn.return_type.?;
-fn ssa_gvn_readvar(self: *Self, vardef: []u16, node: u16, v: u16) MaybePhi {
-    const vd = &vardef[self.vdi(node, v)];
-    // print("LESA: [{},{}] == {}\n", .{ node, v, vd.* });
-    if (vd.* != NoRef) {
-        return vd.*;
-    }
-
-    const n = self.n.items[node];
-    const def = thedef: {
-        if (n.npred == 0) {
-            unreachable; // TODO: error for undefined var
-        } else if (n.npred == 1) {
-            const pred = self.refs.items[n.predref];
-            // assert recursion eventually terminates
-            assert(self.n.items[pred].dfnum < n.dfnum);
-            break :thedef try self.ssa_gvn_readvar(vardef, pred, v);
-        } else {
-            // as an optimization, we could check if all predecessors
-            // are filled (pred[i].dfnum < n.dfnum), and in that case
-            // fill the phi node already;
-            break :thedef try self.prePhi(node, self.narg + v);
-        }
-    };
-    vd.* = def;
-    // print("CACHEA: [{},{}] := {}\n", .{ node, v, def });
-    return def;
-}
-
-fn ssa_gvn_resolve_blk(self: *Self, vardef: []u16, b: u16) !void {
-    const blk = &self.b.items[b];
-
-    for (blk.i) |*i, idx| {
-        if (i.tag == .phi) {
-            try self.ssa_gvn_resolve_phi(vardef, b, uv(idx));
-        }
-    }
-    // TODO: more like a loop?
-    if (blk.next()) |next| {
-        return self.ssa_gvn_resolve_blk(vardef, next);
-    }
-}
-fn ssa_gvn_resolve_phi(self: *Self, vardef: []u16, b: u16, idx: u16) !void {
-    // const n = self.n.items[blk.node];
-    const blk = &self.b.items[b];
-    const i = &blk.i[idx];
-    if (i.spec == 1) return;
-    const ivar = self.iref(i.op1) orelse return error.GLUGG;
-    var onlyref: ?u16 = null;
-    for (self.preds(blk.node)) |v| {
-        const ref = try self.ssa_gvn_readvar(vardef, v, ivar.op1);
-        _ = try self.binop(v, .putphi, toref(b, idx), ref);
-        onlyref = if (onlyref) |only| if (only == ref) only else NoRef else ref;
-    }
-    i.spec = 1;
 }
 
 pub fn debug_print(self: *Self, novar: bool) void {
@@ -637,6 +517,6 @@ test "diamondvar" {
     // TODO: we only use the dfs search, break it out
     // as a separate step!
     try @import("./MiniDOM.zig").dominators(&self);
-    try self.ssa_gvn();
+    try SSA_GVN.ssa_gvn(&self);
     self.debug_print(true);
 }
