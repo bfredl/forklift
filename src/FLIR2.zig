@@ -9,6 +9,7 @@ const swap = std.mem.swap;
 const builtin = @import("builtin");
 const stage2 = builtin.zig_is_stage2;
 const ArrayList = @import("./fake_list.zig").ArrayList;
+const assert = std.debug.assert;
 
 const VMathOp = CFO.VMathOp;
 
@@ -19,7 +20,7 @@ b: ArrayList(Block),
 dfs: []u16,
 // number of reachable blocks (and thus valid entries in dfs)
 // non-reachables might not have been pruned yet, so use this
-// instead of dfs.size!
+// instead of dfs.len!
 // TODO: or just make dfs ArrayListUnmanagable with the rest..
 n_dfs: u16 = 0,
 refs: ArrayList(u16),
@@ -104,13 +105,31 @@ pub const Block = struct {
 };
 
 fn toref(blkid: u16, idx: u16) u16 {
-    std.debug.assert(idx < BLK_SIZE);
+    assert(idx < BLK_SIZE);
     return (blkid << BLK_SHIFT) | idx;
+}
+
+fn fromref(ref: u16) struct { block: u16, idx: u16 } {
+    const IDX_MASK: u16 = BLK_SIZE - 1;
+    const BLK_MASK: u16 = ~IDX_MASK;
+    return .{
+        .block = (ref & BLK_MASK) >> BLK_SHIFT,
+        .idx = ref & IDX_MASK,
+    };
+}
+
+fn iref(self: *Self, ref: u16) ?*Inst {
+    if (ref == NoRef) {
+        return null;
+    }
+    const r = fromref(ref);
+    const blk = &self.b.items[r.block];
+    return &blk.i[r.idx];
 }
 
 test "sizey" {
     // @compileLog(@sizeOf(Block));
-    std.debug.assert(@sizeOf(Block) <= 64);
+    assert(@sizeOf(Block) <= 64);
 }
 
 // filler value for unintialized refs. not a sentinel for
@@ -266,7 +285,8 @@ pub fn p(self: *Self, s1: u16, s2: u16) void {
         z1 = s2;
         z2 = s1;
     }
-    self.n.appendAssumeCapacity(.{ .s = .{ z1, z2 } });
+    // TODO: this is INVALID
+    self.n.appendAssumeCapacity(.{ .s = .{ z1, z2 }, .firstblk = NoRef, .lastblk = NoRef });
 }
 
 fn predlink(self: *Self, i: u16, si: u1, split: bool) !void {
@@ -322,57 +342,102 @@ pub fn calc_preds(self: *Self) !void {
 
 // Simple and Eﬃcient Construction of Static Single Assignment Form
 // Matthias Braun et al, 2013
-pub fn ssa_gvn(self: *Self) void {
+pub fn ssa_gvn(self: *Self) !void {
     const n = self.n.items;
-    const vardef = self.a.alloc(u16, self.n.items.size * self.nvar);
-    std.mem.set(vardef, NoRef);
+    const vardef = try self.a.alloc(u16, self.n.items.len * self.nvar);
+    defer self.a.free(vardef);
+
+    std.mem.set(u16, vardef, NoRef);
     for (self.dfs[0..self.n_dfs]) |i| {
-        self.ssa_gvn_blk(self, vardef, n[i].firstblk);
+        try self.ssa_gvn_blk(vardef, n[i].firstblk);
     }
 }
 
-fn ssa_gvn_blk(self: *Self, vardef: []u16, b: u16) void {
-    const blk = self.b.items[b];
+fn ssa_gvn_blk(self: *Self, vardef: []u16, b: u16) !void {
+    const blk = &self.b.items[b];
     const n = blk.node;
 
     for (blk.i) |*i| {
         if (i.tag == .putvar) {
-            vardef[self.vdi(blk, i.op1)] = i.op2;
+            const ivar = self.iref(i.op1) orelse return error.UW0tM8;
+            vardef[self.vdi(n, ivar.op1)] = i.op2;
+            print("PUTTA: [{},{}] := {}\n", .{ n, ivar.op1, i.op2 });
         } else if (.tag == .phi) {
             // TODO: likely we'll never need to consider an existing
             // phi node here but verify this!
         } else {
+            print("THE: {}\n", .{i.*});
             const nop = n_op(i.tag);
             if (nop > 0) {
-                i.op1 = self.ssa_gvn_readvar(vardef, n, i.op1);
+                i.op1 = try self.ssa_gvn_checkvar(vardef, n, i.op1);
                 if (nop > 1) {
-                    i.op2 = self.ssa_gvn_readvar(vardef, n, i.op2);
+                    i.op2 = try self.ssa_gvn_checkvar(vardef, n, i.op2);
                     // TODO: delet this:
                     if (nop > 2) {
-                        i.op3 = self.ssa_gvn_readvar(vardef, n, i.op3);
+                        i.op3 = try self.ssa_gvn_checkvar(vardef, n, i.op3);
                     }
                 }
             }
         }
     }
-}
 
-fn ssa_gvn_readvar(self: *Self, node: u16, v: u16) u16 {
-    const vd = self.vardef[self.vdi(node, v)];
-    if (vd.* != NoRef) {
-        return vd.*;
+    // TODO: more like a loop?
+    if (blk.next()) |next| {
+        return self.ssa_gvn_blk(vardef, next);
     }
 }
 
-pub fn debug_print(self: *Self) void {
+fn vdi(self: *Self, node: u16, v: u16) u16 {
+    return self.nvar * node + v;
+}
+
+fn ssa_gvn_checkvar(self: *Self, vardef: []u16, node: u16, ref: u16) !u16 {
+    const i = self.iref(ref) orelse return NoRef;
+    if (i.tag == .variable) {
+        return self.ssa_gvn_readvar(vardef, node, i.op1);
+    } else {
+        return ref;
+    }
+}
+
+const MaybePhi = @typeInfo(@TypeOf(prePhi)).Fn.return_type.?;
+fn ssa_gvn_readvar(self: *Self, vardef: []u16, node: u16, v: u16) MaybePhi {
+    const vd = &vardef[self.vdi(node, v)];
+    print("LESA: [{},{}] == {}\n", .{ node, v, vd.* });
+    if (vd.* != NoRef) {
+        return vd.*;
+    }
+
+    const n = self.n.items[node];
+    const def = thedef: {
+        if (n.npred == 0) {
+            unreachable; // TODO: error for undefined var
+        } else if (n.npred == 1) {
+            const pred = self.refs.items[n.predref];
+            // assert recursion eventually terminates
+            assert(self.n.items[pred].dfnum < n.dfnum);
+            break :thedef try self.ssa_gvn_readvar(vardef, pred, v);
+        } else {
+            // as an optimization, we could check if all predecessors
+            // are filled (pred[i].dfnum < n.dfnum), and in that case
+            // fill the phi node already;
+            break :thedef try self.prePhi(node, self.narg + v);
+        }
+    };
+    vd.* = def;
+    print("CACHEA: [{},{}] := {}\n", .{ node, v, def });
+    return def;
+}
+
+pub fn debug_print(self: *Self, novar: bool) void {
     if (stage2) {
         return;
     }
     print("\n", .{});
     for (self.n.items) |*b, i| {
-        print("node {}:\n", .{i});
+        print("node {} (npred {}):\n", .{ i, b.npred });
 
-        self.print_blk(b.firstblk);
+        self.print_blk(b.firstblk, novar);
 
         if (b.s[1] == 0) {
             if (b.s[0] == 0) {
@@ -386,11 +451,14 @@ pub fn debug_print(self: *Self) void {
     }
 }
 
-fn print_blk(self: *Self, b: u16) void {
+fn print_blk(self: *Self, b: u16, novar: bool) void {
     const blk = self.b.items[b];
 
     for (blk.i) |i, idx| {
         if (i.tag == .empty) {
+            continue;
+        }
+        if (novar and (i.tag == .putvar or i.tag == .variable)) {
             continue;
         }
         print("  %{} = {s}", .{ toref(b, uv(idx)), @tagName(i.tag) });
@@ -414,7 +482,7 @@ fn print_blk(self: *Self, b: u16) void {
     }
 
     if (blk.next()) |next| {
-        return self.print_blk(next);
+        return self.print_blk(next, novar);
     }
 }
 
@@ -444,7 +512,7 @@ test "printa" {
 
     _ = try self.addInst(node2, .{ .tag = .ret, .op1 = add, .op2 = 0 });
 
-    self.debug_print();
+    self.debug_print(false);
 }
 
 test "loopvar" {
@@ -487,7 +555,7 @@ test "loopvar" {
     // sometime later..
     _ = try self.prePhi(loop, var_i);
 
-    self.debug_print();
+    self.debug_print(false);
 }
 
 test "diamondvar" {
@@ -499,10 +567,10 @@ test "diamondvar" {
     const arg2 = try self.arg();
     const v = try self.variable();
 
-    const const_0 = try self.const_int(start, 0);
+    // const const_0 = try self.const_int(start, 0);
     const const_42 = try self.const_int(start, 42);
     try self.putvar(start, v, const_42);
-    _ = try self.binop(start, .ilessthan, arg1, const_0);
+    _ = try self.binop(start, .ilessthan, arg1, v);
 
     const left = try self.addNode();
     self.n.items[start].s[0] = left;
@@ -525,5 +593,10 @@ test "diamondvar" {
     try self.ret(end, v);
 
     try self.calc_preds();
-    self.debug_print();
+    self.debug_print(false);
+    // TODO: we only use the dfs search, break it out
+    // as a separate step!
+    try @import("./MiniDOM.zig").dominators(&self);
+    try self.ssa_gvn();
+    self.debug_print(false);
 }
