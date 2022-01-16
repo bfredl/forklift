@@ -24,38 +24,14 @@ pub fn dominators(self: *FLIR) !void {
     defer self.a.free(s);
     mem.set(DomState, s, .{});
 
-    self.dfs = try self.a.alloc(u16, n.len);
-
-    var stack = try ArrayList(u16).initCapacity(self.a, n.len);
-    defer stack.deinit();
-    var qi: u16 = 0;
-    stack.appendAssumeCapacity(0);
-    while (stack.items.len > 0) {
-        const v = stack.pop();
-        if (n[v].dfnum > 0) {
-            // already visited
-            continue;
-        }
-        if (false) print("dfs[{}] = {};\n", .{ qi, v });
-        n[v].dfnum = qi;
-        self.dfs[qi] = v;
-        qi += 1;
+    for (self.dfs.items) |v| {
         s[v].sdom = v;
         s[v].label = v;
-
-        for (n[v].s) |si| {
-            // origin cannot be revisited anyway
-            if (si > 0 and n[si].dfnum == 0) {
-                s[si].parent = v;
-                stack.appendAssumeCapacity(si);
-            }
-        }
     }
-    self.n_dfs = qi;
 
-    var i = qi - 1;
+    var i = self.dfs.items.len - 1;
     while (i >= 1) : (i -= 1) {
-        var w = self.dfs[i];
+        var w = self.dfs.items[i];
         for (self.preds(w)) |v| {
             var u = eval(self, s, v);
             if (n[s[u].sdom].dfnum < n[s[w].sdom].dfnum) {
@@ -88,8 +64,8 @@ pub fn dominators(self: *FLIR) !void {
     }
 
     i = 1;
-    while (i < qi) : (i += 1) {
-        var w = self.dfs[i];
+    while (i < self.dfs.items.len) : (i += 1) {
+        var w = self.dfs.items[i];
         if (n[w].idom != s[w].sdom) {
             n[w].idom = n[n[w].idom].idom;
         }

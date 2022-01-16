@@ -23,7 +23,7 @@ pub fn ssa_gvn(flir: *FLIR) !void {
 fn ssa(self: Self) !void {
     const n = self.f.n.items;
 
-    for (self.f.dforder()) |i| {
+    for (self.f.dfs.items) |i| {
         try self.fill_blk(n[i].firstblk);
     }
 
@@ -31,7 +31,7 @@ fn ssa(self: Self) !void {
     // have not been _sealed_, in the terminology of Braun 2013
     // TODO: keep a worklist of unfinished phi nodes, more effective +
     // otherwise will need multiple passes until a fix point
-    for (self.f.dforder()) |i| {
+    for (self.f.dfs.items) |i| {
         try self.resolve_blk(n[i].firstblk);
     }
 

@@ -18,12 +18,11 @@ a: Allocator,
 // TODO: unmanage all these:
 n: ArrayList(Node),
 b: ArrayList(Block),
-dfs: []u16,
+dfs: ArrayList(u16),
 // number of reachable blocks (and thus valid entries in dfs)
 // non-reachables might not have been pruned yet, so use this
 // instead of dfs.len!
 // TODO: or just make dfs ArrayListUnmanagable with the rest..
-n_dfs: u16 = 0,
 refs: ArrayList(u16),
 narg: u16 = 0,
 nvar: u16 = 0,
@@ -40,7 +39,7 @@ pub const Node = struct {
     npred: u16 = 0,
     firstblk: u16,
     lastblk: u16,
-    foo: u16 = 0,
+    dfs_parent: u16 = 0,
 };
 
 pub const Tag = enum(u8) {
@@ -60,6 +59,22 @@ pub const Tag = enum(u8) {
     ret,
 };
 
+pub const MCKind = enum(u8) {
+    // not yet allocated, or Inst that trivially produces no value
+    unallocated,
+    // general purpose register like rax, r12, etc
+    ipreg,
+    // SSE/AVX registers, ie xmm0/ymm0-15
+    vfreg,
+    // TODO: support non-uniform sizes of spilled value
+    frameslot,
+    // unused value, perhaps should have been deleted before alloc
+    dead,
+    // not stored as such, will be emitted togheter with the next inst
+    // example "lea" and then "store", or "load" and then iadd/vmath
+    fused,
+};
+
 pub const Inst = struct {
     tag: Tag,
     spec: u8 = 0,
@@ -68,6 +83,8 @@ pub const Inst = struct {
     // maybe only for store which is not used otherwise?
     op3: u16 = 0,
     reindex: u16 = 0,
+    mckind: MCKind = .unallocated,
+    mcidx: u8 = undefined,
 
     fn free(self: @This()) bool {
         return self.tag == .empty;
@@ -148,7 +165,7 @@ pub fn init(n: u16, allocator: Allocator) !Self {
     return Self{
         .a = allocator,
         .n = try ArrayList(Node).initCapacity(allocator, n),
-        .dfs = &.{},
+        .dfs = ArrayList(u16).init(allocator),
         .refs = try ArrayList(u16).initCapacity(allocator, 4 * n),
         .b = try ArrayList(Block).initCapacity(allocator, 2 * n),
     };
@@ -156,7 +173,7 @@ pub fn init(n: u16, allocator: Allocator) !Self {
 
 pub fn deinit(self: *Self) void {
     self.n.deinit();
-    self.a.free(self.dfs);
+    self.dfs.deinit();
     self.refs.deinit();
     self.b.deinit();
 }
@@ -278,10 +295,6 @@ pub fn variable(self: *Self) !u16 {
     return inst;
 }
 
-pub fn dforder(self: *Self) []u16 {
-    return self.dfs[0..self.n_dfs];
-}
-
 pub fn preds(self: *Self, i: u16) []u16 {
     const v = self.n.items[i];
     return self.refs.items[v.predref..][0..v.npred];
@@ -346,6 +359,32 @@ pub fn calc_preds(self: *Self) !void {
         const split = v.s[1] > 0;
         try self.predlink(@intCast(u16, i), 0, split);
         try self.predlink(@intCast(u16, i), 1, split);
+    }
+}
+
+pub fn calc_dfs(self: *Self) !void {
+    const n = self.n.items;
+    var stack = try ArrayList(u16).initCapacity(self.a, n.len);
+    try self.dfs.ensureTotalCapacity(n.len);
+    defer stack.deinit();
+    stack.appendAssumeCapacity(0);
+    while (stack.items.len > 0) {
+        const v = stack.pop();
+        if (n[v].dfnum > 0) {
+            // already visited
+            continue;
+        }
+        if (false) print("dfs[{}] = {};\n", .{ self.dfs.items.len, v });
+        n[v].dfnum = uv(self.dfs.items.len);
+        self.dfs.appendAssumeCapacity(v);
+
+        for (n[v].s) |si| {
+            // origin cannot be revisited anyway
+            if (si > 0 and n[si].dfnum == 0) {
+                n[si].dfs_parent = v;
+                stack.appendAssumeCapacity(si);
+            }
+        }
     }
 }
 
@@ -513,7 +552,7 @@ test "diamondvar" {
     self.debug_print();
     // TODO: we only use the dfs search, break it out
     // as a separate step!
-    try @import("./MiniDOM.zig").dominators(&self);
+    try self.calc_dfs();
     try SSA_GVN.ssa_gvn(&self);
     self.debug_print();
 }
