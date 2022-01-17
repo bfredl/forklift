@@ -510,12 +510,12 @@ fn raxmovmc(cfo: *CFO, i: Inst) !void {
         else => return error.AAA_AA_A,
     }
 }
-fn raxaddmc(cfo: *CFO, i: Inst) !void {
+fn raxaritmc(cfo: *CFO, op: CFO.AOp, i: Inst) !void {
     switch (i.mckind) {
-        .frameslot => try cfo.aritrm(.add, .rax, CFO.a(.rbp).o(-8 * @as(i32, i.mcidx))),
+        .frameslot => try cfo.aritrm(op, .rax, CFO.a(.rbp).o(-8 * @as(i32, i.mcidx))),
         .ipreg => {
             const reg = @intToEnum(CFO.IPReg, i.mcidx);
-            if (reg != .rax) try cfo.arit(.add, .rax, reg);
+            if (reg != .rax) try cfo.arit(op, .rax, reg);
         },
         else => return error.AAA_AA_A,
     }
@@ -543,6 +543,15 @@ fn mcmovi(cfo: *CFO, i: Inst) !void {
     }
 }
 
+pub fn makejmp(self: *Self, cnd: ?CFO.Cond, si: u1, succ: u16, labels: []u32, targets: [][2]u32) void {
+    _ = self;
+    _ = cnd;
+    _ = si;
+    _ = succ;
+    _ = labels;
+    _ = targets;
+}
+
 pub fn codegen(self: *Self, cfo: *CFO) !u32 {
     var labels = try self.a.alloc(u32, self.dfs.items.len);
     var targets = try self.a.alloc([2]u32, self.dfs.items.len);
@@ -552,11 +561,14 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
     const target = cfo.get_target();
     try cfo.enter();
     const stacksize = 8 * @as(i32, self.nslots);
-    try cfo.aritri(.sub, .rsp, stacksize);
+    const padding = (-stacksize) & 0xF;
+    print("size: {}, extrasize: {}", .{ stacksize, padding });
+    try cfo.aritri(.sub, .rsp, stacksize + padding);
 
     for (self.n.items) |*n, ni| {
         if (n.dfnum == 0 and ni > 0) {
             // non-entry block not reached by df search is dead.
+            // TODO: these should already been cleaned up at this point
             continue;
         }
         var cur_blk: ?u16 = n.firstblk;
@@ -567,14 +579,33 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
                     .ret => try raxmovmc(cfo, self.iref(i.op1).?.*),
                     .iadd => {
                         try raxmovmc(cfo, self.iref(i.op1).?.*);
-                        try raxaddmc(cfo, self.iref(i.op2).?.*);
+                        try raxaritmc(cfo, .add, self.iref(i.op2).?.*);
                         try mcmovrax(cfo, i.*);
                     },
                     .constant => try mcmovi(cfo, i.*),
+                    .ilessthan => {
+                        try raxmovmc(cfo, self.iref(i.op1).?.*);
+                        try raxaritmc(cfo, .cmp, self.iref(i.op2).?.*);
+                    },
                     else => {},
                 }
             }
             cur_blk = b.next();
+        }
+        const fallthru = ni + 1;
+        if (n.s[0] == fallthru and n.s[1] != 0) {
+            self.makejmp(.nl, 1, n.s[1], labels, targets);
+        } else {
+            const default: u1 = default: {
+                if (n.s[1] != 0) {
+                    self.makejmp(.l, 0, n.s[0], labels, targets);
+                    break :default 1;
+                } else break :default 0;
+            };
+
+            if (default != fallthru) {
+                self.makejmp(null, default, n.s[default], labels, targets);
+            }
         }
     }
 
