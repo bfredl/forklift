@@ -528,6 +528,10 @@ pub fn movmr(self: *Self, dst: EAddr, src: IPReg) !void {
     try self.op_rm(0x89, src, dst); // MOV \rm, reg
 }
 
+pub fn aritrm(self: *Self, op: AOp, dst: IPReg, src: EAddr) !void {
+    try self.op_rm(op.off() + 0b11, dst, src);
+}
+
 pub fn lea(self: *Self, dst: IPReg, src: EAddr) !void {
     try self.op_rm(0x8d, dst, src); // LEA reg, \rm
 }

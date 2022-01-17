@@ -488,6 +488,77 @@ fn print_blk(self: *Self, firstblk: u16) void {
     }
 }
 
+fn raxmovmc(cfo: *CFO, i: Inst) !void {
+    switch (i.mckind) {
+        .frameslot => try cfo.movrm(.rax, CFO.a(.rbp).o(-8 * @as(i32, i.mcidx))),
+        .ipreg => {
+            const reg = @intToEnum(CFO.IPReg, i.mcidx);
+            if (reg != .rax) try cfo.mov(.rax, reg);
+        },
+        else => return error.AAA_AA_A,
+    }
+}
+fn raxaddmc(cfo: *CFO, i: Inst) !void {
+    switch (i.mckind) {
+        .frameslot => try cfo.aritrm(.add, .rax, CFO.a(.rbp).o(-8 * @as(i32, i.mcidx))),
+        .ipreg => {
+            const reg = @intToEnum(CFO.IPReg, i.mcidx);
+            if (reg != .rax) try cfo.arit(.add, .rax, reg);
+        },
+        else => return error.AAA_AA_A,
+    }
+}
+
+fn mcmovrax(cfo: *CFO, i: Inst) !void {
+    switch (i.mckind) {
+        .frameslot => try cfo.movmr(CFO.a(.rbp).o(-8 * @as(i32, i.mcidx)), .rax),
+        .ipreg => {
+            const reg = @intToEnum(CFO.IPReg, i.mcidx);
+            if (reg != .rax) try cfo.mov(reg, .rax);
+        },
+        else => return error.AAA_AA_A,
+    }
+}
+
+pub fn codegen(self: *Self, cfo: *CFO) !u32 {
+    var labels = try self.a.alloc(u32, self.dfs.items.len);
+    var targets = try self.a.alloc([2]u32, self.dfs.items.len);
+    defer self.a.free(labels);
+    defer self.a.free(targets);
+
+    const target = cfo.get_target();
+    try cfo.enter();
+    const stacksize = 8 * @as(i32, self.nslots);
+    try cfo.aritri(.sub, .rsp, stacksize);
+
+    for (self.n.items) |*n, ni| {
+        if (n.dfnum == 0 and ni > 0) {
+            // non-entry block not reached by df search is dead.
+            continue;
+        }
+        var cur_blk: ?u16 = n.firstblk;
+        while (cur_blk) |blk| {
+            var b = &self.b.items[blk];
+            for (b.i) |*i| {
+                switch (i.tag) {
+                    .ret => try raxmovmc(cfo, self.iref(i.op1).?.*),
+                    .iadd => {
+                        try raxmovmc(cfo, self.iref(i.op1).?.*);
+                        try raxaddmc(cfo, self.iref(i.op2).?.*);
+                        try mcmovrax(cfo, i.*);
+                    },
+                    else => {},
+                }
+            }
+            cur_blk = b.next();
+        }
+    }
+
+    try cfo.leave();
+    try cfo.ret();
+    return target;
+}
+
 const test_allocator = std.testing.allocator;
 const expectEqual = std.testing.expectEqual;
 
@@ -596,10 +667,16 @@ test "diamondvar" {
 
     try self.calc_preds();
     self.debug_print();
-    // TODO: we only use the dfs search, break it out
-    // as a separate step!
+
     try self.calc_dfs();
     try SSA_GVN.ssa_gvn(&self);
     try self.trivial_stack_alloc();
     self.debug_print();
+
+    var cfo = try CFO.init(test_allocator);
+    defer cfo.deinit();
+    const target = try self.codegen(&cfo);
+    try cfo.dbg_nasm(test_allocator);
+
+    _ = target;
 }
