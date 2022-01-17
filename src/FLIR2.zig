@@ -126,29 +126,6 @@ pub const Block = struct {
     }
 };
 
-pub fn toref(blkid: u16, idx: u16) u16 {
-    assert(idx < BLK_SIZE);
-    return (blkid << BLK_SHIFT) | idx;
-}
-
-fn fromref(ref: u16) struct { block: u16, idx: u16 } {
-    const IDX_MASK: u16 = BLK_SIZE - 1;
-    const BLK_MASK: u16 = ~IDX_MASK;
-    return .{
-        .block = (ref & BLK_MASK) >> BLK_SHIFT,
-        .idx = ref & IDX_MASK,
-    };
-}
-
-pub fn iref(self: *Self, ref: u16) ?*Inst {
-    if (ref == NoRef) {
-        return null;
-    }
-    const r = fromref(ref);
-    const blk = &self.b.items[r.block];
-    return &blk.i[r.idx];
-}
-
 test "sizey" {
     // @compileLog(@sizeOf(Block));
     assert(@sizeOf(Block) <= 64);
@@ -176,6 +153,29 @@ pub fn deinit(self: *Self) void {
     self.dfs.deinit();
     self.refs.deinit();
     self.b.deinit();
+}
+
+pub fn toref(blkid: u16, idx: u16) u16 {
+    assert(idx < BLK_SIZE);
+    return (blkid << BLK_SHIFT) | idx;
+}
+
+fn fromref(ref: u16) struct { block: u16, idx: u16 } {
+    const IDX_MASK: u16 = BLK_SIZE - 1;
+    const BLK_MASK: u16 = ~IDX_MASK;
+    return .{
+        .block = (ref & BLK_MASK) >> BLK_SHIFT,
+        .idx = ref & IDX_MASK,
+    };
+}
+
+pub fn iref(self: *Self, ref: u16) ?*Inst {
+    if (ref == NoRef) {
+        return null;
+    }
+    const r = fromref(ref);
+    const blk = &self.b.items[r.block];
+    return &blk.i[r.idx];
 }
 
 pub fn addNode(self: *Self) !u16 {
