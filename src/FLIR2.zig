@@ -411,6 +411,14 @@ pub fn calc_dfs(self: *Self) !void {
     }
 }
 
+pub fn alloc_arg(self: *Self, inst: *Inst) !void {
+    _ = self;
+    const regs: [6]CFO.IPReg = .{ .rdi, .rsi, .rdx, .rcx, .r8, .r9 };
+    if (inst.op1 >= regs.len) return error.ARA;
+    inst.mckind = .ipreg;
+    inst.mcidx = regs[inst.op1].id();
+}
+
 pub fn trivial_stack_alloc(self: *Self) !void {
     for (self.dfs.items) |ni| {
         var n = &self.n.items[ni];
@@ -418,7 +426,9 @@ pub fn trivial_stack_alloc(self: *Self) !void {
         while (cur_blk) |blk| {
             var b = &self.b.items[blk];
             for (b.i) |*i| {
-                if (has_res(i.tag)) {
+                if (i.tag == .arg) {
+                    try self.alloc_arg(i);
+                } else if (has_res(i.tag) and i.mckind == .unallocated) {
                     i.mckind = .frameslot;
                     if (self.nslots == 255) {
                         return error.UDunGoofed;
@@ -481,6 +491,8 @@ fn print_blk(self: *Self, firstblk: u16) void {
             }
             if (i.mckind == .frameslot) {
                 print(" [rbp-8*{}]", .{i.mcidx});
+            } else if (i.mckind == .ipreg) {
+                print(" ${s}", .{@tagName(@intToEnum(CFO.IPReg, i.mcidx))});
             }
             print("\n", .{});
         }
@@ -520,6 +532,17 @@ fn mcmovrax(cfo: *CFO, i: Inst) !void {
     }
 }
 
+fn mcmovi(cfo: *CFO, i: Inst) !void {
+    switch (i.mckind) {
+        .frameslot => try cfo.movmi(CFO.a(.rbp).o(-8 * @as(i32, i.mcidx)), i.op1),
+        .ipreg => {
+            const reg = @intToEnum(CFO.IPReg, i.mcidx);
+            try cfo.movri(reg, i.op1);
+        },
+        else => return error.AAA_AA_A,
+    }
+}
+
 pub fn codegen(self: *Self, cfo: *CFO) !u32 {
     var labels = try self.a.alloc(u32, self.dfs.items.len);
     var targets = try self.a.alloc([2]u32, self.dfs.items.len);
@@ -547,6 +570,7 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
                         try raxaddmc(cfo, self.iref(i.op2).?.*);
                         try mcmovrax(cfo, i.*);
                     },
+                    .constant => try mcmovi(cfo, i.*),
                     else => {},
                 }
             }

@@ -51,6 +51,10 @@ pub const IPReg = enum(u4) {
     r14,
     r15,
 
+    pub fn id(self: @This()) u4 {
+        return @enumToInt(self);
+    }
+
     pub fn lowId(self: @This()) u3 {
         return @truncate(u3, @enumToInt(self));
     }
