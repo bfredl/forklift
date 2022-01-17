@@ -27,6 +27,9 @@ refs: ArrayList(u16),
 narg: u16 = 0,
 nvar: u16 = 0,
 
+// 8-byte slots in stack frame
+nslots: u8 = 0,
+
 pub fn uv(s: usize) u16 {
     return @intCast(u16, s);
 }
@@ -109,6 +112,26 @@ pub fn n_op(tag: Tag) u2 {
         .ilessthan => 2,
         .vmath => 2,
         .ret => 1,
+    };
+}
+
+// TODO: refactor these to an array of InstMetadata structs
+pub fn has_res(tag: Tag) bool {
+    return switch (tag) {
+        .empty => false,
+        .arg => true,
+        .variable => unreachable,
+        .putvar => unreachable,
+        .phi => true,
+        .putphi => false, // storage location is stated in the phi instruction
+        .constant => true,
+        .renum => unreachable, // TODO: removed at this point
+        .load => true, // base, idx
+        .store => false, // base, idx, val
+        .iadd => true,
+        .ilessthan => false, // technically yes, but no
+        .vmath => true,
+        .ret => false,
     };
 }
 
@@ -388,6 +411,27 @@ pub fn calc_dfs(self: *Self) !void {
     }
 }
 
+pub fn trivial_stack_alloc(self: *Self) !void {
+    for (self.dfs.items) |ni| {
+        var n = &self.n.items[ni];
+        var cur_blk: ?u16 = n.firstblk;
+        while (cur_blk) |blk| {
+            var b = &self.b.items[blk];
+            for (b.i) |*i| {
+                if (has_res(i.tag)) {
+                    i.mckind = .frameslot;
+                    if (self.nslots == 255) {
+                        return error.UDunGoofed;
+                    }
+                    i.mcidx = self.nslots;
+                    self.nslots += 1;
+                }
+            }
+            cur_blk = b.next();
+        }
+    }
+}
+
 pub fn debug_print(self: *Self) void {
     if (stage2) {
         return;
@@ -410,35 +454,37 @@ pub fn debug_print(self: *Self) void {
     }
 }
 
-fn print_blk(self: *Self, b: u16) void {
-    const blk = self.b.items[b];
+fn print_blk(self: *Self, firstblk: u16) void {
+    var cur_blk: ?u16 = firstblk;
+    while (cur_blk) |blk| {
+        var b = &self.b.items[blk];
+        for (b.i) |i, idx| {
+            if (i.tag == .empty) {
+                continue;
+            }
+            print("  %{} = {s}", .{ toref(blk, uv(idx)), @tagName(i.tag) });
 
-    for (blk.i) |i, idx| {
-        if (i.tag == .empty) {
-            continue;
-        }
-        print("  %{} = {s}", .{ toref(b, uv(idx)), @tagName(i.tag) });
-
-        if (i.tag == .vmath) {
-            print(".{s}", .{@tagName(@intToEnum(VMathOp, i.spec))});
-        } else if (i.tag == .constant) {
-            print(" c[{}]", .{i.op1});
-        }
-        const nop = n_op(i.tag);
-        if (nop > 0) {
-            print(" %{}", .{i.op1});
-            if (nop > 1) {
-                print(", %{}", .{i.op2});
-                if (nop > 2) {
-                    print(" <- %{}", .{i.op3});
+            if (i.tag == .vmath) {
+                print(".{s}", .{@tagName(@intToEnum(VMathOp, i.spec))});
+            } else if (i.tag == .constant) {
+                print(" c[{}]", .{i.op1});
+            }
+            const nop = n_op(i.tag);
+            if (nop > 0) {
+                print(" %{}", .{i.op1});
+                if (nop > 1) {
+                    print(", %{}", .{i.op2});
+                    if (nop > 2) {
+                        print(" <- %{}", .{i.op3});
+                    }
                 }
             }
+            if (i.mckind == .frameslot) {
+                print(" [rbp-8*{}]", .{i.mcidx});
+            }
+            print("\n", .{});
         }
-        print("\n", .{});
-    }
-
-    if (blk.next()) |next| {
-        return self.print_blk(next);
+        cur_blk = b.next();
     }
 }
 
@@ -554,5 +600,6 @@ test "diamondvar" {
     // as a separate step!
     try self.calc_dfs();
     try SSA_GVN.ssa_gvn(&self);
+    try self.trivial_stack_alloc();
     self.debug_print();
 }
