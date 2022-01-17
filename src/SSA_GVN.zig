@@ -30,7 +30,7 @@ fn ssa(self: Self) !void {
     // at this point all nodes have been _filled_ but join nodes (npred > 1)
     // have not been _sealed_, in the terminology of Braun 2013
     // TODO: keep a worklist of unfinished phi nodes, more effective +
-    // otherwise will need multiple passes until a fix point
+    // otherwise might need multiple passes until a fix point
     for (self.f.dfs.items) |i| {
         try self.resolve_blk(n[i].firstblk);
     }
@@ -38,37 +38,37 @@ fn ssa(self: Self) !void {
     try self.delete_vars(self.f.n.items[0].firstblk);
 }
 
-fn fill_blk(self: Self, b: u16) !void {
-    const blk = &self.f.b.items[b];
-    const n = blk.node;
+fn fill_blk(self: Self, first_blk: u16) !void {
+    var cur_blk: ?u16 = first_blk;
+    while (cur_blk) |blk| {
+        var b = &self.f.b.items[blk];
+        const n = b.node;
 
-    for (blk.i) |*i| {
-        if (i.tag == .putvar) {
-            const ivar = self.f.iref(i.op1) orelse return error.UW0tM8;
-            self.vdi(n, ivar.op1).* = i.op2;
-            // TODO: store debug info, or some shit
-            i.tag = .empty;
-        } else if (.tag == .phi) {
-            // TODO: likely we'll never need to consider an existing
-            // phi node here but verify this!
-        } else {
-            const nop = FLIR.n_op(i.tag);
-            if (nop > 0) {
-                i.op1 = try self.read_ref(n, i.op1);
-                if (nop > 1) {
-                    i.op2 = try self.read_ref(n, i.op2);
-                    // TODO: delet this:
-                    if (nop > 2) {
-                        i.op3 = try self.read_ref(n, i.op3);
+        for (b.i) |*i| {
+            if (i.tag == .putvar) {
+                const ivar = self.f.iref(i.op1) orelse return error.UW0tM8;
+                self.vdi(n, ivar.op1).* = i.op2;
+                // TODO: store debug info, or some shit
+                i.tag = .empty;
+            } else if (.tag == .phi) {
+                // TODO: likely we'll never need to consider an existing
+                // phi node here but verify this!
+            } else {
+                const nop = FLIR.n_op(i.tag);
+                if (nop > 0) {
+                    i.op1 = try self.read_ref(n, i.op1);
+                    if (nop > 1) {
+                        i.op2 = try self.read_ref(n, i.op2);
+                        // TODO: delet this:
+                        if (nop > 2) {
+                            i.op3 = try self.read_ref(n, i.op3);
+                        }
                     }
                 }
             }
         }
-    }
 
-    // TODO: more like a loop?
-    if (blk.next()) |next| {
-        return self.fill_blk(next);
+        cur_blk = b.next();
     }
 }
 
@@ -114,17 +114,16 @@ fn read_var(self: Self, node: u16, v: u16) MaybePhi {
     return def;
 }
 
-fn resolve_blk(self: Self, b: u16) !void {
-    const blk = &self.f.b.items[b];
-
-    for (blk.i) |*i, idx| {
-        if (i.tag == .phi) {
-            try self.resolve_phi(b, FLIR.uv(idx));
+fn resolve_blk(self: Self, first_blk: u16) !void {
+    var cur_blk: ?u16 = first_blk;
+    while (cur_blk) |blk| {
+        var b = &self.f.b.items[blk];
+        for (b.i) |*i, idx| {
+            if (i.tag == .phi) {
+                try self.resolve_phi(blk, FLIR.uv(idx));
+            }
         }
-    }
-    // TODO: more like a loop?
-    if (blk.next()) |next| {
-        return self.resolve_blk(next);
+        cur_blk = b.next();
     }
 }
 fn resolve_phi(self: Self, b: u16, idx: u16) !void {
@@ -142,16 +141,15 @@ fn resolve_phi(self: Self, b: u16, idx: u16) !void {
     i.spec = 1;
 }
 
-fn delete_vars(self: Self, b: u16) !void {
-    const blk = &self.f.b.items[b];
-    for (blk.i) |*i| {
-        if (i.tag == .variable) {
-            i.tag = .empty;
+fn delete_vars(self: Self, first_blk: u16) !void {
+    var cur_blk: ?u16 = first_blk;
+    while (cur_blk) |blk| {
+        var b = &self.f.b.items[blk];
+        for (b.i) |*i| {
+            if (i.tag == .variable) {
+                i.tag = .empty;
+            }
         }
-    }
-
-    // TODO: more like a loop?
-    if (blk.next()) |next| {
-        return self.resolve_blk(next);
+        cur_blk = b.next();
     }
 }
