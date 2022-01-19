@@ -7,7 +7,7 @@ const CFO = @import("./CFO.zig");
 const swap = std.mem.swap;
 
 const builtin = @import("builtin");
-const s2 = builtin.zig_is_stage2;
+const s2 = builtin.zig_backend != .stage1;
 const ArrayList = @import("./fake_list.zig").ArrayList;
 
 const VMathOp = CFO.VMathOp;

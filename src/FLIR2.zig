@@ -1,14 +1,14 @@
 const std = @import("std");
 const math = std.math;
-const Allocator = std.mem.Allocator;
+const mem = std.mem;
+const Allocator = mem.Allocator;
 const Self = @This();
 const print = std.debug.print;
 const CFO = @import("./CFO.zig");
-const swap = std.mem.swap;
 const SSA_GVN = @import("./SSA_GVN.zig");
 
 const builtin = @import("builtin");
-const stage2 = builtin.zig_is_stage2;
+const stage2 = builtin.zig_backend != .stage1;
 const ArrayList = @import("./fake_list.zig").ArrayList;
 const assert = std.debug.assert;
 
@@ -510,6 +510,7 @@ fn raxmovmc(cfo: *CFO, i: Inst) !void {
         else => return error.AAA_AA_A,
     }
 }
+
 fn raxaritmc(cfo: *CFO, op: CFO.AOp, i: Inst) !void {
     switch (i.mckind) {
         .frameslot => try cfo.aritrm(op, .rax, CFO.a(.rbp).o(-8 * @as(i32, i.mcidx))),
@@ -543,13 +544,14 @@ fn mcmovi(cfo: *CFO, i: Inst) !void {
     }
 }
 
-pub fn makejmp(self: *Self, cnd: ?CFO.Cond, si: u1, succ: u16, labels: []u32, targets: [][2]u32) void {
-    _ = self;
-    _ = cnd;
-    _ = si;
-    _ = succ;
-    _ = labels;
-    _ = targets;
+pub fn makejmp(self: *Self, cfo: *CFO, cond: ?CFO.Cond, ni: u16, si: u1, labels: []u32, targets: [][2]u32) !void {
+    const succ = self.n.items[ni].s[si];
+    // TODO: what if blk 0 is empty and blk 1 has target at [rel+0] ??
+    if (labels[succ] != 0) {
+        try cfo.jbck(cond, labels[succ]);
+    } else {
+        targets[ni][si] = try cfo.jfwd(cond);
+    }
 }
 
 pub fn codegen(self: *Self, cfo: *CFO) !u32 {
@@ -557,12 +559,14 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
     var targets = try self.a.alloc([2]u32, self.dfs.items.len);
     defer self.a.free(labels);
     defer self.a.free(targets);
+    mem.set(u32, labels, 0);
+    mem.set([2]u32, targets, .{ 0, 0 });
 
     const target = cfo.get_target();
     try cfo.enter();
     const stacksize = 8 * @as(i32, self.nslots);
     const padding = (-stacksize) & 0xF;
-    print("size: {}, extrasize: {}", .{ stacksize, padding });
+    // print("size: {}, extrasize: {}\n", .{ stacksize, padding });
     try cfo.aritri(.sub, .rsp, stacksize + padding);
 
     for (self.n.items) |*n, ni| {
@@ -571,6 +575,17 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
             // TODO: these should already been cleaned up at this point
             continue;
         }
+        labels[ni] = cfo.get_target();
+        print("LABEL: {x} {}\n", .{ labels[ni], ni });
+        for (self.preds(uv(ni))) |pred| {
+            const pr = &self.n.items[pred];
+            const si: u1 = if (pr.s[0] == ni) 0 else 1;
+            if (targets[pred][si] != 0) {
+                try cfo.set_target(targets[pred][si]);
+                targets[pred][si] = 0;
+            }
+        }
+
         var cur_blk: ?u16 = n.firstblk;
         while (cur_blk) |blk| {
             var b = &self.b.items[blk];
@@ -594,17 +609,17 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
         }
         const fallthru = ni + 1;
         if (n.s[0] == fallthru and n.s[1] != 0) {
-            self.makejmp(.nl, 1, n.s[1], labels, targets);
+            try self.makejmp(cfo, .nl, uv(ni), 1, labels, targets);
         } else {
             const default: u1 = default: {
                 if (n.s[1] != 0) {
-                    self.makejmp(.l, 0, n.s[0], labels, targets);
+                    try self.makejmp(cfo, .l, uv(ni), 0, labels, targets);
                     break :default 1;
                 } else break :default 0;
             };
 
-            if (default != fallthru) {
-                self.makejmp(null, default, n.s[default], labels, targets);
+            if (n.s[default] != fallthru and n.s[default] != 0) {
+                try self.makejmp(cfo, null, uv(ni), default, labels, targets);
             }
         }
     }

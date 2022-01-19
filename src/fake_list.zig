@@ -2,7 +2,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const builtin = @import("builtin");
-const s2 = builtin.zig_is_stage2;
+const s2 = builtin.zig_backend != .stage1;
 pub const ArrayList = if (s2) FakeList else std.ArrayList;
 
 pub fn FakeList(comptime T: type) type {

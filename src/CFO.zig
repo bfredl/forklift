@@ -8,7 +8,7 @@ const page_allocator = std.heap.page_allocator;
 const ArrayListAligned = std.ArrayListAligned;
 
 const builtin = @import("builtin");
-const s2 = builtin.zig_is_stage2;
+const s2 = builtin.zig_backend != .stage1;
 const ArrayList = @import("./fake_list.zig").ArrayList;
 fn fake_list(T: type, size: usize, allocator: Allocator) ArrayList(T) {
     if (s2) {
@@ -436,9 +436,13 @@ pub fn trap(self: *Self) !void {
 }
 
 // there..
-pub fn jfwd(self: *Self, cond: Cond) !u32 {
+pub fn jfwd(self: *Self, cond: ?Cond) !u32 {
     try self.new_inst(@returnAddress());
-    try self.wb(0x70 + cond.off());
+    if (cond) |c| {
+        try self.wb(0x70 + c.off());
+    } else {
+        try self.wb(0xeb);
+    }
     var pos = @intCast(u32, self.code.items.len);
     try self.wb(0x00); // placeholder
     return pos;
@@ -467,20 +471,20 @@ pub fn get_target(self: *Self) u32 {
 }
 
 // .. and back again
-pub fn jbck(self: *Self, cond: Cond, target: u32) !void {
+pub fn jbck(self: *Self, cond: ?Cond, target: u32) !void {
     try self.new_inst(@returnAddress());
     var off = @intCast(i32, target) - (@intCast(i32, self.code.items.len) + 2);
     if (s2) {
         try self.wb(0x0f);
-        try self.wb(0x80 + cond.off());
+        try self.wb(if (cond) |c| 0x80 + c.off() else 0xe9);
         try self.wd(off - 4); // FETING: offset is larger as the jump instruction is larger
     } else {
         if (maybe_imm8(off)) |off8| {
-            try self.wb(0x70 + cond.off());
+            try self.wb(if (cond) |c| 0x70 + c.off() else 0xEB);
             try self.wbi(off8);
         } else {
             try self.wb(0x0f);
-            try self.wb(0x80 + cond.off());
+            try self.wb(if (cond) |c| 0x80 + c.off() else 0xe9);
             try self.wd(off - 4); // FETING: offset is larger as the jump instruction is larger
         }
     }
