@@ -546,7 +546,8 @@ fn mcmovi(cfo: *CFO, i: Inst) !void {
 
 pub fn makejmp(self: *Self, cfo: *CFO, cond: ?CFO.Cond, ni: u16, si: u1, labels: []u32, targets: [][2]u32) !void {
     const succ = self.n.items[ni].s[si];
-    // TODO: what if blk 0 is empty and blk 1 has target at [rel+0] ??
+    // NOTE: we assume blk 0 always has the prologue (push rbp; mov rbp, rsp)
+    // at least, so that even if blk 0 is empty, blk 1 has target larger than 0x00
     if (labels[succ] != 0) {
         try cfo.jbck(cond, labels[succ]);
     } else {
