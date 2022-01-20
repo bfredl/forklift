@@ -552,7 +552,6 @@ fn mcmovi(cfo: *CFO, i: Inst) !void {
         .frameslot => try cfo.movmi(CFO.a(.rbp).o(-8 * @as(i32, i.mcidx)), i.op1),
         .ipreg => {
             const reg = @intToEnum(IPReg, i.mcidx);
-            print("erere {}\n", .{reg});
             try cfo.movri(reg, i.op1);
         },
         else => return error.AAA_AA_A,
