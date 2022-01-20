@@ -59,10 +59,6 @@ fn fill_blk(self: Self, first_blk: u16) !void {
                     i.op1 = try self.read_ref(n, i.op1);
                     if (nop > 1) {
                         i.op2 = try self.read_ref(n, i.op2);
-                        // TODO: delet this:
-                        if (nop > 2) {
-                            i.op3 = try self.read_ref(n, i.op3);
-                        }
                     }
                 }
             }
@@ -134,7 +130,7 @@ fn resolve_phi(self: Self, b: u16, idx: u16) !void {
     var onlyref: ?u16 = null;
     for (self.f.preds(blk.node)) |v| {
         const ref = try self.read_var(v, ivar.op1);
-        _ = try self.f.binop(v, .putphi, FLIR.toref(b, idx), ref);
+        _ = try self.f.binop(v, .putphi, ref, FLIR.toref(b, idx));
         onlyref = if (onlyref) |only| if (only == ref) only else FLIR.NoRef else ref;
     }
     i.op1 = 0;

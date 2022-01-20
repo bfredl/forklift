@@ -20,10 +20,6 @@ a: Allocator,
 n: ArrayList(Node),
 b: ArrayList(Block),
 dfs: ArrayList(u16),
-// number of reachable blocks (and thus valid entries in dfs)
-// non-reachables might not have been pruned yet, so use this
-// instead of dfs.len!
-// TODO: or just make dfs ArrayListUnmanagable with the rest..
 refs: ArrayList(u16),
 narg: u16 = 0,
 nvar: u16 = 0,
@@ -54,10 +50,15 @@ pub const Tag = enum(u8) {
     variable,
     putvar, // non-phi assignment
     phi,
-    putphi, // assign to phi of (only) sucessor
+    /// assign to phi of (only) successor
+    /// note: despite swearing in the intel church.
+    /// op1 is source and op2 is dest, to simplify stuff
+    /// i e n_op(putphi) == 1 for the most part
+    putphi,
     renum,
     constant,
     load,
+    lea,
     store,
     iadd, // imath group?
     ilessthan, // icmp group?
@@ -86,11 +87,10 @@ pub const Inst = struct {
     spec: u8 = 0,
     op1: u16,
     op2: u16,
-    // maybe only for store which is not used otherwise?
-    op3: u16 = 0,
     reindex: u16 = 0,
     mckind: MCKind = .unallocated,
     mcidx: u8 = undefined,
+    n_use: u16 = 0,
 
     fn free(self: @This()) bool {
         return self.tag == .empty;
@@ -104,13 +104,16 @@ pub fn n_op(tag: Tag) u2 {
         .empty => 0,
         .arg => 0,
         .variable => 0,
+        // really only one, but we will get rid of this lie
+        // before getting into any serious analysis.
         .putvar => 2,
         .phi => 0,
-        .putphi => 2, // fast nej, bara en?
+        .putphi => 1,
         .constant => 0,
         .renum => 1,
         .load => 2, // base, idx
-        .store => 3, // base, idx, val
+        .lea => 2, // base, idx. elided when only used for a store!
+        .store => 2, // addr, val
         .iadd => 2,
         .ilessthan => 2,
         .vmath => 2,
@@ -123,14 +126,15 @@ pub fn has_res(tag: Tag) bool {
     return switch (tag) {
         .empty => false,
         .arg => true,
-        .variable => unreachable,
-        .putvar => unreachable,
+        .variable => true, // ASCHUALLY no, but looks like yes
+        .putvar => false,
         .phi => true,
         .putphi => false, // storage location is stated in the phi instruction
         .constant => true,
-        .renum => unreachable, // TODO: removed at this point
-        .load => true, // base, idx
-        .store => false, // base, idx, val
+        .renum => true, // TODO: removed at this point
+        .load => true,
+        .lea => true, // Lea? Who's Lea??
+        .store => false,
         .iadd => true,
         .ilessthan => false, // technically yes, but no
         .vmath => true,
@@ -153,6 +157,7 @@ pub const Block = struct {
 };
 
 test "sizey" {
+    // @compileLog(@sizeOf(Inst));
     // @compileLog(@sizeOf(Block));
     assert(@sizeOf(Block) <= 64);
 }
@@ -296,6 +301,11 @@ pub fn putvar(self: *Self, node: u16, op1: u16, op2: u16) !void {
     _ = try self.binop(node, .putvar, op1, op2);
 }
 
+pub fn store(self: *Self, node: u16, base: u16, idx: u16, val: u16) !u16 {
+    const addr = try self.addInst(node, .{ .tag = .lea, .op1 = base, .op2 = idx });
+    return self.addInst(node, .{ .tag = .store, .op1 = addr, .op2 = val });
+}
+
 pub fn ret(self: *Self, node: u16, val: u16) !void {
     // TODO: actually store constants in a buffer, or something
     _ = try self.addInst(node, .{ .tag = .ret, .op1 = val, .op2 = 0 });
@@ -387,6 +397,30 @@ pub fn calc_preds(self: *Self) !void {
         const split = v.s[1] > 0;
         try self.predlink(@intCast(u16, i), 0, split);
         try self.predlink(@intCast(u16, i), 1, split);
+    }
+}
+
+// TODO: not idempotent! does not reset n_use=0 first.
+pub fn calc_use(self: *Self) !void {
+    // TODO: stop abusing dfs for reachable blocks and just kill
+    // unreachable blocks whenever they are/become unreachable
+    for (self.dfs.items) |ni| {
+        var n = &self.n.items[ni];
+        var cur_blk: ?u16 = n.firstblk;
+        while (cur_blk) |blk| {
+            var b = &self.b.items[blk];
+            for (b.i) |*i| {
+                const nops = n_op(i);
+                if (nops > 0) {
+                    const ref = self.iref(i.op1).?;
+                    ref.n_use += 1;
+                    if (nops > 1) {
+                        const ref2 = self.iref(i.op2).?;
+                        ref2.n_use += 1;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -486,21 +520,21 @@ fn print_blk(self: *Self, firstblk: u16) void {
             if (i.tag == .empty) {
                 continue;
             }
-            print("  %{} = {s}", .{ toref(blk, uv(idx)), @tagName(i.tag) });
+            const chr: u8 = if (has_res(i.tag)) '=' else ' ';
+            print("  %{} {c} {s}", .{ toref(blk, uv(idx)), chr, @tagName(i.tag) });
 
             if (i.tag == .vmath) {
                 print(".{s}", .{@tagName(@intToEnum(VMathOp, i.spec))});
             } else if (i.tag == .constant) {
                 print(" c[{}]", .{i.op1});
+            } else if (i.tag == .putphi) {
+                print(" %{} <-", .{i.op2});
             }
             const nop = n_op(i.tag);
             if (nop > 0) {
                 print(" %{}", .{i.op1});
                 if (nop > 1) {
                     print(", %{}", .{i.op2});
-                    if (nop > 2) {
-                        print(" <- %{}", .{i.op3});
-                    }
                 }
             }
             if (i.mckind == .frameslot) {
@@ -646,7 +680,7 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
                     .putphi => {
                         // TODO: actually check for parallell-move conflicts
                         // either here or as an extra deconstruction step
-                        try movmcs(cfo, self.iref(i.op1).?.*, self.iref(i.op2).?.*, .rax);
+                        try movmcs(cfo, self.iref(i.op2).?.*, self.iref(i.op1).?.*, .rax);
                     },
                     else => {},
                 }
@@ -744,7 +778,7 @@ test "loopvar" {
 
     const val = try self.binop(loop, .load, arg1, var_i);
     const newval = try self.vBinop(loop, .mul, val, val);
-    _ = try self.addInst(loop, .{ .tag = .store, .op1 = arg2, .op2 = var_i, .op3 = newval });
+    _ = try self.store(loop, arg2, var_i, newval);
 
     const const_1 = try self.const_int(loop, 1);
     const iadd = try self.binop(loop, .iadd, var_i, const_1);
