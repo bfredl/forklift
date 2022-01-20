@@ -561,7 +561,7 @@ pub fn movri(self: *Self, dst: IPReg, src: i32) !void {
     try self.new_inst(@returnAddress());
     // TODO: w bit should be avoidable in a lot of cases
     // like "mov rax, 1337" is equivalent to "mov eax, 1337"
-    try self.rex_wrxb(true, dst.ext(), false, false);
+    try self.rex_wrxb(true, false, false, dst.ext());
     try self.wb(0xc7); // MOV \rm, imm32
     try self.modRm(0b11, 0b000, dst.lowId());
     try self.wd(src);
@@ -898,6 +898,8 @@ test "return intermediate value" {
     var cfo = try init(test_allocator);
     defer cfo.deinit();
 
+    // try cfo.movri(.rbx, 20);
+    // try cfo.movri(.r15, 7);
     try cfo.movri(.rax, 1337);
     try cfo.ret();
 

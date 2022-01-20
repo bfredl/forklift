@@ -525,12 +525,12 @@ fn regmovmc(cfo: *CFO, dst: IPReg, src: Inst) !void {
     }
 }
 
-fn raxaritmc(cfo: *CFO, op: CFO.AOp, i: Inst) !void {
+fn regaritmc(cfo: *CFO, op: CFO.AOp, dst: IPReg, i: Inst) !void {
     switch (i.mckind) {
-        .frameslot => try cfo.aritrm(op, .rax, CFO.a(.rbp).o(-8 * @as(i32, i.mcidx))),
+        .frameslot => try cfo.aritrm(op, dst, CFO.a(.rbp).o(-8 * @as(i32, i.mcidx))),
         .ipreg => {
             const reg = @intToEnum(IPReg, i.mcidx);
-            if (reg != .rax) try cfo.arit(op, .rax, reg);
+            try cfo.arit(op, dst, reg);
         },
         else => return error.AAA_AA_A,
     }
@@ -552,6 +552,7 @@ fn mcmovi(cfo: *CFO, i: Inst) !void {
         .frameslot => try cfo.movmi(CFO.a(.rbp).o(-8 * @as(i32, i.mcidx)), i.op1),
         .ipreg => {
             const reg = @intToEnum(IPReg, i.mcidx);
+            print("erere {}\n", .{reg});
             try cfo.movri(reg, i.op1);
         },
         else => return error.AAA_AA_A,
@@ -574,6 +575,10 @@ fn movmcs(cfo: *CFO, dst: Inst, src: Inst, scratch: IPReg) !void {
         };
         try mcmovreg(cfo, dst, reg);
     }
+}
+
+fn ipreg(i: Inst) ?IPReg {
+    return if (i.mckind == .ipreg) @intToEnum(IPReg, i.mcidx) else null;
 }
 
 pub fn makejmp(self: *Self, cfo: *CFO, cond: ?CFO.Cond, ni: u16, si: u1, labels: []u32, targets: [][2]u32) !void {
@@ -628,14 +633,16 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
                 switch (i.tag) {
                     .ret => try regmovmc(cfo, .rax, self.iref(i.op1).?.*),
                     .iadd => {
-                        try regmovmc(cfo, .rax, self.iref(i.op1).?.*);
-                        try raxaritmc(cfo, .add, self.iref(i.op2).?.*);
-                        try mcmovreg(cfo, i.*, .rax);
+                        const dst = ipreg(i.*) orelse .rax;
+                        try regmovmc(cfo, dst, self.iref(i.op1).?.*);
+                        try regaritmc(cfo, .add, dst, self.iref(i.op2).?.*);
+                        try mcmovreg(cfo, i.*, dst); // elided if dst is register
                     },
                     .constant => try mcmovi(cfo, i.*),
                     .ilessthan => {
-                        try regmovmc(cfo, .rax, self.iref(i.op1).?.*);
-                        try raxaritmc(cfo, .cmp, self.iref(i.op2).?.*);
+                        const firstop = ipreg(self.iref(i.op1).?.*) orelse .rax;
+                        try regmovmc(cfo, firstop, self.iref(i.op1).?.*);
+                        try regaritmc(cfo, .cmp, firstop, self.iref(i.op2).?.*);
                     },
                     .putphi => {
                         // TODO: actually check for parallell-move conflicts
