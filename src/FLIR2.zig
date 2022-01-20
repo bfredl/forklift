@@ -6,6 +6,7 @@ const Self = @This();
 const print = std.debug.print;
 const CFO = @import("./CFO.zig");
 const SSA_GVN = @import("./SSA_GVN.zig");
+const IPReg = CFO.IPReg;
 
 const builtin = @import("builtin");
 const stage2 = builtin.zig_backend != .stage1;
@@ -417,7 +418,7 @@ pub fn calc_dfs(self: *Self) !void {
 
 pub fn alloc_arg(self: *Self, inst: *Inst) !void {
     _ = self;
-    const regs: [6]CFO.IPReg = .{ .rdi, .rsi, .rdx, .rcx, .r8, .r9 };
+    const regs: [6]IPReg = .{ .rdi, .rsi, .rdx, .rcx, .r8, .r9 };
     if (inst.op1 >= regs.len) return error.ARA;
     inst.mckind = .ipreg;
     inst.mcidx = regs[inst.op1].id();
@@ -496,7 +497,7 @@ fn print_blk(self: *Self, firstblk: u16) void {
             if (i.mckind == .frameslot) {
                 print(" [rbp-8*{}]", .{i.mcidx});
             } else if (i.mckind == .ipreg) {
-                print(" ${s}", .{@tagName(@intToEnum(CFO.IPReg, i.mcidx))});
+                print(" ${s}", .{@tagName(@intToEnum(IPReg, i.mcidx))});
             }
             print("\n", .{});
         }
@@ -504,12 +505,12 @@ fn print_blk(self: *Self, firstblk: u16) void {
     }
 }
 
-fn raxmovmc(cfo: *CFO, i: Inst) !void {
-    switch (i.mckind) {
-        .frameslot => try cfo.movrm(.rax, CFO.a(.rbp).o(-8 * @as(i32, i.mcidx))),
+fn regmovmc(cfo: *CFO, dst: IPReg, src: Inst) !void {
+    switch (src.mckind) {
+        .frameslot => try cfo.movrm(dst, CFO.a(.rbp).o(-8 * @as(i32, src.mcidx))),
         .ipreg => {
-            const reg = @intToEnum(CFO.IPReg, i.mcidx);
-            if (reg != .rax) try cfo.mov(.rax, reg);
+            const reg = @intToEnum(IPReg, src.mcidx);
+            if (dst != reg) try cfo.mov(dst, reg);
         },
         else => return error.AAA_AA_A,
     }
@@ -519,19 +520,19 @@ fn raxaritmc(cfo: *CFO, op: CFO.AOp, i: Inst) !void {
     switch (i.mckind) {
         .frameslot => try cfo.aritrm(op, .rax, CFO.a(.rbp).o(-8 * @as(i32, i.mcidx))),
         .ipreg => {
-            const reg = @intToEnum(CFO.IPReg, i.mcidx);
+            const reg = @intToEnum(IPReg, i.mcidx);
             if (reg != .rax) try cfo.arit(op, .rax, reg);
         },
         else => return error.AAA_AA_A,
     }
 }
 
-fn mcmovrax(cfo: *CFO, i: Inst) !void {
-    switch (i.mckind) {
-        .frameslot => try cfo.movmr(CFO.a(.rbp).o(-8 * @as(i32, i.mcidx)), .rax),
+fn mcmovreg(cfo: *CFO, dst: Inst, src: IPReg) !void {
+    switch (dst.mckind) {
+        .frameslot => try cfo.movmr(CFO.a(.rbp).o(-8 * @as(i32, dst.mcidx)), .rax),
         .ipreg => {
-            const reg = @intToEnum(CFO.IPReg, i.mcidx);
-            if (reg != .rax) try cfo.mov(reg, .rax);
+            const reg = @intToEnum(IPReg, dst.mcidx);
+            if (reg != src) try cfo.mov(reg, src);
         },
         else => return error.AAA_AA_A,
     }
@@ -541,10 +542,28 @@ fn mcmovi(cfo: *CFO, i: Inst) !void {
     switch (i.mckind) {
         .frameslot => try cfo.movmi(CFO.a(.rbp).o(-8 * @as(i32, i.mcidx)), i.op1),
         .ipreg => {
-            const reg = @intToEnum(CFO.IPReg, i.mcidx);
+            const reg = @intToEnum(IPReg, i.mcidx);
             try cfo.movri(reg, i.op1);
         },
         else => return error.AAA_AA_A,
+    }
+}
+
+// TODO: obviously better handling of scratch register
+fn movmcs(cfo: *CFO, dst: Inst, src: Inst, scratch: IPReg) !void {
+    if (dst.mckind == src.mckind and dst.mcidx == src.mcidx) {
+        return;
+    }
+    if (dst.mckind == .ipreg) {
+        try regmovmc(cfo, @intToEnum(IPReg, dst.mcidx), src);
+    } else {
+        const reg = if (src.mckind == .ipreg)
+            @intToEnum(IPReg, src.mcidx)
+        else reg: {
+            try regmovmc(cfo, scratch, src);
+            break :reg scratch;
+        };
+        try mcmovreg(cfo, dst, reg);
     }
 }
 
@@ -598,22 +617,21 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
             var b = &self.b.items[blk];
             for (b.i) |*i| {
                 switch (i.tag) {
-                    .ret => try raxmovmc(cfo, self.iref(i.op1).?.*),
+                    .ret => try regmovmc(cfo, .rax, self.iref(i.op1).?.*),
                     .iadd => {
-                        try raxmovmc(cfo, self.iref(i.op1).?.*);
+                        try regmovmc(cfo, .rax, self.iref(i.op1).?.*);
                         try raxaritmc(cfo, .add, self.iref(i.op2).?.*);
-                        try mcmovrax(cfo, i.*);
+                        try mcmovreg(cfo, i.*, .rax);
                     },
                     .constant => try mcmovi(cfo, i.*),
                     .ilessthan => {
-                        try raxmovmc(cfo, self.iref(i.op1).?.*);
+                        try regmovmc(cfo, .rax, self.iref(i.op1).?.*);
                         try raxaritmc(cfo, .cmp, self.iref(i.op2).?.*);
                     },
                     .putphi => {
                         // TODO: actually check for parallell-move conflicts
                         // either here or as an extra deconstruction step
-                        try raxmovmc(cfo, self.iref(i.op2).?.*);
-                        try mcmovrax(cfo, self.iref(i.op1).?.*);
+                        try movmcs(cfo, self.iref(i.op1).?.*, self.iref(i.op2).?.*, .rax);
                     },
                     else => {},
                 }
@@ -645,7 +663,7 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
 const test_allocator = std.testing.allocator;
 const expectEqual = std.testing.expectEqual;
 
-fn test_analysis(self: *Self, cfo: *CFO) !u32 {
+fn test_analysis(self: *Self) !void {
     // TODO: do a proper block ordering for codegen,
     // like a proper DAG of SCC order.
     // this just ensures declaration order is preserved
@@ -662,12 +680,6 @@ fn test_analysis(self: *Self, cfo: *CFO) !u32 {
     try self.calc_dfs();
     try SSA_GVN.ssa_gvn(self);
     try self.trivial_stack_alloc();
-    self.debug_print();
-
-    const target = try self.codegen(cfo);
-    try cfo.dbg_nasm(test_allocator);
-
-    return target;
 }
 
 test "printa" {
@@ -731,10 +743,15 @@ test "loopvar" {
 
     try self.ret(end, const_0);
 
+    try self.test_analysis();
+
+    self.debug_print();
+
     var cfo = try CFO.init(test_allocator);
     defer cfo.deinit();
 
-    _ = try self.test_analysis(&cfo);
+    _ = try self.codegen(&cfo);
+    try cfo.dbg_nasm(test_allocator);
 }
 
 test "diamondvar" {
@@ -771,8 +788,17 @@ test "diamondvar" {
 
     try self.ret(end, v);
 
+    try self.test_analysis();
+    var phii = self.iref(adde).?.op1;
+    var thephi = self.iref(phii).?;
+    thephi.mckind = .ipreg;
+    thephi.mcidx = 8; // r8
+
+    self.debug_print();
+
     var cfo = try CFO.init(test_allocator);
     defer cfo.deinit();
 
-    _ = try self.test_analysis(&cfo);
+    _ = try self.codegen(&cfo);
+    try cfo.dbg_nasm(test_allocator);
 }
