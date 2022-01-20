@@ -425,6 +425,9 @@ pub fn alloc_arg(self: *Self, inst: *Inst) !void {
 }
 
 pub fn trivial_stack_alloc(self: *Self) !void {
+    const regs: [5]IPReg = .{ .r12, .r13, .r14, .r15, .rbx };
+    const usereg = 5;
+    var used: usize = 0;
     for (self.dfs.items) |ni| {
         var n = &self.n.items[ni];
         var cur_blk: ?u16 = n.firstblk;
@@ -434,12 +437,18 @@ pub fn trivial_stack_alloc(self: *Self) !void {
                 if (i.tag == .arg) {
                     try self.alloc_arg(i);
                 } else if (has_res(i.tag) and i.mckind == .unallocated) {
-                    i.mckind = .frameslot;
-                    if (self.nslots == 255) {
-                        return error.UDunGoofed;
+                    if (used < usereg) {
+                        i.mckind = .ipreg;
+                        i.mcidx = regs[used].id();
+                        used += 1;
+                    } else {
+                        i.mckind = .frameslot;
+                        if (self.nslots == 255) {
+                            return error.UDunGoofed;
+                        }
+                        i.mcidx = self.nslots;
+                        self.nslots += 1;
                     }
-                    i.mcidx = self.nslots;
-                    self.nslots += 1;
                 }
             }
             cur_blk = b.next();
