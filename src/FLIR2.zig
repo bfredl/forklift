@@ -410,7 +410,7 @@ pub fn calc_use(self: *Self) !void {
         while (cur_blk) |blk| {
             var b = &self.b.items[blk];
             for (b.i) |*i| {
-                const nops = n_op(i);
+                const nops = n_op(i.tag);
                 if (nops > 0) {
                     const ref = self.iref(i.op1).?;
                     ref.n_use += 1;
@@ -420,6 +420,7 @@ pub fn calc_use(self: *Self) !void {
                     }
                 }
             }
+            cur_blk = b.next();
         }
     }
 }
@@ -541,6 +542,10 @@ fn print_blk(self: *Self, firstblk: u16) void {
                 print(" [rbp-8*{}]", .{i.mcidx});
             } else if (i.mckind == .ipreg) {
                 print(" ${s}", .{@tagName(@intToEnum(IPReg, i.mcidx))});
+            }
+            if (i.n_use > 0) {
+                // this is getting ridiculous
+                print(" <{}>", .{i.n_use});
             }
             print("\n", .{});
         }
@@ -728,6 +733,7 @@ fn test_analysis(self: *Self) !void {
 
     try self.calc_dfs();
     try SSA_GVN.ssa_gvn(self);
+    try self.calc_use();
     try self.trivial_stack_alloc();
 }
 
