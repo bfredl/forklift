@@ -43,6 +43,8 @@ pub const Node = struct {
     firstblk: u16,
     lastblk: u16,
     dfs_parent: u16 = 0,
+
+    genlink: u16 = 0,
 };
 
 pub const Tag = enum(u8) {
@@ -345,6 +347,8 @@ fn predlink(self: *Self, i: u16, si: u1, split: bool) !void {
         n[inter].npred = 1;
         n[i].s[si] = inter;
         n[inter].s[0] = s;
+        n[inter].genlink = n[i].genlink;
+        n[i].genlink = inter;
         addpred(self, s, inter);
         addpred(self, inter, i);
     } else {
@@ -570,7 +574,9 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
     // print("size: {}, extrasize: {}\n", .{ stacksize, padding });
     try cfo.aritri(.sub, .rsp, stacksize + padding);
 
-    for (self.n.items) |*n, ni| {
+    var ni: u16 = 0;
+    while (ni != NoRef) : (ni = self.n.items[ni].genlink) {
+        const n = &self.n.items[ni];
         if (n.dfnum == 0 and ni > 0) {
             // non-entry block not reached by df search is dead.
             // TODO: these should already been cleaned up at this point
@@ -603,12 +609,18 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
                         try raxmovmc(cfo, self.iref(i.op1).?.*);
                         try raxaritmc(cfo, .cmp, self.iref(i.op2).?.*);
                     },
+                    .putphi => {
+                        // TODO: actually check for parallell-move conflicts
+                        // either here or as an extra deconstruction step
+                        try raxmovmc(cfo, self.iref(i.op2).?.*);
+                        try mcmovrax(cfo, self.iref(i.op1).?.*);
+                    },
                     else => {},
                 }
             }
             cur_blk = b.next();
         }
-        const fallthru = ni + 1;
+        const fallthru = n.genlink;
         if (n.s[0] == fallthru and n.s[1] != 0) {
             try self.makejmp(cfo, .nl, uv(ni), 1, labels, targets);
         } else {
@@ -632,6 +644,31 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
 
 const test_allocator = std.testing.allocator;
 const expectEqual = std.testing.expectEqual;
+
+fn test_analysis(self: *Self, cfo: *CFO) !u32 {
+    // TODO: do a proper block ordering for codegen,
+    // like a proper DAG of SCC order.
+    // this just ensures declaration order is preserved
+    for (self.n.items) |*v, i| {
+        v.genlink = if (i < self.n.items.len - 1)
+            uv(i + 1)
+        else
+            NoRef;
+    }
+
+    try self.calc_preds();
+    self.debug_print();
+
+    try self.calc_dfs();
+    try SSA_GVN.ssa_gvn(self);
+    try self.trivial_stack_alloc();
+    self.debug_print();
+
+    const target = try self.codegen(cfo);
+    try cfo.dbg_nasm(test_allocator);
+
+    return target;
+}
 
 test "printa" {
     var self = try Self.init(8, test_allocator);
@@ -694,12 +731,10 @@ test "loopvar" {
 
     try self.ret(end, const_0);
 
-    try self.calc_preds();
+    var cfo = try CFO.init(test_allocator);
+    defer cfo.deinit();
 
-    // sometime later..
-    _ = try self.prePhi(loop, var_i);
-
-    self.debug_print();
+    _ = try self.test_analysis(&cfo);
 }
 
 test "diamondvar" {
@@ -736,18 +771,8 @@ test "diamondvar" {
 
     try self.ret(end, v);
 
-    try self.calc_preds();
-    self.debug_print();
-
-    try self.calc_dfs();
-    try SSA_GVN.ssa_gvn(&self);
-    try self.trivial_stack_alloc();
-    self.debug_print();
-
     var cfo = try CFO.init(test_allocator);
     defer cfo.deinit();
-    const target = try self.codegen(&cfo);
-    try cfo.dbg_nasm(test_allocator);
 
-    _ = target;
+    _ = try self.test_analysis(&cfo);
 }
