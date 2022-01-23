@@ -115,6 +115,14 @@ pub const Inst = struct {
             .ret => null,
         };
     }
+
+    pub fn ipreg(i: Inst) ?IPReg {
+        return if (i.mckind == .ipreg) @intToEnum(IPReg, i.mcidx) else null;
+    }
+
+    pub fn avxreg(i: Inst) ?u4 {
+        return if (i.mckind == .vfreg) @intCast(u4, i.mcidx) else null;
+    }
 };
 
 // number of op:s which are inst references.
@@ -680,10 +688,6 @@ fn movmcs(cfo: *CFO, dst: Inst, src: Inst, scratch: IPReg) !void {
     }
 }
 
-fn ipreg(i: Inst) ?IPReg {
-    return if (i.mckind == .ipreg) @intToEnum(IPReg, i.mcidx) else null;
-}
-
 pub fn makejmp(self: *Self, cfo: *CFO, cond: ?CFO.Cond, ni: u16, si: u1, labels: []u32, targets: [][2]u32) !void {
     const succ = self.n.items[ni].s[si];
     // NOTE: we assume blk 0 always has the prologue (push rbp; mov rbp, rsp)
@@ -736,14 +740,14 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
                 switch (i.tag) {
                     .ret => try regmovmc(cfo, .rax, self.iref(i.op1).?.*),
                     .iadd => {
-                        const dst = ipreg(i.*) orelse .rax;
+                        const dst = i.ipreg() orelse .rax;
                         try regmovmc(cfo, dst, self.iref(i.op1).?.*);
                         try regaritmc(cfo, .add, dst, self.iref(i.op2).?.*);
                         try mcmovreg(cfo, i.*, dst); // elided if dst is register
                     },
                     .constant => try mcmovi(cfo, i.*),
                     .ilessthan => {
-                        const firstop = ipreg(self.iref(i.op1).?.*) orelse .rax;
+                        const firstop = self.iref(i.op1).?.ipreg() orelse .rax;
                         try regmovmc(cfo, firstop, self.iref(i.op1).?.*);
                         try regaritmc(cfo, .cmp, firstop, self.iref(i.op2).?.*);
                     },
@@ -752,6 +756,26 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
                         // either here or as an extra deconstruction step
                         try movmcs(cfo, self.iref(i.op2).?.*, self.iref(i.op1).?.*, .rax);
                     },
+                    .load => {
+                        // TODO: spill spall supllit?
+                        const base = self.iref(i.op1).?.ipreg() orelse unreachable;
+                        const idx = self.iref(i.op2).?.ipreg() orelse unreachable;
+                        if (spec_type(i.spec) == .intptr) {
+                            const dst = i.ipreg() orelse .rax;
+                            try cfo.movrm(dst, CFO.qi(base, idx));
+                            try mcmovreg(cfo, i.*, dst); // elided if dst is register
+                        } else {
+                            const dst = i.avxreg() orelse unreachable;
+                            try cfo.vmovurm(.sd, dst, CFO.qi(base, idx));
+                        }
+                    },
+                    .vmath => {
+                        const x = self.iref(i.op1).?.avxreg() orelse unreachable;
+                        const y = self.iref(i.op2).?.avxreg() orelse unreachable;
+                        const dst = i.avxreg() orelse unreachable;
+                        try cfo.vmathf(@intToEnum(VMathOp, i.spec), .sd, dst, x, y);
+                    },
+
                     else => {},
                 }
             }
