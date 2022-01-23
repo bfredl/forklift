@@ -351,7 +351,9 @@ pub fn putvar(self: *Self, node: u16, op1: u16, op2: u16) !void {
 }
 
 pub fn store(self: *Self, node: u16, base: u16, idx: u16, val: u16) !u16 {
-    const addr = try self.addInst(node, .{ .tag = .lea, .op1 = base, .op2 = idx });
+    // FUBBIT: all possible instances of fusing should be detected in analysis
+    // anyway
+    const addr = try self.addInst(node, .{ .tag = .lea, .op1 = base, .op2 = idx, .mckind = .fused });
     return self.addInst(node, .{ .tag = .store, .op1 = addr, .op2 = val });
 }
 
@@ -734,10 +736,17 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
         }
 
         var cur_blk: ?u16 = n.firstblk;
+        var ea_fused: CFO.EAddr = undefined;
+        var fused_inst: ?*Inst = null;
         while (cur_blk) |blk| {
             var b = &self.b.items[blk];
             for (b.i) |*i| {
+                if (i.tag == .empty) continue;
+
+                var was_fused: bool = false;
                 switch (i.tag) {
+                    // empty doesn't flush fused value
+                    .empty => continue,
                     .ret => try regmovmc(cfo, .rax, self.iref(i.op1).?.*),
                     .iadd => {
                         const dst = i.ipreg() orelse .rax;
@@ -774,19 +783,29 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
                         // TODO: spill spall supllit?
                         const base = self.iref(i.op1).?.ipreg() orelse unreachable;
                         const idx = self.iref(i.op2).?.ipreg() orelse unreachable;
-                        const dst = i.ipreg() orelse .rax;
-                        try cfo.lea(dst, CFO.qi(base, idx));
-                        try mcmovreg(cfo, i.*, dst); // elided if dst is register
+                        const eaddr = CFO.qi(base, idx);
+                        if (i.mckind == .fused) {
+                            ea_fused = eaddr;
+                            was_fused = true;
+                        } else {
+                            const dst = i.ipreg() orelse .rax;
+                            try cfo.lea(dst, CFO.qi(base, idx));
+                            try mcmovreg(cfo, i.*, dst); // elided if dst is register
+                        }
                     },
                     .store => {
                         // TODO: fuse lea with store
-                        const addr = self.iref(i.op1).?.ipreg() orelse unreachable;
+                        const addr = self.iref(i.op1).?;
+                        const eaddr = if (addr == fused_inst)
+                            ea_fused
+                        else
+                            CFO.a(self.iref(i.op1).?.ipreg() orelse unreachable);
                         const val = self.iref(i.op2).?;
                         if (val.res_type().? == .intptr) {
                             unreachable;
                         } else {
                             const src = val.avxreg() orelse unreachable;
-                            try cfo.vmovumr(.sd, CFO.a(addr), src);
+                            try cfo.vmovumr(.sd, eaddr, src);
                         }
                     },
                     .vmath => {
@@ -798,6 +817,7 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
 
                     else => {},
                 }
+                fused_inst = if (was_fused) i else null;
             }
             cur_blk = b.next();
         }
