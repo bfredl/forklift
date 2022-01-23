@@ -646,6 +646,11 @@ fn regaritmc(cfo: *CFO, op: CFO.AOp, dst: IPReg, i: Inst) !void {
             const reg = @intToEnum(IPReg, i.mcidx);
             try cfo.arit(op, dst, reg);
         },
+        .fused => {
+            if (i.tag != .constant) return error.GetLostHeIsNeverComingBack;
+            try cfo.aritri(op, dst, i.op1); // TODO: proper constval
+
+        },
         else => return error.AAA_AA_A,
     }
 }
@@ -666,8 +671,14 @@ fn mcmovi(cfo: *CFO, i: Inst) !void {
         .frameslot => try cfo.movmi(CFO.a(.rbp).o(-8 * @as(i32, i.mcidx)), i.op1),
         .ipreg => {
             const reg = @intToEnum(IPReg, i.mcidx);
-            try cfo.movri(reg, i.op1);
+            if (i.op1 != 0) {
+                try cfo.movri(reg, i.op1);
+            } else {
+                // THANKS INTEL
+                try cfo.arit(.xor, reg, reg);
+            }
         },
+        .fused => {}, // let user lookup value
         else => return error.AAA_AA_A,
     }
 }
@@ -712,9 +723,11 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
     const target = cfo.get_target();
     try cfo.enter();
     const stacksize = 8 * @as(i32, self.nslots);
-    const padding = (-stacksize) & 0xF;
-    // print("size: {}, extrasize: {}\n", .{ stacksize, padding });
-    try cfo.aritri(.sub, .rsp, stacksize + padding);
+    if (stacksize > 0) {
+        const padding = (-stacksize) & 0xF;
+        // print("size: {}, extrasize: {}\n", .{ stacksize, padding });
+        try cfo.aritri(.sub, .rsp, stacksize + padding);
+    }
 
     var ni: u16 = 0;
     while (ni != NoRef) : (ni = self.n.items[ni].genlink) {
@@ -917,6 +930,8 @@ test "loopvar" {
     _ = try self.store(loop, arg1, var_i, newval);
 
     const const_1 = try self.const_int(loop, 1);
+    // TODO: analysis should of course do this:
+    self.iref(const_1).?.mckind = .fused;
     const iadd = try self.binop(loop, .iadd, var_i, const_1);
     try self.putvar(loop, var_i, iadd);
     _ = try self.binop(loop, .ilessthan, var_i, arg3);

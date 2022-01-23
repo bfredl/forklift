@@ -570,7 +570,7 @@ pub fn movri(self: *Self, dst: IPReg, src: i32) !void {
 pub fn aritri(self: *Self, op: AOp, dst: IPReg, imm: i32) !void {
     if (s2) {
         try self.new_inst(@returnAddress());
-        try self.rex_wrxb(true, dst.ext(), false, false);
+        try self.rex_wrxb(true, false, false, dst.ext());
         try self.wb(0x81);
         try self.modRm(0b11, op.opx(), dst.lowId());
         try self.wd(imm);
