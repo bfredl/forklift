@@ -75,7 +75,7 @@ fn vdi(self: Self, node: u16, v: u16) *u16 {
 fn read_ref(self: Self, node: u16, ref: u16) !u16 {
     const i = self.f.iref(ref) orelse return FLIR.NoRef;
     if (i.tag == .variable) {
-        return self.read_var(node, i.op1);
+        return self.read_var(node, i.*);
     } else {
         // already on SSA-form, nothing to do
         return ref;
@@ -83,9 +83,9 @@ fn read_ref(self: Self, node: u16, ref: u16) !u16 {
 }
 
 const MaybePhi = @typeInfo(@TypeOf(FLIR.prePhi)).Fn.return_type.?;
-fn read_var(self: Self, node: u16, v: u16) MaybePhi {
+fn read_var(self: Self, node: u16, v: FLIR.Inst) MaybePhi {
     // It matters where you are
-    const vd = self.vdi(node, v);
+    const vd = self.vdi(node, v.op1);
     if (vd.* != FLIR.NoRef) {
         return vd.*;
     }
@@ -103,7 +103,7 @@ fn read_var(self: Self, node: u16, v: u16) MaybePhi {
             // as an optimization, we could check if all predecessors
             // are filled (pred[i].dfnum < n.dfnum), and in that case
             // fill the phi node already;
-            break :thedef try self.f.prePhi(node, self.f.narg + v);
+            break :thedef try self.f.prePhi(node, v);
         }
     };
     vd.* = def;
@@ -125,16 +125,16 @@ fn resolve_blk(self: Self, first_blk: u16) !void {
 fn resolve_phi(self: Self, b: u16, idx: u16) !void {
     const blk = &self.f.b.items[b];
     const i = &blk.i[idx];
-    if (i.spec == 1) return;
+    if (i.op2 == 1) return;
     const ivar = self.f.iref(i.op1) orelse return error.GLUGG;
     var onlyref: ?u16 = null;
     for (self.f.preds(blk.node)) |v| {
-        const ref = try self.read_var(v, ivar.op1);
+        const ref = try self.read_var(v, ivar.*);
         _ = try self.f.binop(v, .putphi, ref, FLIR.toref(b, idx));
         onlyref = if (onlyref) |only| if (only == ref) only else FLIR.NoRef else ref;
     }
     i.op1 = 0;
-    i.spec = 1;
+    i.op2 = 1; // flag for "phi already resolved"
 }
 
 fn delete_vars(self: Self, first_blk: u16) !void {

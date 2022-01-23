@@ -95,6 +95,26 @@ pub const Inst = struct {
     fn free(self: @This()) bool {
         return self.tag == .empty;
     }
+
+    pub fn res_type(inst: Inst) ?ValType {
+        return switch (inst.tag) {
+            .empty => null,
+            .arg => spec_type(inst.spec), // TODO: haIIIII
+            .variable => spec_type(inst.spec), // gets preserved to the phis
+            .putvar => null,
+            .phi => spec_type(inst.spec),
+            .putphi => null, // stated in the phi instruction
+            .constant => spec_type(inst.spec),
+            .renum => null, // should be removed at this point
+            .load => spec_type(inst.spec),
+            .lea => .intptr, // Lea? Who's Lea??
+            .store => null,
+            .iadd => .intptr,
+            .ilessthan => null, // technically the FLAG register but anyway
+            .vmath => .avxval,
+            .ret => null,
+        };
+    }
 };
 
 // number of op:s which are inst references.
@@ -121,7 +141,23 @@ pub fn n_op(tag: Tag) u2 {
     };
 }
 
+// TODO: expand into precise types, like "dword" or "4 packed doubles"
+const ValType = enum(u4) {
+    intptr = 0,
+    avxval,
+
+    pub fn spec(self: @This()) u4 {
+        return @enumToInt(self);
+    }
+};
+
+// TODO: handle spec being split between u4 type and u4 somethingelse?
+fn spec_type(spec: u8) ValType {
+    return @intToEnum(ValType, spec);
+}
+
 // TODO: refactor these to an array of InstMetadata structs
+// or this is res_type != null?
 pub fn has_res(tag: Tag) bool {
     return switch (tag) {
         .empty => false,
@@ -293,7 +329,12 @@ pub fn binop(self: *Self, node: u16, tag: Tag, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = tag, .op1 = op1, .op2 = op2 });
 }
 
-pub fn vBinop(self: *Self, node: u16, vop: VMathOp, op1: u16, op2: u16) !u16 {
+// TODO: better abstraction for types (once we have real types)
+pub fn vbinop(self: *Self, node: u16, tag: Tag, op1: u16, op2: u16) !u16 {
+    return self.addInst(node, .{ .tag = tag, .op1 = op1, .op2 = op2, .spec = ValType.avxval.spec() });
+}
+
+pub fn vmath(self: *Self, node: u16, vop: VMathOp, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .vmath, .spec = vop.off(), .op1 = op1, .op2 = op2 });
 }
 
@@ -311,8 +352,8 @@ pub fn ret(self: *Self, node: u16, val: u16) !void {
     _ = try self.addInst(node, .{ .tag = .ret, .op1 = val, .op2 = 0 });
 }
 
-pub fn prePhi(self: *Self, node: u16, varid: u16) !u16 {
-    return self.preInst(node, .{ .tag = .phi, .op1 = varid, .op2 = 0 });
+pub fn prePhi(self: *Self, node: u16, v: Inst) !u16 {
+    return self.preInst(node, .{ .tag = .phi, .op1 = v.op1, .op2 = 0, .spec = v.spec });
 }
 
 // TODO: maintain wf of block 0: first all args, then all vars.
@@ -463,6 +504,7 @@ pub fn trivial_stack_alloc(self: *Self) !void {
     const regs: [5]IPReg = .{ .r12, .r13, .r14, .r15, .rbx };
     const usereg = 5;
     var used: usize = 0;
+    var avxused: u8 = 0;
     for (self.dfs.items) |ni| {
         var n = &self.n.items[ni];
         var cur_blk: ?u16 = n.firstblk;
@@ -472,7 +514,14 @@ pub fn trivial_stack_alloc(self: *Self) !void {
                 if (i.tag == .arg) {
                     try self.alloc_arg(i);
                 } else if (has_res(i.tag) and i.mckind == .unallocated) {
-                    if (used < usereg) {
+                    if (i.res_type() == ValType.avxval) {
+                        if (avxused == 16) {
+                            return error.GOOOF;
+                        }
+                        i.mckind = .vfreg;
+                        i.mcidx = avxused;
+                        avxused += 1;
+                    } else if (used < usereg) {
                         i.mckind = .ipreg;
                         i.mcidx = regs[used].id();
                         used += 1;
@@ -524,6 +573,10 @@ fn print_blk(self: *Self, firstblk: u16) void {
             const chr: u8 = if (has_res(i.tag)) '=' else ' ';
             print("  %{} {c} {s}", .{ toref(blk, uv(idx)), chr, @tagName(i.tag) });
 
+            if (i.tag == .variable) {
+                print(" {s}", .{@tagName(spec_type(i.spec))});
+            }
+
             if (i.tag == .vmath) {
                 print(".{s}", .{@tagName(@intToEnum(VMathOp, i.spec))});
             } else if (i.tag == .constant) {
@@ -538,11 +591,7 @@ fn print_blk(self: *Self, firstblk: u16) void {
                     print(", %{}", .{i.op2});
                 }
             }
-            if (i.mckind == .frameslot) {
-                print(" [rbp-8*{}]", .{i.mcidx});
-            } else if (i.mckind == .ipreg) {
-                print(" ${s}", .{@tagName(@intToEnum(IPReg, i.mcidx))});
-            }
+            print_mcval(i);
             if (i.n_use > 0) {
                 // this is getting ridiculous
                 print(" <{}>", .{i.n_use});
@@ -550,6 +599,22 @@ fn print_blk(self: *Self, firstblk: u16) void {
             print("\n", .{});
         }
         cur_blk = b.next();
+    }
+}
+
+fn print_mcval(i: Inst) void {
+    switch (i.mckind) {
+        .frameslot => print(" [rbp-8*{}]", .{i.mcidx}),
+        .ipreg => print(" ${s}", .{@tagName(@intToEnum(IPReg, i.mcidx))}),
+        .vfreg => print(" $ymm{}", .{i.mcidx}),
+        .unallocated => {
+            if (i.tag == .load or i.tag == .phi or i.tag == .arg) {
+                if (i.res_type()) |t| {
+                    print(" {s}", .{@tagName(t)});
+                }
+            }
+        },
+        else => {},
     }
 }
 
@@ -782,9 +847,10 @@ test "loopvar" {
     // NB: assumes count > 0, always do first iteration
     self.n.items[start].s[0] = loop;
 
-    const val = try self.binop(loop, .load, arg1, var_i);
-    const newval = try self.vBinop(loop, .mul, val, val);
-    _ = try self.store(loop, arg2, var_i, newval);
+    const valx = try self.vbinop(loop, .load, arg1, var_i);
+    const valy = try self.vbinop(loop, .load, arg2, var_i);
+    const newval = try self.vmath(loop, .add, valx, valy);
+    _ = try self.store(loop, arg1, var_i, newval);
 
     const const_1 = try self.const_int(loop, 1);
     const iadd = try self.binop(loop, .iadd, var_i, const_1);
