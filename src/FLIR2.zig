@@ -760,13 +760,33 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
                         // TODO: spill spall supllit?
                         const base = self.iref(i.op1).?.ipreg() orelse unreachable;
                         const idx = self.iref(i.op2).?.ipreg() orelse unreachable;
+                        const eaddr = CFO.qi(base, idx);
                         if (spec_type(i.spec) == .intptr) {
                             const dst = i.ipreg() orelse .rax;
-                            try cfo.movrm(dst, CFO.qi(base, idx));
+                            try cfo.movrm(dst, eaddr);
                             try mcmovreg(cfo, i.*, dst); // elided if dst is register
                         } else {
                             const dst = i.avxreg() orelse unreachable;
-                            try cfo.vmovurm(.sd, dst, CFO.qi(base, idx));
+                            try cfo.vmovurm(.sd, dst, eaddr);
+                        }
+                    },
+                    .lea => {
+                        // TODO: spill spall supllit?
+                        const base = self.iref(i.op1).?.ipreg() orelse unreachable;
+                        const idx = self.iref(i.op2).?.ipreg() orelse unreachable;
+                        const dst = i.ipreg() orelse .rax;
+                        try cfo.lea(dst, CFO.qi(base, idx));
+                        try mcmovreg(cfo, i.*, dst); // elided if dst is register
+                    },
+                    .store => {
+                        // TODO: fuse lea with store
+                        const addr = self.iref(i.op1).?.ipreg() orelse unreachable;
+                        const val = self.iref(i.op2).?;
+                        if (val.res_type().? == .intptr) {
+                            unreachable;
+                        } else {
+                            const src = val.avxreg() orelse unreachable;
+                            try cfo.vmovumr(.sd, CFO.a(addr), src);
                         }
                     },
                     .vmath => {
