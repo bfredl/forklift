@@ -2,7 +2,7 @@ const page_allocator = std.heap.page_allocator;
 const std = @import("std");
 const CFO = @import("./CFO.zig");
 const parse = @import("./parse.zig");
-const FLIR = @import("./FLIR.zig");
+const FLIR = @import("./Old_FLIR.zig");
 
 pub fn main2() !void {
     // wasteful but (doesn't) works :D

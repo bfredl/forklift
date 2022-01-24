@@ -4,7 +4,7 @@ const Allocator = std.mem.Allocator;
 const mem = std.mem;
 const print = std.debug.print;
 
-const FLIR = @import("./FLIR2.zig");
+const FLIR = @import("./FLIR.zig");
 
 const ArrayList = @import("./fake_list.zig").ArrayList;
 

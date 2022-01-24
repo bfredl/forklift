@@ -3,7 +3,7 @@ const print = std.debug.print;
 const CFO = @import("./CFO.zig");
 const OSHA = @import("./OSHA.zig");
 const parse = @import("./parse.zig");
-const FLIR = @import("./FLIR.zig");
+const FLIR = @import("./Old_FLIR.zig");
 
 const page_allocator = std.heap.page_allocator;
 

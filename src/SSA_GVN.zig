@@ -4,7 +4,7 @@ const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const Self = @This();
 
-const FLIR = @import("./FLIR2.zig");
+const FLIR = @import("./FLIR.zig");
 
 f: *FLIR,
 vardef: []u16,

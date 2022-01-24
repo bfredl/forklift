@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const test_allocator = std.testing.allocator;
-const FLIR = @import("./FLIR.zig");
+const FLIR = @import("./Old_FLIR.zig");
 const CFO = @import("./CFO.zig");
 const print = std.debug.print;
 
