@@ -43,8 +43,6 @@ pub const Node = struct {
     dfs_parent: u16 = 0, // TODO: unused
     lowlink: u16 = 0,
     scc: u16 = 0, // XXX: not a topological index, just an identidifer
-
-    genlink: u16 = 0,
 };
 
 pub const Tag = enum(u8) {
@@ -540,10 +538,6 @@ pub fn scc_connect(self: *Self, stack: *ArrayList(u16), v: u16) void {
         while (true) {
             const w = stack.pop();
             // TODO: just use sccorder directly :P
-            n[w].genlink = if (self.sccorder.items.len > 0)
-                self.sccorder.items[self.sccorder.items.len - 1]
-            else
-                NoRef;
             self.sccorder.appendAssumeCapacity(w);
             // XXX: not topologically sorted, just enables the check: n[i].scc == n[j].scc
             n[w].scc = v;
@@ -781,8 +775,9 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
         try cfo.aritri(.sub, .rsp, stacksize + padding);
     }
 
-    var ni: u16 = 0;
-    while (ni != NoRef) : (ni = self.n.items[ni].genlink) {
+    var sci = self.sccorder.items.len - 1;
+    while (true) : (sci -= 1) {
+        const ni = self.sccorder.items[sci];
         const n = &self.n.items[ni];
         if (n.dfnum == 0 and ni > 0) {
             // non-entry block not reached by df search is dead.
@@ -886,7 +881,7 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
             }
             cur_blk = b.next();
         }
-        const fallthru = n.genlink;
+        const fallthru = if (sci > 0) self.sccorder.items[sci - 1] else NoRef;
         if (n.s[0] == fallthru and n.s[1] != 0) {
             try self.makejmp(cfo, .nl, uv(ni), 1, labels, targets);
         } else {
@@ -901,6 +896,7 @@ pub fn codegen(self: *Self, cfo: *CFO) !u32 {
                 try self.makejmp(cfo, null, uv(ni), default, labels, targets);
             }
         }
+        if (sci == 0) break;
     }
 
     try cfo.leave();
