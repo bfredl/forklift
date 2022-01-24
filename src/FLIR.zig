@@ -414,8 +414,6 @@ fn predlink(self: *Self, i: u16, si: u1, split: bool) !void {
         n[inter].npred = 1;
         n[i].s[si] = inter;
         n[inter].s[0] = s;
-        n[inter].genlink = n[i].genlink;
-        n[i].genlink = inter;
         addpred(self, s, inter);
         addpred(self, inter, i);
     } else {
@@ -541,6 +539,11 @@ pub fn scc_connect(self: *Self, stack: *ArrayList(u16), v: u16) void {
         print("SCC:", .{});
         while (true) {
             const w = stack.pop();
+            // TODO: just use sccorder directly :P
+            n[w].genlink = if (self.sccorder.items.len > 0)
+                self.sccorder.items[self.sccorder.items.len - 1]
+            else
+                NoRef;
             self.sccorder.appendAssumeCapacity(w);
             // XXX: not topologically sorted, just enables the check: n[i].scc == n[j].scc
             n[w].scc = v;
@@ -912,12 +915,6 @@ pub fn test_analysis(self: *Self) !void {
     // TODO: do a proper block ordering for codegen,
     // like a proper DAG of SCC order.
     // this just ensures declaration order is preserved
-    for (self.n.items) |*v, i| {
-        v.genlink = if (i < self.n.items.len - 1)
-            uv(i + 1)
-        else
-            NoRef;
-    }
 
     try self.calc_preds();
     self.debug_print();
