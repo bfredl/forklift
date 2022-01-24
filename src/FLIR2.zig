@@ -20,6 +20,7 @@ a: Allocator,
 n: ArrayList(Node),
 b: ArrayList(Block),
 dfs: ArrayList(u16),
+sccorder: ArrayList(u16),
 refs: ArrayList(u16),
 narg: u16 = 0,
 nvar: u16 = 0,
@@ -39,7 +40,9 @@ pub const Node = struct {
     npred: u16 = 0,
     firstblk: u16,
     lastblk: u16,
-    dfs_parent: u16 = 0,
+    dfs_parent: u16 = 0, // TODO: unused
+    lowlink: u16 = 0,
+    scc: u16 = 0, // XXX: not a topological index, just an identidifer
 
     genlink: u16 = 0,
 };
@@ -218,6 +221,7 @@ pub fn init(n: u16, allocator: Allocator) !Self {
         .a = allocator,
         .n = try ArrayList(Node).initCapacity(allocator, n),
         .dfs = ArrayList(u16).init(allocator),
+        .sccorder = ArrayList(u16).init(allocator),
         .refs = try ArrayList(u16).initCapacity(allocator, 4 * n),
         .b = try ArrayList(Block).initCapacity(allocator, 2 * n),
     };
@@ -226,6 +230,7 @@ pub fn init(n: u16, allocator: Allocator) !Self {
 pub fn deinit(self: *Self) void {
     self.n.deinit();
     self.dfs.deinit();
+    self.sccorder.deinit();
     self.refs.deinit();
     self.b.deinit();
 }
@@ -499,6 +504,50 @@ pub fn calc_dfs(self: *Self) !void {
                 stack.appendAssumeCapacity(si);
             }
         }
+    }
+}
+
+pub fn calc_scc(self: *Self) !void {
+    const n = self.n.items;
+    try self.dfs.ensureTotalCapacity(n.len);
+    var stack = try ArrayList(u16).initCapacity(self.a, n.len);
+    defer stack.deinit();
+    try self.sccorder.ensureTotalCapacity(n.len);
+    self.scc_connect(&stack, 0);
+}
+
+pub fn scc_connect(self: *Self, stack: *ArrayList(u16), v: u16) void {
+    const n = self.n.items;
+    n[v].dfnum = uv(self.dfs.items.len);
+    self.dfs.appendAssumeCapacity(v);
+
+    stack.appendAssumeCapacity(v);
+    n[v].lowlink = n[v].dfnum;
+
+    for (n[v].s) |w| {
+        // origin cannot be revisited anyway
+        if (w > 0) {
+            if (n[w].dfnum == 0) {
+                n[w].dfs_parent = v;
+                self.scc_connect(stack, w);
+                n[v].lowlink = math.min(n[v].lowlink, n[w].lowlink);
+            } else if (n[w].dfnum < n[v].dfnum and n[w].scc == 0) { // or whatever
+                n[v].lowlink = math.min(n[v].lowlink, n[w].dfnum);
+            }
+        }
+    }
+
+    if (n[v].lowlink == n[v].dfnum) {
+        print("SCC:", .{});
+        while (true) {
+            const w = stack.pop();
+            self.sccorder.appendAssumeCapacity(w);
+            // XXX: not topologically sorted, just enables the check: n[i].scc == n[j].scc
+            n[w].scc = v;
+            print(" {}", .{w});
+            if (w == v) break;
+        }
+        print("\n", .{});
     }
 }
 
@@ -873,7 +922,8 @@ fn test_analysis(self: *Self) !void {
     try self.calc_preds();
     self.debug_print();
 
-    try self.calc_dfs();
+    //try self.calc_dfs();
+    try self.calc_scc(); // also provides dfs
     try SSA_GVN.ssa_gvn(self);
     try self.calc_use();
     try self.trivial_stack_alloc();
