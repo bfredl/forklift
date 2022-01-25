@@ -93,7 +93,8 @@ pub const Inst = struct {
     // reindex: u16 = 0,
     mckind: MCKind = .unallocated,
     mcidx: u8 = undefined,
-    n_use: u16 = 0,
+    // n_use: u16 = 0,
+    last_use: u16 = NoRef,
     vreg: u16 = NoRef,
 
     fn free(self: @This()) bool {
@@ -461,9 +462,10 @@ pub fn calc_preds(self: *Self) !void {
 }
 
 // ni = node id of user
-pub fn adduse(self: *Self, ni: u16, used: u16) void {
+pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
     const ref = self.biref(used).?;
-    ref.i.n_use += 1;
+    //ref.i.n_use += 1;
+    ref.i.last_use = user;
     // it leaks to another block: give it a virtual register number
     if (ref.n != ni and ref.i.vreg == NoRef) {
         ref.i.vreg = self.nvreg;
@@ -480,12 +482,13 @@ pub fn calc_use(self: *Self) !void {
         var cur_blk: ?u16 = n.firstblk;
         while (cur_blk) |blk| {
             var b = &self.b.items[blk];
-            for (b.i) |*i| {
+            for (b.i) |*i, idx| {
+                const ref = toref(blk, uv(idx));
                 const nops = n_op(i.tag);
                 if (nops > 0) {
-                    self.adduse(ni, i.op1);
+                    self.adduse(ni, ref, i.op1);
                     if (nops > 1) {
-                        self.adduse(ni, i.op2);
+                        self.adduse(ni, ref, i.op2);
                     }
                 }
             }
@@ -579,10 +582,21 @@ pub fn trivial_stack_alloc(self: *Self) !void {
         var cur_blk: ?u16 = n.firstblk;
         while (cur_blk) |blk| {
             var b = &self.b.items[blk];
-            for (b.i) |*i| {
+            for (b.i) |*i, idx| {
+                const ref = toref(blk, uv(idx));
+
                 if (i.tag == .arg) {
                     try self.alloc_arg(i);
                 } else if (has_res(i.tag) and i.mckind == .unallocated) {
+                    const regkind: MCKind = if (i.res_type() == ValType.avxval) .vfreg else .ipreg;
+                    const op1 = if (n_op(i.tag) > 0) self.iref(i.op1) else null;
+                    if (op1) |o| {
+                        if (o.mckind == regkind and o.vreg == NoRef and o.last_use == ref) {
+                            i.mckind = regkind;
+                            i.mcidx = o.mcidx;
+                            continue;
+                        }
+                    }
                     if (i.res_type() == ValType.avxval) {
                         if (avxused == 16) {
                             return error.GOOOF;
@@ -661,12 +675,16 @@ fn print_blk(self: *Self, firstblk: u16) void {
                 }
             }
             print_mcval(i);
-            if (i.n_use > 0) {
+            if (i.last_use != NoRef) {
                 // this is a compiler bug ("*" emitted for Noref)
                 //print(" <{}{s}>", .{ i.n_use, @as([]const u8, if (i.vreg != NoRef) "*" else "") });
                 // this is getting ridiculous
-                const marker: []const u8 = if (i.vreg != NoRef) "*" else "";
-                print(" <{}{s}>", .{ i.n_use, marker });
+                if (i.vreg != NoRef) {
+                    print(" |{}|", .{i.vreg});
+                } else {
+                    print(" <%{}>", .{i.last_use});
+                }
+                // print(" <{}{s}>", .{ i.last_use, marker });
                 //print(" <{}:{}>", .{ i.n_use, i.vreg });
             }
             print("\n", .{});

@@ -577,7 +577,7 @@ pub fn aritri(self: *Self, op: AOp, dst: IPReg, imm: i32) !void {
     } else {
         const imm8 = maybe_imm8(imm);
         try self.new_inst(@returnAddress());
-        try self.rex_wrxb(true, dst.ext(), false, false);
+        try self.rex_wrxb(true, false, false, dst.ext());
         try self.wb(if (imm8 != null) 0x83 else 0x81);
         try self.modRm(0b11, op.opx(), dst.lowId());
         try if (imm8) |i| self.wbi(i) else self.wd(imm);
