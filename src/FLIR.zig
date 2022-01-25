@@ -571,10 +571,12 @@ pub fn alloc_arg(self: *Self, inst: *Inst) !void {
     inst.mcidx = regs[inst.op1].id();
 }
 
-pub fn trivial_stack_alloc(self: *Self) !void {
-    const regs: [5]IPReg = .{ .r12, .r13, .r14, .r15, .rbx };
-    const usereg = 5;
-    var used: usize = 0;
+// fills up some registers, and then goes to the stack.
+// reuses op1 if it is from the same block and we are the last user
+pub fn trivial_alloc(self: *Self) !void {
+    // TRRICKY: start with the ABI arg registers, and just skip as many args as we have
+    const regs: [8]IPReg = .{ .rdi, .rsi, .rdx, .rcx, .r8, .r9, .r10, .r11 };
+    var used: usize = self.narg;
     var avxused: u8 = 0;
     for (self.dfs.items) |ni| {
         var n = &self.n.items[ni];
@@ -603,7 +605,7 @@ pub fn trivial_stack_alloc(self: *Self) !void {
                         i.mckind = .vfreg;
                         i.mcidx = avxused;
                         avxused += 1;
-                    } else if (used < usereg) {
+                    } else if (used < regs.len) {
                         i.mckind = .ipreg;
                         i.mcidx = regs[used].id();
                         used += 1;
@@ -712,10 +714,6 @@ const test_allocator = std.testing.allocator;
 const expectEqual = std.testing.expectEqual;
 
 pub fn test_analysis(self: *Self) !void {
-    // TODO: do a proper block ordering for codegen,
-    // like a proper DAG of SCC order.
-    // this just ensures declaration order is preserved
-
     try self.calc_preds();
     // self.debug_print();
 
@@ -723,7 +721,7 @@ pub fn test_analysis(self: *Self) !void {
     try self.calc_scc(); // also provides dfs
     try SSA_GVN.ssa_gvn(self);
     try self.calc_use();
-    try self.trivial_stack_alloc();
+    try self.trivial_alloc();
 }
 
 test "printa" {
@@ -801,6 +799,6 @@ test "diamondvar" {
     var cfo = try CFO.init(test_allocator);
     defer cfo.deinit();
 
-    _ = try self.codegen(&cfo);
+    _ = try @import("./codegen.zig").codegen(&self, &cfo);
     try cfo.dbg_nasm(test_allocator);
 }
