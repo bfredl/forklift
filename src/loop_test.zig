@@ -1,6 +1,7 @@
 const std = @import("std");
 const FLIR = @import("./FLIR.zig");
 const CFO = @import("./CFO.zig");
+const codegen = @import("./codegen.zig").codegen;
 
 const test_allocator = std.testing.allocator;
 
@@ -49,6 +50,6 @@ pub fn main() !void {
     var cfo = try CFO.init(test_allocator);
     defer cfo.deinit();
 
-    _ = try self.codegen(&cfo);
+    _ = try codegen(&self, &cfo);
     try cfo.dbg_nasm(test_allocator);
 }
