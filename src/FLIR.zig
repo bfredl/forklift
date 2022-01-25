@@ -24,6 +24,8 @@ sccorder: ArrayList(u16),
 refs: ArrayList(u16),
 narg: u16 = 0,
 nvar: u16 = 0,
+// variables 2.0: virtual registero
+nvreg: u16 = 0,
 
 // 8-byte slots in stack frame
 nslots: u8 = 0,
@@ -88,10 +90,11 @@ pub const Inst = struct {
     spec: u8 = 0,
     op1: u16,
     op2: u16,
-    reindex: u16 = 0,
+    // reindex: u16 = 0,
     mckind: MCKind = .unallocated,
     mcidx: u8 = undefined,
     n_use: u16 = 0,
+    vreg: u16 = NoRef,
 
     fn free(self: @This()) bool {
         return self.tag == .empty;
@@ -247,13 +250,18 @@ fn fromref(ref: u16) struct { block: u16, idx: u16 } {
     };
 }
 
-pub fn iref(self: *Self, ref: u16) ?*Inst {
+const BIREF = struct { n: u16, i: *Inst };
+pub fn biref(self: *Self, ref: u16) ?BIREF {
     if (ref == NoRef) {
         return null;
     }
     const r = fromref(ref);
     const blk = &self.b.items[r.block];
-    return &blk.i[r.idx];
+    return BIREF{ .n = blk.node, .i = &blk.i[r.idx] };
+}
+
+pub fn iref(self: *Self, ref: u16) ?*Inst {
+    return if (self.biref(ref)) |bi| bi.i else null;
 }
 
 pub fn addNode(self: *Self) !u16 {
@@ -452,6 +460,17 @@ pub fn calc_preds(self: *Self) !void {
     }
 }
 
+// ni = node id of user
+pub fn adduse(self: *Self, ni: u16, used: u16) void {
+    const ref = self.biref(used).?;
+    ref.i.n_use += 1;
+    // it leaks to another block: give it a virtual register number
+    if (ref.n != ni and ref.i.vreg == NoRef) {
+        ref.i.vreg = self.nvreg;
+        self.nvreg += 1;
+    }
+}
+
 // TODO: not idempotent! does not reset n_use=0 first.
 pub fn calc_use(self: *Self) !void {
     // TODO: stop abusing dfs for reachable blocks and just kill
@@ -464,11 +483,9 @@ pub fn calc_use(self: *Self) !void {
             for (b.i) |*i| {
                 const nops = n_op(i.tag);
                 if (nops > 0) {
-                    const ref = self.iref(i.op1).?;
-                    ref.n_use += 1;
+                    self.adduse(ni, i.op1);
                     if (nops > 1) {
-                        const ref2 = self.iref(i.op2).?;
-                        ref2.n_use += 1;
+                        self.adduse(ni, i.op2);
                     }
                 }
             }
@@ -534,17 +551,13 @@ pub fn scc_connect(self: *Self, stack: *ArrayList(u16), v: u16) void {
     }
 
     if (n[v].lowlink == n[v].dfnum) {
-        print("SCC:", .{});
         while (true) {
             const w = stack.pop();
-            // TODO: just use sccorder directly :P
             self.sccorder.appendAssumeCapacity(w);
             // XXX: not topologically sorted, just enables the check: n[i].scc == n[j].scc
             n[w].scc = v;
-            print(" {}", .{w});
             if (w == v) break;
         }
-        print("\n", .{});
     }
 }
 
@@ -649,8 +662,12 @@ fn print_blk(self: *Self, firstblk: u16) void {
             }
             print_mcval(i);
             if (i.n_use > 0) {
+                // this is a compiler bug ("*" emitted for Noref)
+                //print(" <{}{s}>", .{ i.n_use, @as([]const u8, if (i.vreg != NoRef) "*" else "") });
                 // this is getting ridiculous
-                print(" <{}>", .{i.n_use});
+                const marker: []const u8 = if (i.vreg != NoRef) "*" else "";
+                print(" <{}{s}>", .{ i.n_use, marker });
+                //print(" <{}:{}>", .{ i.n_use, i.vreg });
             }
             print("\n", .{});
         }
@@ -913,7 +930,7 @@ pub fn test_analysis(self: *Self) !void {
     // this just ensures declaration order is preserved
 
     try self.calc_preds();
-    self.debug_print();
+    // self.debug_print();
 
     //try self.calc_dfs();
     try self.calc_scc(); // also provides dfs
