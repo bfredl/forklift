@@ -30,6 +30,13 @@ nvreg: u16 = 0,
 // 8-byte slots in stack frame
 nslots: u8 = 0,
 
+// filler value for unintialized refs. not a sentinel for
+// actually invalid refs!
+pub const DEAD: u16 = 0xFEFF;
+// For blocks: we cannot have more than 2^14 blocks anyway
+// for vars: don't allocate last block!
+pub const NoRef: u16 = 0xFFFF;
+
 pub fn uv(s: usize) u16 {
     return @intCast(u16, s);
 }
@@ -47,43 +54,25 @@ pub const Node = struct {
     scc: u16 = 0, // XXX: not a topological index, just an identidifer
 };
 
-pub const Tag = enum(u8) {
-    empty = 0, // empty slot. must not be refered to!
-    arg,
-    variable,
-    putvar, // non-phi assignment
-    phi,
-    /// assign to phi of (only) successor
-    /// note: despite swearing in the intel church.
-    /// op1 is source and op2 is dest, to simplify stuff
-    /// i e n_op(putphi) == 1 for the most part
-    putphi,
-    renum,
-    constant,
-    load,
-    lea,
-    store,
-    iadd, // imath group?
-    ilessthan, // icmp group?
-    vmath,
-    ret,
+pub const EMPTY: Inst = .{ .tag = .empty, .op1 = 0, .op2 = 0 };
+
+pub const BLK_SIZE = 4;
+pub const BLK_SHIFT = 2;
+pub const Block = struct {
+    node: u16,
+    succ: u16 = NoRef,
+    i: [BLK_SIZE]Inst = .{EMPTY} ** BLK_SIZE,
+
+    pub fn next(self: @This()) ?u16 {
+        return if (self.succ != NoRef) self.succ else null;
+    }
 };
 
-pub const MCKind = enum(u8) {
-    // not yet allocated, or Inst that trivially produces no value
-    unallocated,
-    // general purpose register like rax, r12, etc
-    ipreg,
-    // SSE/AVX registers, ie xmm0/ymm0-15
-    vfreg,
-    // TODO: support non-uniform sizes of spilled value
-    frameslot,
-    // unused value, perhaps should have been deleted before alloc
-    dead,
-    // not stored as such, will be emitted togheter with the next inst
-    // example "lea" and then "store", or "load" and then iadd/vmath
-    fused,
-};
+test "sizey" {
+    // @compileLog(@sizeOf(Inst));
+    // @compileLog(@sizeOf(Block));
+    assert(@sizeOf(Block) <= 64);
+}
 
 pub const Inst = struct {
     tag: Tag,
@@ -133,6 +122,43 @@ pub const Inst = struct {
     pub fn avxreg(i: Inst) ?u4 {
         return if (i.mckind == .vfreg) @intCast(u4, i.mcidx) else null;
     }
+};
+pub const Tag = enum(u8) {
+    empty = 0, // empty slot. must not be refered to!
+    arg,
+    variable,
+    putvar, // non-phi assignment
+    phi,
+    /// assign to phi of (only) successor
+    /// note: despite swearing in the intel church.
+    /// op1 is source and op2 is dest, to simplify stuff
+    /// i e n_op(putphi) == 1 for the most part
+    putphi,
+    renum,
+    constant,
+    load,
+    lea,
+    store,
+    iadd, // imath group?
+    ilessthan, // icmp group?
+    vmath,
+    ret,
+};
+
+pub const MCKind = enum(u8) {
+    // not yet allocated, or Inst that trivially produces no value
+    unallocated,
+    // general purpose register like rax, r12, etc
+    ipreg,
+    // SSE/AVX registers, ie xmm0/ymm0-15
+    vfreg,
+    // TODO: support non-uniform sizes of spilled value
+    frameslot,
+    // unused value, perhaps should have been deleted before alloc
+    dead,
+    // not stored as such, will be emitted togheter with the next inst
+    // example "lea" and then "store", or "load" and then iadd/vmath
+    fused,
 };
 
 // number of op:s which are inst references.
@@ -190,33 +216,6 @@ pub fn has_res(tag: Tag) bool {
         .ret => false,
     };
 }
-
-pub const EMPTY: Inst = .{ .tag = .empty, .op1 = 0, .op2 = 0 };
-
-pub const BLK_SIZE = 4;
-pub const BLK_SHIFT = 2;
-pub const Block = struct {
-    node: u16,
-    succ: u16 = NoRef,
-    i: [BLK_SIZE]Inst = .{EMPTY} ** BLK_SIZE,
-
-    pub fn next(self: @This()) ?u16 {
-        return if (self.succ != NoRef) self.succ else null;
-    }
-};
-
-test "sizey" {
-    // @compileLog(@sizeOf(Inst));
-    // @compileLog(@sizeOf(Block));
-    assert(@sizeOf(Block) <= 64);
-}
-
-// filler value for unintialized refs. not a sentinel for
-// actually invalid refs!
-pub const DEAD: u16 = 0xFEFF;
-// For blocks: we cannot have more than 2^14 blocks anyway
-// for vars: don't allocate last block!
-pub const NoRef: u16 = 0xFFFF;
 
 pub fn init(n: u16, allocator: Allocator) !Self {
     return Self{
