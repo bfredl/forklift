@@ -10,7 +10,9 @@ const Self = @This();
 const Inst = FLIR.Inst;
 
 flir: *FLIR,
-tmp: [10]?u16 = .{null} ** 10,
+// tmp: [10]?u16 = .{null} ** 10,
+tmp: [10]?u16 = ([1]?u16{null}) ** 10,
+
 str: []const u8,
 pos: usize,
 
@@ -99,7 +101,7 @@ pub fn expr_2(self: *Self) !?u16 {
         };
         self.pos += 1;
         const op = (try self.expr_1()) orelse return error.EXPR2;
-        val = try self.flir.put(.{ .tag = .vmath, .opspec = theop.off(), .op1 = val, .op2 = op });
+        val = try self.flir.put(Inst{ .tag = .vmath, .opspec = theop.off(), .op1 = val, .op2 = op });
     }
     return val;
 }

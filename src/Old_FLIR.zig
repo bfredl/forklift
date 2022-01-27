@@ -56,8 +56,8 @@ pub fn init_stage2(narg: u4, allocator: Allocator) FLIR {
     _ = allocator;
     var self: FLIR = .{
         .narg = narg,
-        .inst = ArrayList(Inst).initCapacity(allocator, 16),
-        .constants = ArrayList(f64).initCapacity(allocator, 16),
+        .inst = ArrayList(Inst).initCapacity(allocator, 16) catch unreachable,
+        .constants = ArrayList(f64).initCapacity(allocator, 16) catch unreachable,
         .pos_loop_start = 0,
         .pos_loop_end = 0,
         .theinst = undefined,
@@ -91,11 +91,11 @@ pub fn put(self: *FLIR, inst: Inst) !u16 {
 }
 
 pub fn loop_start(self: *FLIR) !void {
-    _ = try self.put(.{ .tag = .loop_start });
+    _ = try self.put(Inst{ .tag = .loop_start });
 }
 
 pub fn loop_end(self: *FLIR) !void {
-    _ = try self.put(.{ .tag = .loop_end });
+    _ = try self.put(Inst{ .tag = .loop_end });
 }
 
 pub fn live(self: *FLIR, arglive: bool) void {

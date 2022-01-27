@@ -4,6 +4,9 @@ const CFO = @import("./CFO.zig");
 const parse = @import("./parse.zig");
 const FLIR = @import("./Old_FLIR.zig");
 
+const builtin = @import("builtin");
+const s2 = builtin.zig_backend != .stage1;
+
 pub fn main2() !void {
     // wasteful but (doesn't) works :D
     // const allocator = page_allocator;
@@ -44,9 +47,9 @@ pub fn main2() !void {
     _ = flir;
     // defer flir.deinit();
 
-    // try flir.loop_start();
-    // _ = try parse.parse(&flir, "xi = xi + yi;");
-    // try flir.loop_end();
+    try flir.loop_start();
+    _ = try parse.parse(&flir, "xi = xi + yi;");
+    try flir.loop_end();
     // flir.live(true);
     // _ = try flir.scanreg(true);
     // flir.debug_print(false);
@@ -57,7 +60,9 @@ pub fn main2() !void {
     // try cfo.ret();
 
     const runcount: usize = 137;
-    var fun = cfo.get_ptr(pos, fn ([*]f64, [*]f64, usize) callconv(.C) usize);
+    // THANKS WERK
+    const ptrtype = if (s2) *const fn ([*]f64, [*]f64, usize) callconv(.C) usize else fn ([*]f64, [*]f64, usize) callconv(.C) usize;
+    var fun = cfo.get_ptr(pos, ptrtype);
     var ret = fun(arr1.ptr, arr2.ptr, runcount);
     std.os.exit(@floatToInt(u8, 2.0 * arr1[5]));
     std.os.exit(@truncate(u8, ret));
