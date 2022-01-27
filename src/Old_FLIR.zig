@@ -56,8 +56,8 @@ pub fn init_stage2(narg: u4, allocator: Allocator) FLIR {
     _ = allocator;
     var self: FLIR = .{
         .narg = narg,
-        .inst = ArrayList(Inst).initCapacity(allocator, 16) catch unreachable,
-        .constants = ArrayList(f64).initCapacity(allocator, 16) catch unreachable,
+        .inst = ArrayList(Inst).initCapacity(allocator, 16),
+        .constants = ArrayList(f64).initCapacity(allocator, 16),
         .pos_loop_start = 0,
         .pos_loop_end = 0,
         .theinst = undefined,
@@ -147,7 +147,7 @@ inline fn set_live(self: FLIR, used: u16, user: u16) void {
 }
 
 pub fn scanreg(self: FLIR, doit: bool) !u5 {
-    var active: [16]?u16 = .{null} ** 16;
+    var active: [16]?u16 = ([1]?u16{null}) ** 16;
     var pos: u16 = 0;
     var maxpressure: u5 = 0;
     while (pos < self.ninst()) : (pos += 1) {

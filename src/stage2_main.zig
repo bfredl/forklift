@@ -48,16 +48,21 @@ pub fn main2() !void {
     // defer flir.deinit();
 
     try flir.loop_start();
-    _ = try parse.parse(&flir, "xi = xi + yi;");
+    //_ = try parse.parse(&flir, "xi = xi + yi;");
+    var inst: FLIR.Inst = .{ .tag = .load, .opspec = 0x11, .op1 = 0 };
+    const l1 = try flir.put(inst);
+    var inst2: FLIR.Inst = .{ .tag = .store, .opspec = 0x10, .op1 = l1, .op2 = 0 };
+    _ = try flir.put(inst2);
     try flir.loop_end();
-    // flir.live(true);
-    // _ = try flir.scanreg(true);
+    flir.live(true);
+    _ = try flir.scanreg(true);
     // flir.debug_print(false);
 
-    // try cfo.enter();
+    try cfo.enter();
+    // TODO: not so far!
     // _ = try flir.codegen(&cfo);
-    // try cfo.leave();
-    // try cfo.ret();
+    try cfo.leave();
+    try cfo.ret();
 
     const runcount: usize = 137;
     // THANKS WERK
