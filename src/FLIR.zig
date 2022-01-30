@@ -52,6 +52,7 @@ pub const Node = struct {
     dfs_parent: u16 = 0, // TODO: unused
     lowlink: u16 = 0,
     scc: u16 = 0, // XXX: not a topological index, just an identidifer
+    live_in: u64 = 0, // TODO: globally allocate a [n_nodes*nvreg] multibitset
 };
 
 pub const EMPTY: Inst = .{ .tag = .empty, .op1 = 0, .op2 = 0 };
@@ -459,42 +460,6 @@ pub fn calc_preds(self: *Self) !void {
     }
 }
 
-// ni = node id of user
-pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
-    const ref = self.biref(used).?;
-    //ref.i.n_use += 1;
-    ref.i.last_use = user;
-    // it leaks to another block: give it a virtual register number
-    if (ref.n != ni and ref.i.vreg == NoRef) {
-        ref.i.vreg = self.nvreg;
-        self.nvreg += 1;
-    }
-}
-
-// TODO: not idempotent! does not reset n_use=0 first.
-pub fn calc_use(self: *Self) !void {
-    // TODO: stop abusing dfs for reachable blocks and just kill
-    // unreachable blocks whenever they are/become unreachable
-    for (self.dfs.items) |ni| {
-        var n = &self.n.items[ni];
-        var cur_blk: ?u16 = n.firstblk;
-        while (cur_blk) |blk| {
-            var b = &self.b.items[blk];
-            for (b.i) |*i, idx| {
-                const ref = toref(blk, uv(idx));
-                const nops = n_op(i.tag);
-                if (nops > 0) {
-                    self.adduse(ni, ref, i.op1);
-                    if (nops > 1) {
-                        self.adduse(ni, ref, i.op2);
-                    }
-                }
-            }
-            cur_blk = b.next();
-        }
-    }
-}
-
 pub fn calc_dfs(self: *Self) !void {
     const n = self.n.items;
     var stack = try ArrayList(u16).initCapacity(self.a, n.len);
@@ -558,6 +523,45 @@ pub fn scc_connect(self: *Self, stack: *ArrayList(u16), v: u16) void {
             // XXX: not topologically sorted, just enables the check: n[i].scc == n[j].scc
             n[w].scc = v;
             if (w == v) break;
+        }
+    }
+}
+
+// ni = node id of user
+pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
+    const ref = self.biref(used).?;
+    //ref.i.n_use += 1;
+    ref.i.last_use = user;
+    // it leaks to another block: give it a virtual register number
+    if (ref.n != ni) {
+        if (ref.i.vreg == NoRef) {
+            ref.i.vreg = self.nvreg;
+            self.nvreg += 1;
+        }
+        self.n.items[ni].live_in |= (@as(usize, 1) << @intCast(u6, ref.i.vreg));
+    }
+}
+
+// TODO: not idempotent! does not reset n_use=0 first.
+pub fn calc_use(self: *Self) !void {
+    // TODO: stop abusing dfs for reachable blocks and just kill
+    // unreachable blocks whenever they are/become unreachable
+    for (self.dfs.items) |ni| {
+        var n = &self.n.items[ni];
+        var cur_blk: ?u16 = n.firstblk;
+        while (cur_blk) |blk| {
+            var b = &self.b.items[blk];
+            for (b.i) |*i, idx| {
+                const ref = toref(blk, uv(idx));
+                const nops = n_op(i.tag);
+                if (nops > 0) {
+                    self.adduse(ni, ref, i.op1);
+                    if (nops > 1) {
+                        self.adduse(ni, ref, i.op2);
+                    }
+                }
+            }
+            cur_blk = b.next();
         }
     }
 }
@@ -629,7 +633,18 @@ pub fn debug_print(self: *Self) void {
     }
     print("\n", .{});
     for (self.n.items) |*b, i| {
-        print("node {} (npred {}):\n", .{ i, b.npred });
+        print("node {} (npred {}):", .{ i, b.npred });
+        if (b.live_in != 0) {
+            print(" USE", .{});
+            var ireg: u16 = 0;
+            while (ireg < self.nvreg) : (ireg += 1) {
+                const live = (b.live_in & (@as(usize, 1) << @intCast(u6, ireg))) != 0;
+                if (live) {
+                    print(" {}", .{ireg});
+                }
+            }
+        }
+        print("\n", .{});
 
         self.print_blk(b.firstblk);
 
