@@ -568,6 +568,13 @@ pub fn calc_use(self: *Self) !void {
     for (self.sccorder.items) |ni| {
         var n = &self.n.items[ni];
         print("PROCESS: {}\n", .{ni});
+        var live: u64 = 0;
+        for (n.s) |s| {
+            if (s != NoRef) {
+                live |= self.n.items[s].live_in;
+            }
+        }
+
         var cur_blk: ?u16 = n.lastblk;
         while (cur_blk) |blk| {
             var b = &self.b.items[blk];
@@ -581,6 +588,9 @@ pub fn calc_use(self: *Self) !void {
             // TODO: organize the blocks at this point to skip the O(nblk^2)
             cur_blk = self.prev_blk(n.firstblk, blk);
         }
+
+        // TODO: should be a plain assignment when we dun
+        n.live_in |= live;
 
         if (n.scc == ni) {
             print("WAS THE HEAD OF\n", .{});
