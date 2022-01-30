@@ -564,6 +564,43 @@ pub fn calc_use(self: *Self) !void {
             cur_blk = b.next();
         }
     }
+
+    for (self.sccorder.items) |ni| {
+        var n = &self.n.items[ni];
+        print("PROCESS: {}\n", .{ni});
+        var cur_blk: ?u16 = n.lastblk;
+        while (cur_blk) |blk| {
+            var b = &self.b.items[blk];
+            var idx: usize = BLK_SIZE;
+            while (idx > 0) {
+                idx -= 1;
+                const i = &b.i[idx];
+                if (i.tag != .empty) print("TEG: {}\n", .{i.tag});
+            }
+
+            // TODO: organize the blocks at this point to skip the O(nblk^2)
+            cur_blk = self.prev_blk(n.firstblk, blk);
+        }
+
+        if (n.scc == ni) {
+            print("WAS THE HEAD OF\n", .{});
+        }
+    }
+}
+
+fn prev_blk(self: *Self, first_blk: u16, blk: u16) ?u16 {
+    var b = self.b.items;
+    if (first_blk == blk) {
+        return null;
+    }
+    var theblk = first_blk;
+    while (theblk != NoRef) {
+        if (b[theblk].succ == blk) {
+            return theblk;
+        }
+        theblk = b[theblk].succ;
+    }
+    unreachable;
 }
 
 pub fn alloc_arg(self: *Self, inst: *Inst) !void {
@@ -635,7 +672,7 @@ pub fn debug_print(self: *Self) void {
     for (self.n.items) |*b, i| {
         print("node {} (npred {}):", .{ i, b.npred });
         if (b.live_in != 0) {
-            print(" USE", .{});
+            print(" LIVEIN", .{});
             var ireg: u16 = 0;
             while (ireg < self.nvreg) : (ireg += 1) {
                 const live = (b.live_in & (@as(usize, 1) << @intCast(u6, ireg))) != 0;
