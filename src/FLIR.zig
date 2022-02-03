@@ -532,7 +532,8 @@ pub fn scc_connect(self: *Self, stack: *ArrayList(u16), v: u16) void {
 pub fn order_inst(self: *Self) !void {
     const newlink = try self.a.alloc(u16, self.b.items.len * BLK_SIZE);
     const newblkpos = try self.a.alloc(u16, self.b.items.len);
-    mem.set(u16, newblkpos, NoRef);
+    // not needed but for debug:
+    // mem.set(u16, newblkpos, NoRef);
     defer self.a.free(newlink);
     defer self.a.free(newblkpos);
     var newpos: u16 = 0;
@@ -544,8 +545,8 @@ pub fn order_inst(self: *Self) !void {
 
         print("PROCESS: {}\n", .{ni});
 
-        var cur_blk: ?u16 = n.firstblk;
-        cur_blk = if (newblkpos[n.firstblk] != NoRef) newblkpos[n.firstblk] else n.firstblk;
+        const blkpos = newpos >> BLK_SHIFT;
+        var cur_blk: ?u16 = if (n.firstblk < blkpos) newblkpos[n.firstblk] else n.firstblk;
 
         var blklink: ?u16 = null;
 
@@ -570,7 +571,7 @@ pub fn order_inst(self: *Self) !void {
             }
 
             newblkpos[newblk] = blk;
-            newblkpos[blk] = newblk;
+            // newblkpos[blk] = newblk;
 
             print("NEXTY: {}\n", .{b.succ});
             if (b.succ == NoRef) {
@@ -579,7 +580,7 @@ pub fn order_inst(self: *Self) !void {
                 cur_blk = null;
             } else {
                 // TRICKY: we might have swapped out the block
-                cur_blk = if (newblkpos[b.succ] != NoRef) newblkpos[b.succ] else b.succ;
+                cur_blk = if (b.succ <= newblk) newblkpos[b.succ] else b.succ;
             }
 
             // print("NEXTY2: {}\n", .{cur_blk});
