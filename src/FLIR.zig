@@ -531,6 +531,7 @@ pub fn scc_connect(self: *Self, stack: *ArrayList(u16), v: u16) void {
 
 pub fn order_inst(self: *Self) !void {
     const newlink = try self.a.alloc(u16, self.b.items.len * BLK_SIZE);
+    mem.set(u16, newlink, NoRef);
     const newblkpos = try self.a.alloc(u16, self.b.items.len);
     // not needed but for debug:
     // mem.set(u16, newblkpos, NoRef);
@@ -545,15 +546,16 @@ pub fn order_inst(self: *Self) !void {
 
         print("PROCESS: {}\n", .{ni});
 
-        const blkpos = newpos >> BLK_SHIFT;
-        var cur_blk: ?u16 = if (n.firstblk < blkpos) newblkpos[n.firstblk] else n.firstblk;
-
+        var cur_blk: ?u16 = n.firstblk;
         var blklink: ?u16 = null;
 
-        while (cur_blk) |blk| {
+        while (cur_blk) |old_blk| {
+            // TRICKY: we might have swapped out the block
+            const newblk = newpos >> BLK_SHIFT;
+            const blk = if (old_blk < newblk) newblkpos[old_blk] else old_blk;
+
             var b = &self.b.items[blk];
             // TODO: RUNDA UPP
-            const newblk = newpos >> BLK_SHIFT;
             if (blklink) |link| {
                 self.b.items[link].succ = newblk;
             } else {
@@ -563,22 +565,20 @@ pub fn order_inst(self: *Self) !void {
 
             for (b.i) |_, idx| {
                 // TODO: compact away .empty, later when opts is punching holes and stuff
-                newlink[newpos] = toref(blk, uv(idx));
+                newlink[toref(blk, uv(idx))] = newpos;
+                print("LÄNKAT {} till {}\n", .{ toref(old_blk, uv(idx)), newpos });
                 newpos += 1;
             }
 
             newblkpos[newblk] = blk;
             // newblkpos[blk] = newblk;
 
-            if (b.succ == NoRef) {
-                n.lastblk = blk;
-                cur_blk = null;
-            } else {
-                // TRICKY: we might have swapped out the block
-                cur_blk = if (b.succ <= newblk) newblkpos[b.succ] else b.succ;
-            }
+            cur_blk = b.next();
 
             mem.swap(Block, b, &self.b.items[newblk]);
+            if (cur_blk == null) {
+                n.lastblk = newblk;
+            }
         }
         if (sci == 0) break;
     }
@@ -874,7 +874,6 @@ pub fn test_analysis(self: *Self) !void {
     self.debug_print();
     try self.order_inst();
     self.debug_print();
-    if (true) return error.FOLLLL;
     try self.calc_use();
     try self.trivial_alloc();
 }
