@@ -47,6 +47,8 @@ pub const Node = struct {
     idom: u16 = 0,
     predref: u16 = 0,
     npred: u16 = 0,
+    // NB: might be NoRef if the node was deleted,
+    // a reachable node must have at least one block even if empty!
     firstblk: u16,
     lastblk: u16,
     dfs_parent: u16 = 0, // TODO: unused
@@ -164,7 +166,7 @@ pub const MCKind = enum(u8) {
 
 // number of op:s which are inst references.
 // otherwise they can store whatever data
-pub fn n_op(tag: Tag) u2 {
+pub fn n_op(tag: Tag, rw: bool) u2 {
     return switch (tag) {
         .empty => 0,
         .arg => 0,
@@ -173,7 +175,7 @@ pub fn n_op(tag: Tag) u2 {
         // before getting into any serious analysis.
         .putvar => 2,
         .phi => 0,
-        .putphi => 1,
+        .putphi => @as(u2, if (rw) 2 else 1), // TODO: booooooo
         .constant => 0,
         .renum => 1,
         .load => 2, // base, idx
@@ -527,6 +529,94 @@ pub fn scc_connect(self: *Self, stack: *ArrayList(u16), v: u16) void {
     }
 }
 
+pub fn order_inst(self: *Self) !void {
+    const newlink = try self.a.alloc(u16, self.b.items.len * BLK_SIZE);
+    const newblkpos = try self.a.alloc(u16, self.b.items.len);
+    mem.set(u16, newblkpos, NoRef);
+    defer self.a.free(newlink);
+    defer self.a.free(newblkpos);
+    var newpos: u16 = 0;
+
+    var sci = self.sccorder.items.len - 1;
+    while (true) : (sci -= 1) {
+        const ni = self.sccorder.items[sci];
+        const n = &self.n.items[ni];
+
+        print("PROCESS: {}\n", .{ni});
+
+        var cur_blk: ?u16 = n.firstblk;
+        cur_blk = if (newblkpos[n.firstblk] != NoRef) newblkpos[n.firstblk] else n.firstblk;
+
+        var blklink: ?u16 = null;
+
+        while (cur_blk) |blk| {
+            print("BLOCKY: {}\n", .{blk});
+            var b = &self.b.items[blk];
+            // TODO: RUNDA UPP
+            const newblk = newpos >> BLK_SHIFT;
+            print("INTO: {}\n", .{newblk});
+            if (blklink) |link| {
+                self.b.items[link].succ = newblk;
+            } else {
+                n.firstblk = newblk;
+            }
+            blklink = newblk;
+
+            for (b.i) |i, idx| {
+                // TODO: compact away .empty, later when opts is punching holes and stuff
+                newlink[newpos] = toref(blk, uv(idx));
+                newpos += 1;
+                if (i.tag != .empty) print("teg: {}\n", .{i.tag});
+            }
+
+            newblkpos[newblk] = blk;
+            newblkpos[blk] = newblk;
+
+            print("NEXTY: {}\n", .{b.succ});
+            if (b.succ == NoRef) {
+                print("AAAA: {}\n", .{blk});
+                n.lastblk = blk;
+                cur_blk = null;
+            } else {
+                // TRICKY: we might have swapped out the block
+                cur_blk = if (newblkpos[b.succ] != NoRef) newblkpos[b.succ] else b.succ;
+            }
+
+            // print("NEXTY2: {}\n", .{cur_blk});
+
+            mem.swap(Block, b, &self.b.items[newblk]);
+
+            // print("NEXTY_FIX: {}\n", .{cur_blk});
+        }
+        if (sci == 0) break;
+    }
+
+    // order irrelevant here, just fixing up broken refs
+    for (self.n.items) |*n, ni| {
+        print("XPROCESS: {}\n", .{ni});
+        if (n.dfnum == 0 and ni > 0) {
+            // He's dead, Jim!
+            n.firstblk = NoRef;
+            n.lastblk = NoRef;
+            continue;
+        }
+        var cur_blk: ?u16 = n.firstblk;
+        while (cur_blk) |blk| {
+            var b = &self.b.items[blk];
+            for (b.i) |*i| {
+                const nops = n_op(i.tag, true);
+                if (nops > 0) {
+                    i.op1 = newlink[i.op1];
+                    if (nops > 1) {
+                        i.op2 = newlink[i.op2];
+                    }
+                }
+            }
+            cur_blk = b.next();
+        }
+    }
+}
+
 // ni = node id of user
 pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
     const ref = self.biref(used).?;
@@ -543,6 +633,7 @@ pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
 }
 
 // TODO: not idempotent! does not reset n_use=0 first.
+// NB: requires order_inst()
 pub fn calc_use(self: *Self) !void {
     // TODO: stop abusing dfs for reachable blocks and just kill
     // unreachable blocks whenever they are/become unreachable
@@ -553,7 +644,7 @@ pub fn calc_use(self: *Self) !void {
             var b = &self.b.items[blk];
             for (b.i) |*i, idx| {
                 const ref = toref(blk, uv(idx));
-                const nops = n_op(i.tag);
+                const nops = n_op(i.tag, false);
                 if (nops > 0) {
                     self.adduse(ni, ref, i.op1);
                     if (nops > 1) {
@@ -582,7 +673,8 @@ pub fn calc_use(self: *Self) !void {
             while (idx > 0) {
                 idx -= 1;
                 const i = &b.i[idx];
-                if (i.tag != .empty) print("TEG: {}\n", .{i.tag});
+                _ = i;
+                // if (i.tag != .empty) print("TEG: {}\n", .{i.tag});
             }
 
             // TODO: organize the blocks at this point to skip the O(nblk^2)
@@ -640,7 +732,7 @@ pub fn trivial_alloc(self: *Self) !void {
                     try self.alloc_arg(i);
                 } else if (has_res(i.tag) and i.mckind == .unallocated) {
                     const regkind: MCKind = if (i.res_type() == ValType.avxval) .vfreg else .ipreg;
-                    const op1 = if (n_op(i.tag) > 0) self.iref(i.op1) else null;
+                    const op1 = if (n_op(i.tag, false) > 0) self.iref(i.op1) else null;
                     if (op1) |o| {
                         if (o.mckind == regkind and o.vreg == NoRef and o.last_use == ref) {
                             i.mckind = regkind;
@@ -679,30 +771,36 @@ pub fn debug_print(self: *Self) void {
         return;
     }
     print("\n", .{});
-    for (self.n.items) |*b, i| {
-        print("node {} (npred {}):", .{ i, b.npred });
-        if (b.live_in != 0) {
+    for (self.n.items) |*n, i| {
+        print("node {} (npred {}):", .{ i, n.npred });
+        if (n.live_in != 0) {
             print(" LIVEIN", .{});
             var ireg: u16 = 0;
             while (ireg < self.nvreg) : (ireg += 1) {
-                const live = (b.live_in & (@as(usize, 1) << @intCast(u6, ireg))) != 0;
+                const live = (n.live_in & (@as(usize, 1) << @intCast(u6, ireg))) != 0;
                 if (live) {
                     print(" {}", .{ireg});
                 }
             }
         }
+
+        if (n.firstblk == NoRef) {
+            print(" VERY DEAD\n", .{});
+            continue;
+        }
+
         print("\n", .{});
 
-        self.print_blk(b.firstblk);
+        self.print_blk(n.firstblk);
 
-        if (b.s[1] == 0) {
-            if (b.s[0] == 0) {
+        if (n.s[1] == 0) {
+            if (n.s[0] == 0) {
                 print("  diverge\n", .{});
-            } else if (b.s[0] != i + 1) {
-                print("  jump {}\n", .{b.s[0]});
+            } else if (n.s[0] != i + 1) {
+                print("  jump {}\n", .{n.s[0]});
             }
         } else {
-            print("  split: {any}\n", .{b.s});
+            print("  split: {any}\n", .{n.s});
         }
     }
 }
@@ -710,6 +808,7 @@ pub fn debug_print(self: *Self) void {
 fn print_blk(self: *Self, firstblk: u16) void {
     var cur_blk: ?u16 = firstblk;
     while (cur_blk) |blk| {
+        print("THE BLOCK: {}\n", .{blk});
         var b = &self.b.items[blk];
         for (b.i) |i, idx| {
             if (i.tag == .empty) {
@@ -729,7 +828,7 @@ fn print_blk(self: *Self, firstblk: u16) void {
             } else if (i.tag == .putphi) {
                 print(" %{} <-", .{i.op2});
             }
-            const nop = n_op(i.tag);
+            const nop = n_op(i.tag, false);
             if (nop > 0) {
                 print(" %{}", .{i.op1});
                 if (nop > 1) {
@@ -781,6 +880,10 @@ pub fn test_analysis(self: *Self) !void {
     //try self.calc_dfs();
     try self.calc_scc(); // also provides dfs
     try SSA_GVN.ssa_gvn(self);
+    self.debug_print();
+    try self.order_inst();
+    self.debug_print();
+    if (true) return error.FOLLLL;
     try self.calc_use();
     try self.trivial_alloc();
 }
