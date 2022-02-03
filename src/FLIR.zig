@@ -551,11 +551,9 @@ pub fn order_inst(self: *Self) !void {
         var blklink: ?u16 = null;
 
         while (cur_blk) |blk| {
-            print("BLOCKY: {}\n", .{blk});
             var b = &self.b.items[blk];
             // TODO: RUNDA UPP
             const newblk = newpos >> BLK_SHIFT;
-            print("INTO: {}\n", .{newblk});
             if (blklink) |link| {
                 self.b.items[link].succ = newblk;
             } else {
@@ -563,19 +561,16 @@ pub fn order_inst(self: *Self) !void {
             }
             blklink = newblk;
 
-            for (b.i) |i, idx| {
+            for (b.i) |_, idx| {
                 // TODO: compact away .empty, later when opts is punching holes and stuff
                 newlink[newpos] = toref(blk, uv(idx));
                 newpos += 1;
-                if (i.tag != .empty) print("teg: {}\n", .{i.tag});
             }
 
             newblkpos[newblk] = blk;
             // newblkpos[blk] = newblk;
 
-            print("NEXTY: {}\n", .{b.succ});
             if (b.succ == NoRef) {
-                print("AAAA: {}\n", .{blk});
                 n.lastblk = blk;
                 cur_blk = null;
             } else {
@@ -583,18 +578,13 @@ pub fn order_inst(self: *Self) !void {
                 cur_blk = if (b.succ <= newblk) newblkpos[b.succ] else b.succ;
             }
 
-            // print("NEXTY2: {}\n", .{cur_blk});
-
             mem.swap(Block, b, &self.b.items[newblk]);
-
-            // print("NEXTY_FIX: {}\n", .{cur_blk});
         }
         if (sci == 0) break;
     }
 
     // order irrelevant here, just fixing up broken refs
     for (self.n.items) |*n, ni| {
-        print("XPROCESS: {}\n", .{ni});
         if (n.dfnum == 0 and ni > 0) {
             // He's dead, Jim!
             n.firstblk = NoRef;
