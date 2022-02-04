@@ -529,6 +529,49 @@ pub fn scc_connect(self: *Self, stack: *ArrayList(u16), v: u16) void {
     }
 }
 
+pub fn order_nodes(self: *Self) !void {
+    const newlink = try self.a.alloc(u16, self.n.items.len);
+    mem.set(u16, newlink, NoRef);
+    var newpos: u16 = 0;
+
+    var sci = self.sccorder.items.len - 1;
+    while (true) : (sci -= 1) {
+        const old_ni = self.sccorder.items[sci];
+        const ni = if (old_ni < newpos) newlink[old_ni] else old_ni;
+        print("RE sci={} oni={}, ni={}\n", .{ sci, old_ni, ni });
+        const n = &self.n.items[ni];
+
+        newlink[newpos] = ni;
+        newlink[old_ni] = newpos;
+
+        mem.swap(Node, n, &self.n.items[newpos]);
+        newpos += 1;
+
+        if (sci == 0) break;
+    }
+
+    // fixup references:
+    for (self.n.items) |*n, ni| {
+        for (n.s) |*s| {
+            if (s.* != NoRef) {
+                s.* = newlink[s.*];
+            }
+        }
+
+        for (self.preds(uv(ni))) |*pi| {
+            pi.* = newlink[pi.*];
+        }
+
+        var cur_blk: ?u16 = n.firstblk;
+        while (cur_blk) |blk| {
+            var b = &self.b.items[blk];
+            b.node = newpos;
+
+            cur_blk = b.next();
+        }
+    }
+}
+
 pub fn order_inst(self: *Self) !void {
     const newlink = try self.a.alloc(u16, self.b.items.len * BLK_SIZE);
     mem.set(u16, newlink, NoRef);
@@ -544,8 +587,6 @@ pub fn order_inst(self: *Self) !void {
         const ni = self.sccorder.items[sci];
         const n = &self.n.items[ni];
 
-        print("PROCESS: {}\n", .{ni});
-
         var cur_blk: ?u16 = n.firstblk;
         var blklink: ?u16 = null;
 
@@ -553,7 +594,6 @@ pub fn order_inst(self: *Self) !void {
             // TRICKY: we might have swapped out the block
             const newblk = newpos >> BLK_SHIFT;
             const blk = if (old_blk < newblk) newblkpos[old_blk] else old_blk;
-            // print("block {} via {} till {}\n", .{ old_blk, blk, newblk });
 
             var b = &self.b.items[blk];
             // TODO: RUNDA UPP
@@ -567,7 +607,6 @@ pub fn order_inst(self: *Self) !void {
             for (b.i) |_, idx| {
                 // TODO: compact away .empty, later when opts is punching holes and stuff
                 newlink[toref(old_blk, uv(idx))] = newpos;
-                // print("LÄNKAT {} till {}\n", .{ toref(old_blk, uv(idx)), newpos });
                 newpos += 1;
             }
 
@@ -598,12 +637,10 @@ pub fn order_inst(self: *Self) !void {
             for (b.i) |*i| {
                 const nops = n_op(i.tag, true);
                 if (nops > 0) {
-                    // print("from {} %{}, %{}\n", .{ i.tag, i.op1, i.op2 });
                     i.op1 = newlink[i.op1];
                     if (nops > 1) {
                         i.op2 = newlink[i.op2];
                     }
-                    // print("to {} %{}, %{}\n", .{ i.tag, i.op1, i.op2 });
                 }
             }
             cur_blk = b.next();
@@ -685,18 +722,26 @@ pub fn calc_use(self: *Self) !void {
 }
 
 fn prev_blk(self: *Self, first_blk: u16, blk: u16) ?u16 {
-    var b = self.b.items;
-    if (first_blk == blk) {
-        return null;
-    }
-    var theblk = first_blk;
-    while (theblk != NoRef) {
-        if (b[theblk].succ == blk) {
-            return theblk;
+    if (true) {
+        if (first_blk == blk) {
+            return null;
         }
-        theblk = b[theblk].succ;
+        return blk - 1;
+    } else {
+        // if blocks weren't ordered
+        var b = self.b.items;
+        if (first_blk == blk) {
+            return null;
+        }
+        var theblk = first_blk;
+        while (theblk != NoRef) {
+            if (b[theblk].succ == blk) {
+                return theblk;
+            }
+            theblk = b[theblk].succ;
+        }
+        unreachable;
     }
-    unreachable;
 }
 
 pub fn alloc_arg(self: *Self, inst: *Inst) !void {
@@ -802,7 +847,7 @@ pub fn debug_print(self: *Self) void {
 fn print_blk(self: *Self, firstblk: u16) void {
     var cur_blk: ?u16 = firstblk;
     while (cur_blk) |blk| {
-        print("THE BLOCK: {}\n", .{blk});
+        // print("THE BLOCK: {}\n", .{blk});
         var b = &self.b.items[blk];
         for (b.i) |i, idx| {
             if (i.tag == .empty) {
@@ -874,9 +919,11 @@ pub fn test_analysis(self: *Self) !void {
     //try self.calc_dfs();
     try self.calc_scc(); // also provides dfs
     try SSA_GVN.ssa_gvn(self);
+    try self.order_nodes();
     self.debug_print();
+    if (true) return error.NEE;
+
     try self.order_inst();
-    self.debug_print();
     try self.calc_use();
     try self.trivial_alloc();
 }
