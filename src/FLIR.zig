@@ -553,6 +553,7 @@ pub fn order_inst(self: *Self) !void {
             // TRICKY: we might have swapped out the block
             const newblk = newpos >> BLK_SHIFT;
             const blk = if (old_blk < newblk) newblkpos[old_blk] else old_blk;
+            // print("block {} via {} till {}\n", .{ old_blk, blk, newblk });
 
             var b = &self.b.items[blk];
             // TODO: RUNDA UPP
@@ -565,8 +566,8 @@ pub fn order_inst(self: *Self) !void {
 
             for (b.i) |_, idx| {
                 // TODO: compact away .empty, later when opts is punching holes and stuff
-                newlink[toref(blk, uv(idx))] = newpos;
-                print("LÄNKAT {} till {}\n", .{ toref(old_blk, uv(idx)), newpos });
+                newlink[toref(old_blk, uv(idx))] = newpos;
+                // print("LÄNKAT {} till {}\n", .{ toref(old_blk, uv(idx)), newpos });
                 newpos += 1;
             }
 
@@ -597,10 +598,12 @@ pub fn order_inst(self: *Self) !void {
             for (b.i) |*i| {
                 const nops = n_op(i.tag, true);
                 if (nops > 0) {
+                    // print("from {} %{}, %{}\n", .{ i.tag, i.op1, i.op2 });
                     i.op1 = newlink[i.op1];
                     if (nops > 1) {
                         i.op2 = newlink[i.op2];
                     }
+                    // print("to {} %{}, %{}\n", .{ i.tag, i.op1, i.op2 });
                 }
             }
             cur_blk = b.next();
