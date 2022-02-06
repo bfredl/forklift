@@ -529,7 +529,7 @@ pub fn scc_connect(self: *Self, stack: *ArrayList(u16), v: u16) void {
     }
 }
 
-pub fn order_nodes(self: *Self) !void {
+pub fn reorder_nodes(self: *Self) !void {
     const newlink = try self.a.alloc(u16, self.n.items.len);
     defer self.a.free(newlink);
     mem.set(u16, newlink, NoRef);
@@ -569,14 +569,14 @@ pub fn order_nodes(self: *Self) !void {
         var cur_blk: ?u16 = n.firstblk;
         while (cur_blk) |blk| {
             var b = &self.b.items[blk];
-            b.node = newpos;
+            b.node = uv(ni);
 
             cur_blk = b.next();
         }
     }
 }
 
-pub fn order_inst(self: *Self) !void {
+pub fn reorder_inst(self: *Self) !void {
     const newlink = try self.a.alloc(u16, self.b.items.len * BLK_SIZE);
     mem.set(u16, newlink, NoRef);
     const newblkpos = try self.a.alloc(u16, self.b.items.len);
@@ -668,7 +668,7 @@ pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
 }
 
 // TODO: not idempotent! does not reset n_use=0 first.
-// NB: requires order_inst()
+// NB: requires reorder_inst()
 pub fn calc_use(self: *Self) !void {
     // TODO: stop abusing dfs for reachable blocks and just kill
     // unreachable blocks whenever they are/become unreachable
@@ -922,12 +922,12 @@ pub fn test_analysis(self: *Self) !void {
 
     //try self.calc_dfs();
     try self.calc_scc(); // also provides dfs
-    try SSA_GVN.ssa_gvn(self);
-    try self.order_nodes();
+    try self.reorder_nodes();
     self.debug_print();
-    if (true) return error.NEE;
+    try SSA_GVN.ssa_gvn(self);
+    self.debug_print();
 
-    try self.order_inst();
+    try self.reorder_inst();
     try self.calc_use();
     try self.trivial_alloc();
 }

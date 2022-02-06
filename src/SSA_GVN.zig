@@ -21,18 +21,16 @@ pub fn ssa_gvn(flir: *FLIR) !void {
 }
 
 fn ssa(self: Self) !void {
-    const n = self.f.n.items;
-
-    for (self.f.dfs.items) |i| {
-        try self.fill_blk(n[i].firstblk);
+    for (self.f.n.items) |n| {
+        try self.fill_blk(n.firstblk);
     }
 
     // at this point all nodes have been _filled_ but join nodes (npred > 1)
     // have not been _sealed_, in the terminology of Braun 2013
     // TODO: keep a worklist of unfinished phi nodes, more effective +
     // otherwise might need multiple passes until a fix point
-    for (self.f.dfs.items) |i| {
-        try self.resolve_blk(n[i].firstblk);
+    for (self.f.n.items) |n| {
+        try self.resolve_blk(n.firstblk);
     }
 
     try self.delete_vars(self.f.n.items[0].firstblk);
