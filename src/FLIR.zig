@@ -531,17 +531,21 @@ pub fn scc_connect(self: *Self, stack: *ArrayList(u16), v: u16) void {
 
 pub fn order_nodes(self: *Self) !void {
     const newlink = try self.a.alloc(u16, self.n.items.len);
+    defer self.a.free(newlink);
     mem.set(u16, newlink, NoRef);
+    const oldlink = try self.a.alloc(u16, self.n.items.len);
+    defer self.a.free(oldlink);
+    mem.set(u16, oldlink, NoRef);
     var newpos: u16 = 0;
 
     var sci = self.sccorder.items.len - 1;
     while (true) : (sci -= 1) {
         const old_ni = self.sccorder.items[sci];
-        const ni = if (old_ni < newpos) newlink[old_ni] else old_ni;
+        const ni = if (old_ni < newpos) oldlink[old_ni] else old_ni;
         print("RE sci={} oni={}, ni={}\n", .{ sci, old_ni, ni });
         const n = &self.n.items[ni];
 
-        newlink[newpos] = ni;
+        oldlink[newpos] = ni;
         newlink[old_ni] = newpos;
 
         mem.swap(Node, n, &self.n.items[newpos]);
