@@ -662,17 +662,13 @@ pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
             ref.i.vreg = self.nvreg;
             self.nvreg += 1;
         }
-        self.n.items[ni].live_in |= (@as(usize, 1) << @intCast(u6, ref.i.vreg));
     }
 }
 
 // TODO: not idempotent! does not reset n_use=0 first.
-// NB: requires reorder_inst()
+// NB: requires reorder_nodes() [scc] and reorder_inst()
 pub fn calc_use(self: *Self) !void {
-    // TODO: stop abusing dfs for reachable blocks and just kill
-    // unreachable blocks whenever they are/become unreachable
-    for (self.dfs.items) |ni| {
-        var n = &self.n.items[ni];
+    for (self.n.items) |*n, ni| {
         var cur_blk: ?u16 = n.firstblk;
         while (cur_blk) |blk| {
             var b = &self.b.items[blk];
@@ -680,9 +676,9 @@ pub fn calc_use(self: *Self) !void {
                 const ref = toref(blk, uv(idx));
                 const nops = n_op(i.tag, false);
                 if (nops > 0) {
-                    self.adduse(ni, ref, i.op1);
+                    self.adduse(uv(ni), ref, i.op1);
                     if (nops > 1) {
-                        self.adduse(ni, ref, i.op2);
+                        self.adduse(uv(ni), ref, i.op2);
                     }
                 }
             }
@@ -690,8 +686,12 @@ pub fn calc_use(self: *Self) !void {
         }
     }
 
-    for (self.sccorder.items) |ni| {
-        var n = &self.n.items[ni];
+    var ni: u16 = uv(self.n.items.len - 1);
+    // TODO: at this point the number of vregs is known. so a bitset for
+    // node X vreg can be allocated here.
+
+    while (true) : (ni -= 1) {
+        const n = &self.n.items[ni];
         print("PROCESS: {}\n", .{ni});
         var live: u64 = 0;
         for (n.s) |s| {
@@ -708,6 +708,21 @@ pub fn calc_use(self: *Self) !void {
                 idx -= 1;
                 const i = &b.i[idx];
                 _ = i;
+
+                if (i.vreg != NoRef) {
+                    live &= ~(@as(usize, 1) << @intCast(u6, i.vreg));
+                }
+
+                const nops = n_op(i.tag, true);
+                if (nops > 0) {
+                    const ref = self.iref(i.op1).?;
+                    if (ref.vreg != NoRef) live |= (@as(usize, 1) << @intCast(u6, ref.vreg));
+                    if (nops > 1) {
+                        const ref2 = self.iref(i.op2).?;
+                        if (ref2.vreg != NoRef) live |= (@as(usize, 1) << @intCast(u6, ref2.vreg));
+                    }
+                }
+
                 // if (i.tag != .empty) print("TEG: {}\n", .{i.tag});
             }
 
@@ -715,12 +730,13 @@ pub fn calc_use(self: *Self) !void {
             cur_blk = self.prev_blk(n.firstblk, blk);
         }
 
-        // TODO: should be a plain assignment when we dun
-        n.live_in |= live;
+        n.live_in = live;
 
-        if (n.scc == ni) {
-            print("WAS THE HEAD OF\n", .{});
-        }
+        // TODO: FAIL, not updated
+        // if (n.scc == ni) {
+        //     print("WAS THE HEAD OF\n", .{});
+        // }
+        if (ni == 0) break;
     }
 }
 
@@ -762,8 +778,7 @@ pub fn trivial_alloc(self: *Self) !void {
     const regs: [8]IPReg = .{ .rdi, .rsi, .rdx, .rcx, .r8, .r9, .r10, .r11 };
     var used: usize = self.narg;
     var avxused: u8 = 0;
-    for (self.dfs.items) |ni| {
-        var n = &self.n.items[ni];
+    for (self.n.items) |*n| {
         var cur_blk: ?u16 = n.firstblk;
         while (cur_blk) |blk| {
             var b = &self.b.items[blk];
