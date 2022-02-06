@@ -542,7 +542,6 @@ pub fn reorder_nodes(self: *Self) !void {
     while (true) : (sci -= 1) {
         const old_ni = self.sccorder.items[sci];
         const ni = if (old_ni < newpos) oldlink[old_ni] else old_ni;
-        print("RE sci={} oni={}, ni={}\n", .{ sci, old_ni, ni });
         const n = &self.n.items[ni];
 
         oldlink[newpos] = ni;
@@ -918,14 +917,11 @@ const expectEqual = std.testing.expectEqual;
 
 pub fn test_analysis(self: *Self) !void {
     try self.calc_preds();
-    // self.debug_print();
 
     //try self.calc_dfs();
     try self.calc_scc(); // also provides dfs
     try self.reorder_nodes();
-    self.debug_print();
     try SSA_GVN.ssa_gvn(self);
-    self.debug_print();
 
     try self.reorder_inst();
     try self.calc_use();
