@@ -32,8 +32,8 @@ pub fn main() !void {
     const const_1 = try self.const_int(loop, 1);
     // TODO: analysis should of course do this:
     self.iref(const_1).?.mckind = .fused;
-    const iadd = try self.binop(loop, .iadd, var_i, const_1);
-    try self.putvar(loop, var_i, iadd);
+    const add = try self.iop(loop, .add, var_i, const_1);
+    try self.putvar(loop, var_i, add);
     _ = try self.binop(loop, .ilessthan, var_i, arg3);
 
     // if true

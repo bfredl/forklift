@@ -14,6 +14,7 @@ const ArrayList = @import("./fake_list.zig").ArrayList;
 const assert = std.debug.assert;
 
 const VMathOp = CFO.VMathOp;
+const AOp = CFO.AOp;
 
 a: Allocator,
 // TODO: unmanage all these:
@@ -111,7 +112,7 @@ pub const Inst = struct {
             .load => inst.spec_type(),
             .lea => .intptr, // Lea? Who's Lea??
             .store => null,
-            .iadd => .intptr,
+            .iop => .intptr,
             .ilessthan => null, // technically the FLAG register but anyway
             .vmath => .avxval,
             .ret => null,
@@ -142,7 +143,7 @@ pub const Tag = enum(u8) {
     load,
     lea,
     store,
-    iadd, // imath group?
+    iop, // imath group?
     ilessthan, // icmp group?
     vmath,
     ret,
@@ -160,7 +161,7 @@ pub const MCKind = enum(u8) {
     // unused value, perhaps should have been deleted before alloc
     dead,
     // not stored as such, will be emitted togheter with the next inst
-    // example "lea" and then "store", or "load" and then iadd/vmath
+    // example "lea" and then "store", or "load" and then iop/vmath
     fused,
 };
 
@@ -181,7 +182,7 @@ pub fn n_op(tag: Tag, rw: bool) u2 {
         .load => 2, // base, idx
         .lea => 2, // base, idx. elided when only used for a store!
         .store => 2, // addr, val
-        .iadd => 2,
+        .iop => 2,
         .ilessthan => 2,
         .vmath => 2,
         .ret => 1,
@@ -213,7 +214,7 @@ pub fn has_res(tag: Tag) bool {
         .load => true,
         .lea => true, // Lea? Who's Lea??
         .store => false,
-        .iadd => true,
+        .iop => true,
         .ilessthan => false, // technically yes, but no
         .vmath => true,
         .ret => false,
@@ -358,6 +359,10 @@ pub fn vbinop(self: *Self, node: u16, tag: Tag, op1: u16, op2: u16) !u16 {
 
 pub fn vmath(self: *Self, node: u16, vop: VMathOp, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .vmath, .spec = vop.off(), .op1 = op1, .op2 = op2 });
+}
+
+pub fn iop(self: *Self, node: u16, vop: AOp, op1: u16, op2: u16) !u16 {
+    return self.addInst(node, .{ .tag = .iop, .spec = vop.opx(), .op1 = op1, .op2 = op2 });
 }
 
 pub fn putvar(self: *Self, node: u16, op1: u16, op2: u16) !void {
@@ -880,6 +885,8 @@ fn print_blk(self: *Self, firstblk: u16) void {
 
             if (i.tag == .vmath) {
                 print(".{s}", .{@tagName(@intToEnum(VMathOp, i.spec))});
+            } else if (i.tag == .iop) {
+                print(".{s}", .{@tagName(@intToEnum(AOp, i.spec))});
             } else if (i.tag == .constant) {
                 print(" c[{}]", .{i.op1});
             } else if (i.tag == .putphi) {
@@ -957,7 +964,7 @@ test "printa" {
     try expectEqual(uv(1), node2);
     self.n.items[node].s[0] = node2;
 
-    const add = try self.addInst(node2, .{ .tag = .iadd, .op1 = arg1, .op2 = arg2 });
+    const add = try self.addInst(node2, .{ .tag = .iop, .spec = 0, .op1 = arg1, .op2 = arg2 });
     const zero = try self.addInst(node2, .{ .tag = .constant, .op1 = 0, .op2 = 0 });
     const load1 = try self.addInst(node2, .{ .tag = .load, .op1 = arg1, .op2 = zero });
     const load2 = try self.addInst(node2, .{ .tag = .load, .op1 = arg2, .op2 = zero });
@@ -985,12 +992,12 @@ test "diamondvar" {
 
     const left = try self.addNode();
     self.n.items[start].s[0] = left;
-    const addl = try self.binop(left, .iadd, v, arg2);
+    const addl = try self.iop(left, .add, v, arg2);
     try self.putvar(left, v, addl);
 
     const right = try self.addNode();
     self.n.items[start].s[1] = right;
-    const addr = try self.binop(right, .iadd, v, arg1);
+    const addr = try self.iop(right, .add, v, arg1);
     try self.putvar(right, v, addr);
 
     const end = try self.addNode();
@@ -998,7 +1005,7 @@ test "diamondvar" {
     self.n.items[right].s[0] = end;
 
     const const_77 = try self.const_int(end, 77);
-    const adde = try self.binop(end, .iadd, v, const_77);
+    const adde = try self.iop(end, .add, v, const_77);
     try self.putvar(end, v, adde);
 
     try self.ret(end, v);

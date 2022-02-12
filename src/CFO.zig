@@ -78,7 +78,7 @@ pub const AOp = enum(u3) {
         return @as(u8, @enumToInt(self)) * 8;
     }
 
-    fn opx(self: @This()) u3 {
+    pub fn opx(self: @This()) u3 {
         return @enumToInt(self);
     }
 };

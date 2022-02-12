@@ -142,10 +142,10 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
                     // empty doesn't flush fused value
                     .empty => continue,
                     .ret => try regmovmc(cfo, .rax, self.iref(i.op1).?.*),
-                    .iadd => {
+                    .iop => {
                         const dst = i.ipreg() orelse .rax;
                         try regmovmc(cfo, dst, self.iref(i.op1).?.*);
-                        try regaritmc(cfo, .add, dst, self.iref(i.op2).?.*);
+                        try regaritmc(cfo, @intToEnum(CFO.AOp, i.spec), dst, self.iref(i.op2).?.*);
                         try mcmovreg(cfo, i.*, dst); // elided if dst is register
                     },
                     .constant => try mcmovi(cfo, i.*),
