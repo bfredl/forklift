@@ -569,6 +569,10 @@ pub fn reorder_nodes(self: *Self) !void {
         if (sci == 0) break;
     }
 
+    assert(newpos <= self.n.items.len);
+    // oopsie woopsie, we killed some dead nodes!
+    self.n.items.len = newpos;
+
     // fixup references:
     for (self.n.items) |*n, ni| {
         for (n.s) |*s| {
@@ -711,7 +715,6 @@ pub fn calc_use(self: *Self) !void {
 
     while (true) : (ni -= 1) {
         const n = &self.n.items[ni];
-        print("PROCESS: {}\n", .{ni});
         var live: u64 = 0;
         for (n.s) |s| {
             if (s != NoRef) {
@@ -745,8 +748,6 @@ pub fn calc_use(self: *Self) !void {
                         if (ref2.vreg != NoRef) live |= (@as(usize, 1) << @intCast(u6, ref2.vreg));
                     }
                 }
-
-                // if (i.tag != .empty) print("TEG: {}\n", .{i.tag});
             }
 
             // TODO: organize the blocks at this point to skip the O(nblk^2)
@@ -756,7 +757,6 @@ pub fn calc_use(self: *Self) !void {
         n.live_in = live;
 
         if (n.scc == ni) {
-            print("WAS THE HEAD OF\n", .{});
             var ireg: u16 = 0;
             while (ireg < self.nvreg) : (ireg += 1) {
                 if ((live & (@as(usize, 1) << @intCast(u6, ireg))) != 0) {
