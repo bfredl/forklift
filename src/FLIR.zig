@@ -27,6 +27,7 @@ narg: u16 = 0,
 nvar: u16 = 0,
 // variables 2.0: virtual registero
 nvreg: u16 = 0,
+vregs: ArrayList(u16),
 
 // 8-byte slots in stack frame
 nslots: u8 = 0,
@@ -226,6 +227,7 @@ pub fn init(n: u16, allocator: Allocator) !Self {
         .a = allocator,
         .n = try ArrayList(Node).initCapacity(allocator, n),
         .dfs = ArrayList(u16).init(allocator),
+        .vregs = ArrayList(u16).init(allocator),
         .sccorder = ArrayList(u16).init(allocator),
         .refs = try ArrayList(u16).initCapacity(allocator, 4 * n),
         .b = try ArrayList(Block).initCapacity(allocator, 2 * n),
@@ -543,6 +545,9 @@ pub fn reorder_nodes(self: *Self) !void {
     mem.set(u16, oldlink, NoRef);
     var newpos: u16 = 0;
 
+    var last_scc: u16 = NoRef;
+    var cur_scc: u16 = NoRef;
+
     var sci = self.sccorder.items.len - 1;
     while (true) : (sci -= 1) {
         const old_ni = self.sccorder.items[sci];
@@ -551,6 +556,12 @@ pub fn reorder_nodes(self: *Self) !void {
 
         oldlink[newpos] = ni;
         newlink[old_ni] = newpos;
+
+        if (n.scc != last_scc) {
+            last_scc = n.scc;
+            cur_scc = newpos;
+        }
+        n.scc = cur_scc;
 
         mem.swap(Node, n, &self.n.items[newpos]);
         newpos += 1;
@@ -666,6 +677,7 @@ pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
         if (ref.i.vreg == NoRef) {
             ref.i.vreg = self.nvreg;
             self.nvreg += 1;
+            self.vregs.appendAssumeCapacity(used);
         }
     }
 }
@@ -673,6 +685,9 @@ pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
 // TODO: not idempotent! does not reset n_use=0 first.
 // NB: requires reorder_nodes() [scc] and reorder_inst()
 pub fn calc_use(self: *Self) !void {
+    // TODO: NOT LIKE THIS
+    try self.vregs.ensureTotalCapacity(64);
+
     for (self.n.items) |*n, ni| {
         var cur_blk: ?u16 = n.firstblk;
         while (cur_blk) |blk| {
@@ -737,10 +752,9 @@ pub fn calc_use(self: *Self) !void {
 
         n.live_in = live;
 
-        // TODO: FAIL, not updated
-        // if (n.scc == ni) {
-        //     print("WAS THE HEAD OF\n", .{});
-        // }
+        if (n.scc == ni) {
+            print("WAS THE HEAD OF\n", .{});
+        }
         if (ni == 0) break;
     }
 }
@@ -834,7 +848,7 @@ pub fn debug_print(self: *Self) void {
     }
     print("\n", .{});
     for (self.n.items) |*n, i| {
-        print("node {} (npred {}):", .{ i, n.npred });
+        print("node {} (npred {}, scc {}):", .{ i, n.npred, n.scc });
         if (n.live_in != 0) {
             print(" LIVEIN", .{});
             var ireg: u16 = 0;
