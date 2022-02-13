@@ -712,6 +712,7 @@ pub fn calc_use(self: *Self) !void {
     // node X vreg can be allocated here.
 
     var scc_end: ?u16 = null;
+    var scc_last: bool = false;
 
     while (true) : (ni -= 1) {
         const n = &self.n.items[ni];
@@ -726,6 +727,7 @@ pub fn calc_use(self: *Self) !void {
         if (scc_end == null) {
             // end exclusive
             scc_end = toref(cur_blk.?, BLK_SIZE - 1);
+            scc_last = true;
         }
         while (cur_blk) |blk| {
             var b = &self.b.items[blk];
@@ -750,46 +752,28 @@ pub fn calc_use(self: *Self) !void {
                 }
             }
 
-            // TODO: organize the blocks at this point to skip the O(nblk^2)
-            cur_blk = self.prev_blk(n.firstblk, blk);
+            cur_blk = if (blk != n.firstblk) blk - 1 else null;
         }
 
         n.live_in = live;
 
         if (n.scc == ni) {
-            var ireg: u16 = 0;
-            while (ireg < self.nvreg) : (ireg += 1) {
-                if ((live & (@as(usize, 1) << @intCast(u6, ireg))) != 0) {
-                    const i = self.iref(self.vregs.items[ireg]).?;
-                    i.last_use = math.max(i.last_use, scc_end.?);
+            // if scc was not a singleton, we are now at the first node
+            // at a SCC which might be a loop. For values live
+            // at the entry, extend the liveness interval to the end
+            if (!scc_last) {
+                var ireg: u16 = 0;
+                while (ireg < self.nvreg) : (ireg += 1) {
+                    if ((live & (@as(usize, 1) << @intCast(u6, ireg))) != 0) {
+                        const i = self.iref(self.vregs.items[ireg]).?;
+                        i.last_use = math.max(i.last_use, scc_end.?);
+                    }
                 }
             }
             scc_end = null;
         }
+        scc_last = false;
         if (ni == 0) break;
-    }
-}
-
-fn prev_blk(self: *Self, first_blk: u16, blk: u16) ?u16 {
-    if (true) {
-        if (first_blk == blk) {
-            return null;
-        }
-        return blk - 1;
-    } else {
-        // if blocks weren't ordered
-        var b = self.b.items;
-        if (first_blk == blk) {
-            return null;
-        }
-        var theblk = first_blk;
-        while (theblk != NoRef) {
-            if (b[theblk].succ == blk) {
-                return theblk;
-            }
-            theblk = b[theblk].succ;
-        }
-        unreachable;
     }
 }
 
@@ -973,83 +957,4 @@ pub fn test_analysis(self: *Self) !void {
     try self.reorder_inst();
     try self.calc_use();
     try self.trivial_alloc();
-}
-
-test "printa" {
-    var self = try Self.init(8, test_allocator);
-    defer self.deinit();
-
-    const node = try self.addNode();
-    try expectEqual(uv(0), node);
-
-    const arg1 = try self.addInst(node, .{ .tag = .arg, .op1 = 0, .op2 = 0 });
-    const arg2 = try self.addInst(node, .{ .tag = .arg, .op1 = 1, .op2 = 0 });
-
-    const node2 = try self.addNode();
-    try expectEqual(uv(1), node2);
-    self.n.items[node].s[0] = node2;
-
-    const add = try self.addInst(node2, .{ .tag = .iop, .spec = 0, .op1 = arg1, .op2 = arg2 });
-    const zero = try self.addInst(node2, .{ .tag = .constant, .op1 = 0, .op2 = 0 });
-    const load1 = try self.addInst(node2, .{ .tag = .load, .op1 = arg1, .op2 = zero });
-    const load2 = try self.addInst(node2, .{ .tag = .load, .op1 = arg2, .op2 = zero });
-    const vadd = try self.addInst(node2, .{ .tag = .vmath, .spec = VMathOp.add.off(), .op1 = load1, .op2 = load2 });
-    _ = vadd;
-
-    _ = try self.addInst(node2, .{ .tag = .ret, .op1 = add, .op2 = 0 });
-
-    self.debug_print();
-}
-
-test "diamondvar" {
-    var self = try Self.init(8, test_allocator);
-    defer self.deinit();
-
-    const start = try self.addNode();
-    const arg1 = try self.arg();
-    const arg2 = try self.arg();
-    const v = try self.variable();
-
-    // const const_0 = try self.const_int(start, 0);
-    const const_42 = try self.const_int(start, 42);
-    try self.putvar(start, v, const_42);
-    _ = try self.binop(start, .ilessthan, arg1, v);
-
-    const left = try self.addNode();
-    self.n.items[start].s[0] = left;
-    const addl = try self.iop(left, .add, v, arg2);
-    try self.putvar(left, v, addl);
-
-    const right = try self.addNode();
-    self.n.items[start].s[1] = right;
-    const addr = try self.iop(right, .add, v, arg1);
-    try self.putvar(right, v, addr);
-
-    const end = try self.addNode();
-    self.n.items[left].s[0] = end;
-    self.n.items[right].s[0] = end;
-
-    const const_77 = try self.const_int(end, 77);
-    const adde = try self.iop(end, .add, v, const_77);
-    try self.putvar(end, v, adde);
-
-    try self.ret(end, v);
-
-    try self.test_analysis();
-
-    if (false) {
-        var phii = self.iref(adde).?.op1;
-        var thephi = self.iref(phii).?;
-
-        thephi.mckind = .ipreg;
-        thephi.mcidx = 8; // r8
-    }
-
-    self.debug_print();
-
-    var cfo = try CFO.init(test_allocator);
-    defer cfo.deinit();
-
-    _ = try @import("./codegen.zig").codegen(&self, &cfo);
-    try cfo.dbg_nasm(test_allocator);
 }
