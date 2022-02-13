@@ -591,6 +591,7 @@ pub fn reorder_nodes(self: *Self) !void {
     }
 }
 
+// assumes already reorder_nodes !
 pub fn reorder_inst(self: *Self) !void {
     const newlink = try self.a.alloc(u16, self.b.items.len * BLK_SIZE);
     mem.set(u16, newlink, NoRef);
@@ -601,11 +602,8 @@ pub fn reorder_inst(self: *Self) !void {
     defer self.a.free(newblkpos);
     var newpos: u16 = 0;
 
-    var sci = self.sccorder.items.len - 1;
-    while (true) : (sci -= 1) {
-        const ni = self.sccorder.items[sci];
-        const n = &self.n.items[ni];
-
+    // already in scc order
+    for (self.n.items) |*n| {
         var cur_blk: ?u16 = n.firstblk;
         var blklink: ?u16 = null;
 
@@ -639,7 +637,6 @@ pub fn reorder_inst(self: *Self) !void {
                 n.lastblk = newblk;
             }
         }
-        if (sci == 0) break;
     }
 
     // order irrelevant here, just fixing up broken refs
@@ -710,6 +707,8 @@ pub fn calc_use(self: *Self) !void {
     // TODO: at this point the number of vregs is known. so a bitset for
     // node X vreg can be allocated here.
 
+    var scc_end: ?u16 = null;
+
     while (true) : (ni -= 1) {
         const n = &self.n.items[ni];
         print("PROCESS: {}\n", .{ni});
@@ -721,6 +720,10 @@ pub fn calc_use(self: *Self) !void {
         }
 
         var cur_blk: ?u16 = n.lastblk;
+        if (scc_end == null) {
+            // end exclusive
+            scc_end = toref(cur_blk.?, BLK_SIZE - 1);
+        }
         while (cur_blk) |blk| {
             var b = &self.b.items[blk];
             var idx: usize = BLK_SIZE;
@@ -754,6 +757,14 @@ pub fn calc_use(self: *Self) !void {
 
         if (n.scc == ni) {
             print("WAS THE HEAD OF\n", .{});
+            var ireg: u16 = 0;
+            while (ireg < self.nvreg) : (ireg += 1) {
+                if ((live & (@as(usize, 1) << @intCast(u6, ireg))) != 0) {
+                    const i = self.iref(self.vregs.items[ireg]).?;
+                    i.last_use = math.max(i.last_use, scc_end.?);
+                }
+            }
+            scc_end = null;
         }
         if (ni == 0) break;
     }
@@ -919,7 +930,7 @@ fn print_blk(self: *Self, firstblk: u16) void {
                 //print(" <{}{s}>", .{ i.n_use, @as([]const u8, if (i.vreg != NoRef) "*" else "") });
                 // this is getting ridiculous
                 if (i.vreg != NoRef) {
-                    print(" |{}|", .{i.vreg});
+                    print(" |{}=>%{}|", .{ i.vreg, i.last_use });
                 } else {
                     print(" <%{}>", .{i.last_use});
                 }
