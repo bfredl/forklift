@@ -6,13 +6,13 @@ const Self = @This();
 const print = std.debug.print;
 const CFO = @import("./CFO.zig");
 const SSA_GVN = @import("./SSA_GVN.zig");
-const IPReg = CFO.IPReg;
 
 const builtin = @import("builtin");
 const stage2 = builtin.zig_backend != .stage1;
 const ArrayList = @import("./fake_list.zig").ArrayList;
 const assert = std.debug.assert;
 
+const IPReg = CFO.IPReg;
 const VMathOp = CFO.VMathOp;
 const AOp = CFO.AOp;
 
