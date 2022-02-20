@@ -1,2 +1,4 @@
 *.a
 stage2_main
+diamond_test
+loop_test
