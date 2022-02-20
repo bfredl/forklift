@@ -1,8 +1,8 @@
 # Certified Forklift Operator
 
-This is a x86 JIT assembler for the Zig language. Later on it might become a simple code generator for array expression graphs.
+A jit compiler backend for the Zig language. Currently only x86-64 is supported, with a focus of float/vector code (using AVX/AVX2 instructions). AArch64 might be considered in the future.
 
-Currently only x86-64 is supported. AArch64 might be considered in the future.
+The codebase consists of two major parts. `src/CFO.zig` implements a JIT assembler where intructions are directly assembled into a memory buffer.
 
 Features:
 
@@ -17,3 +17,10 @@ Features:
 - [x] Dump final output using `ndisasm`
 - [x] Tracebacks to generated code (using a custom signal handler or patch to stlib)
 - [x] _Partial_ support for being compiled with zig stage2
+
+Secondly, `src/FLIR.zig` implements a simple SSA IR on top of the above. What is implemented is a few basic compiler passes, like
+
+- [x] Conversion from mutable temporaries to proper SSA form
+- [ ] liveliness analysis (partially, doesn't handle nested loops yet)
+- [x] linear scan Register allocation
+- [x] x86-64 code generation.
