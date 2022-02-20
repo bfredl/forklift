@@ -852,6 +852,66 @@ pub fn trivial_alloc(self: *Self) !void {
     }
 }
 
+pub fn scan_alloc(self: *Self) !void {
+    var active_avx: [16]u16 = ([1]u16{0}) ** 16;
+    var active_ipreg: [16]u16 = ([1]u16{0}) ** 16;
+    active_ipreg[IPReg.rsp.id()] = NoRef;
+    // just say NO to -fomiting the framepointer!
+    active_ipreg[IPReg.rbp.id()] = NoRef;
+    // TODO: handle auxilary register properly (by explicit load/spill?)
+    active_ipreg[IPReg.rax.id()] = NoRef;
+
+    // TODO: allocate callee-saved registers
+    active_ipreg[IPReg.rbx.id()] = NoRef;
+    active_ipreg[IPReg.r12.id()] = NoRef;
+    active_ipreg[IPReg.r13.id()] = NoRef;
+    active_ipreg[IPReg.r14.id()] = NoRef;
+    active_ipreg[IPReg.r15.id()] = NoRef;
+
+    for (self.n.items) |*n| {
+        var cur_blk: ?u16 = n.firstblk;
+        while (cur_blk) |blk| {
+            var b = &self.b.items[blk];
+            for (b.i) |*i, idx| {
+                const ref = toref(blk, uv(idx));
+                if (i.tag == .arg) {
+                    try self.alloc_arg(i);
+                    assert(active_ipreg[i.mcidx] <= ref);
+                    active_ipreg[i.mcidx] = i.last_use;
+                } else if (has_res(i.tag) and i.mckind.unallocated()) {
+                    const is_avx = (i.res_type() == ValType.avxval);
+                    const regkind: MCKind = if (is_avx) .vfreg else .ipreg;
+                    const the_active = if (is_avx) &active_avx else &active_ipreg;
+
+                    // TODO: reghint
+                    var regid: ?u4 = null;
+                    for (the_active) |l, ri| {
+                        if (l <= ref) {
+                            regid = @intCast(u4, ri);
+                            break;
+                        }
+                    }
+
+                    if (regid) |ri| {
+                        i.mckind = regkind;
+                        i.mcidx = ri;
+                        the_active[ri] = i.last_use;
+                    } else {
+                        i.mckind = .frameslot;
+                        if (self.nslots == 255) {
+                            return error.UDunGoofed;
+                        }
+                        i.mcidx = self.nslots;
+                        // TODO: lol reuse slots
+                        self.nslots += 1;
+                    }
+                }
+            }
+            cur_blk = b.next();
+        }
+    }
+}
+
 pub fn debug_print(self: *Self) void {
     if (stage2) {
         return;
@@ -970,5 +1030,5 @@ pub fn test_analysis(self: *Self) !void {
 
     try self.reorder_inst();
     try self.calc_use();
-    try self.trivial_alloc();
+    try self.scan_alloc();
 }
