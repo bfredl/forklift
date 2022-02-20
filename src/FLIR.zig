@@ -85,7 +85,7 @@ pub const Inst = struct {
     op1: u16,
     op2: u16,
     // reindex: u16 = 0,
-    mckind: MCKind = .unallocated,
+    mckind: MCKind = .unallocated_raw,
     mcidx: u8 = undefined,
     // n_use: u16 = 0,
     last_use: u16 = NoRef,
@@ -152,11 +152,17 @@ pub const Tag = enum(u8) {
 
 pub const MCKind = enum(u8) {
     // not yet allocated, or Inst that trivially produces no value
-    unallocated,
+    unallocated_raw,
     // general purpose register like rax, r12, etc
     ipreg,
     // SSE/AVX registers, ie xmm0/ymm0-15
     vfreg,
+
+    // unallocated, but has a ipreg hint
+    unallocated_ipreghint,
+    // unallocated, but has a vfreg hint
+    unallocated_vfreghint,
+
     // TODO: support non-uniform sizes of spilled value
     frameslot,
     // unused value, perhaps should have been deleted before alloc
@@ -164,6 +170,15 @@ pub const MCKind = enum(u8) {
     // not stored as such, will be emitted togheter with the next inst
     // example "lea" and then "store", or "load" and then iop/vmath
     fused,
+
+    fn unallocated(self: @This()) bool {
+        return switch (self) {
+            .unallocated_raw => true,
+            .unallocated_ipreghint => true,
+            .unallocated_vfreghint => true,
+            else => false,
+        };
+    }
 };
 
 // number of op:s which are inst references.
@@ -801,7 +816,7 @@ pub fn trivial_alloc(self: *Self) !void {
 
                 if (i.tag == .arg) {
                     try self.alloc_arg(i);
-                } else if (has_res(i.tag) and i.mckind == .unallocated) {
+                } else if (has_res(i.tag) and i.mckind.unallocated()) {
                     const regkind: MCKind = if (i.res_type() == ValType.avxval) .vfreg else .ipreg;
                     const op1 = if (n_op(i.tag, false) > 0) self.iref(i.op1) else null;
                     if (op1) |o| {
@@ -932,14 +947,13 @@ fn print_mcval(i: Inst) void {
         .frameslot => print(" [rbp-8*{}]", .{i.mcidx}),
         .ipreg => print(" ${s}", .{@tagName(@intToEnum(IPReg, i.mcidx))}),
         .vfreg => print(" $ymm{}", .{i.mcidx}),
-        .unallocated => {
+        else => {
             if (i.tag == .load or i.tag == .phi or i.tag == .arg) {
                 if (i.res_type()) |t| {
                     print(" {s}", .{@tagName(t)});
                 }
             }
         },
-        else => {},
     }
 }
 
