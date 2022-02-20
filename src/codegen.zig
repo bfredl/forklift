@@ -109,10 +109,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
         try cfo.aritri(.sub, .rsp, stacksize + padding);
     }
 
-    var sci = self.sccorder.items.len - 1;
-    while (true) : (sci -= 1) {
-        const ni = self.sccorder.items[sci];
-        const n = &self.n.items[ni];
+    for (self.n.items) |*n, ni| {
         if (n.dfnum == 0 and ni > 0) {
             // non-entry block not reached by df search is dead.
             // TODO: these should already been cleaned up at this point
@@ -215,7 +212,9 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
             }
             cur_blk = b.next();
         }
-        const fallthru = if (sci > 0) self.sccorder.items[sci - 1] else FLIR.NoRef;
+
+        // TODO: handle trivial critical-edge block.
+        const fallthru = ni + 1;
         if (n.s[0] == fallthru and n.s[1] != 0) {
             try makejmp(self, cfo, .nl, uv(ni), 1, labels, targets);
         } else {
@@ -230,7 +229,6 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
                 try makejmp(self, cfo, null, uv(ni), default, labels, targets);
             }
         }
-        if (sci == 0) break;
     }
 
     try cfo.leave();
