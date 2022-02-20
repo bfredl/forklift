@@ -883,6 +883,11 @@ pub fn scan_alloc(self: *Self) !void {
                     const regkind: MCKind = if (is_avx) .vfreg else .ipreg;
                     const the_active = if (is_avx) &active_avx else &active_ipreg;
 
+                    if (i.tag == .constant and i.spec == 0) {
+                        i.mckind = .fused;
+                        continue;
+                    }
+
                     // TODO: reghint
                     var regid: ?u4 = null;
                     for (the_active) |l, ri| {

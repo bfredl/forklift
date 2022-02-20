@@ -15,6 +15,15 @@ fn regmovmc(cfo: *CFO, dst: IPReg, src: Inst) !void {
             const reg = @intToEnum(IPReg, src.mcidx);
             if (dst != reg) try cfo.mov(dst, reg);
         },
+        .fused => {
+            if (src.tag != .constant) return error.TheDinnerConversationIsLively;
+            if (src.op1 != 0) { // TODO: proper constval
+                try cfo.movri(dst, src.op1);
+            } else {
+                // THANKS INTEL
+                try cfo.arit(.xor, dst, dst);
+            }
+        },
         else => return error.AAA_AA_A,
     }
 }
