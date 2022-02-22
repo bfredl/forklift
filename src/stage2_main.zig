@@ -1,4 +1,5 @@
 const page_allocator = std.heap.page_allocator;
+const test_allocator = std.testing.allocator;
 const std = @import("std");
 const CFO = @import("./CFO.zig");
 const parse = @import("./parse.zig");
@@ -24,45 +25,48 @@ pub fn main2() !void {
     const v0: u4 = 0;
 
     arr1[5] = 7.0;
-    arr2[5] = 6.5;
+    arr2[5] = 4.5;
 
     var cfo = try CFO.init(page_allocator);
     var pos = cfo.get_target();
-    try cfo.enter();
-    try cfo.arit(.xor, idx, idx);
-    const loop = cfo.get_target();
-    try cfo.vmovurm(.sd, v0, CFO.qi(arg1, idx));
-    try cfo.vmathfrm(.add, .sd, v0, v0, CFO.qi(arg2, idx));
-    try cfo.vmovumr(.sd, CFO.qi(arg1, idx), v0);
-    try cfo.aritri(.add, idx, 1);
-    try cfo.arit(.cmp, idx, arg3);
-    try cfo.jbck(.l, loop);
-    try cfo.mov(.rax, idx);
-    try cfo.leave();
-    try cfo.ret();
+
+    if (false) {
+        try cfo.enter();
+        try cfo.arit(.xor, idx, idx);
+        const loop = cfo.get_target();
+        try cfo.vmovurm(.sd, v0, CFO.qi(arg1, idx));
+        try cfo.vmathfrm(.add, .sd, v0, v0, CFO.qi(arg2, idx));
+        try cfo.vmovumr(.sd, CFO.qi(arg1, idx), v0);
+        try cfo.aritri(.add, idx, 1);
+        try cfo.arit(.cmp, idx, arg3);
+        try cfo.jbck(.l, loop);
+        try cfo.mov(.rax, idx);
+        try cfo.leave();
+        try cfo.ret();
+    } else {
+
+        // const start_parse = cfo.get_target();
+        var flir = try FLIR.init_stage2(0, page_allocator);
+        _ = flir;
+        try flir.loop_start();
+        //_ = try parse.parse(&flir, "xi = xi + yi;");
+        const l1 = try flir.put(FLIR.Inst{ .tag = .load, .opspec = 0x11, .op1 = 0 });
+        var inst2: FLIR.Inst = .{ .tag = .store, .opspec = 0x10, .op1 = l1, .op2 = 0 };
+        _ = try flir.put(inst2);
+        try flir.loop_end();
+        flir.live(true);
+        _ = try flir.scanreg(true);
+        // defer flir.deinit();
+        // flir.debug_print(false);
+
+        try cfo.enter();
+        // TODO: not so far!
+        _ = try flir.codegen(&cfo, false);
+        try cfo.leave();
+        try cfo.ret();
+    }
+
     try cfo.finalize();
-
-    // const start_parse = cfo.get_target();
-    var flir = try FLIR.init_stage2(0, page_allocator);
-    _ = flir;
-    // defer flir.deinit();
-
-    try flir.loop_start();
-    //_ = try parse.parse(&flir, "xi = xi + yi;");
-    var inst: FLIR.Inst = .{ .tag = .load, .opspec = 0x11, .op1 = 0 };
-    const l1 = try flir.put(inst);
-    var inst2: FLIR.Inst = .{ .tag = .store, .opspec = 0x10, .op1 = l1, .op2 = 0 };
-    _ = try flir.put(inst2);
-    try flir.loop_end();
-    flir.live(true);
-    _ = try flir.scanreg(true);
-    // flir.debug_print(false);
-
-    try cfo.enter();
-    // TODO: not so far!
-    // _ = try flir.codegen(&cfo);
-    try cfo.leave();
-    try cfo.ret();
 
     const runcount: usize = 137;
     // THANKS WERK

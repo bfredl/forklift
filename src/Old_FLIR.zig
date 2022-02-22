@@ -355,7 +355,7 @@ pub fn codegen(self: FLIR, cfo: *CFO, simd: bool) !u32 {
                 const src = base.o(inst.op1);
                 // TODO: use align!
                 if (simd and base.index == null) {
-                    try cfo.vbroadcast(.pd4, dst, src);
+                    // try cfo.vbroadcast(.pd4, dst, src);
                 } else {
                     try cfo.vmovarm(fm, dst, src);
                 }
@@ -363,7 +363,7 @@ pub fn codegen(self: FLIR, cfo: *CFO, simd: bool) !u32 {
             .constant => {
                 const dst = inst.alloc.?;
                 if (simd) {
-                    try cfo.vbroadcast(.pd4, dst, CFO.a(.rax).o(8 * inst.op1));
+                    // try cfo.vbroadcast(.pd4, dst, CFO.a(.rax).o(8 * inst.op1));
                 } else {
                     try cfo.vmovurm(.sd, dst, CFO.a(.rax).o(8 * inst.op1));
                 }

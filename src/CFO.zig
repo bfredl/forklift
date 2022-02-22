@@ -462,7 +462,7 @@ pub fn get_target(self: *Self) u32 {
 pub fn jbck(self: *Self, cond: ?Cond, target: u32) !void {
     try self.new_inst(@returnAddress());
     var off = @intCast(i32, target) - (@intCast(i32, self.code.items.len) + 2);
-    if (s2) {
+    if (false) {
         try self.wb(0x0f);
         try self.wb(if (cond) |c| 0x80 + c.off() else 0xe9);
         try self.wd(off - 4); // FETING: offset is larger as the jump instruction is larger
