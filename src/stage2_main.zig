@@ -44,19 +44,17 @@ pub fn main2() !void {
         try cfo.leave();
         try cfo.ret();
     } else {
-
-        // const start_parse = cfo.get_target();
         var flir = try FLIR.init_stage2(0, page_allocator);
-        _ = flir;
         try flir.loop_start();
         //_ = try parse.parse(&flir, "xi = xi + yi;");
-        const l1 = try flir.put(FLIR.Inst{ .tag = .load, .opspec = 0x10, .op1 = 0 });
-        const l2 = try flir.put(FLIR.Inst{ .tag = .load, .opspec = 0x11, .op1 = 0 });
-        const addi: FLIR.Inst = FLIR.Inst{ .tag = .vmath, .opspec = 0, .op1 = l1, .op2 = l2 };
+        const Inst = FLIR.Inst;
+        const l1 = try flir.put(Inst{ .tag = .load, .opspec = 0x10, .op1 = 0 });
+        const l2 = try flir.put(Inst{ .tag = .load, .opspec = 0x11, .op1 = 0 });
+        const addi: FLIR.Inst = Inst{ .tag = .vmath, .opspec = CFO.VMathOp.add.off(), .op1 = l1, .op2 = l2 };
         const add = try flir.put(addi);
-
         var inst2: FLIR.Inst = .{ .tag = .store, .opspec = 0x10, .op1 = add, .op2 = 0 };
         _ = try flir.put(inst2);
+
         try flir.loop_end();
         flir.live(true);
         _ = try flir.scanreg(true);
@@ -64,7 +62,6 @@ pub fn main2() !void {
         // flir.debug_print(false);
 
         try cfo.enter();
-        // TODO: not so far!
         _ = try flir.codegen(&cfo, false);
         try cfo.leave();
         try cfo.ret();
