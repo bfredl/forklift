@@ -26,7 +26,7 @@ pub fn main2() !void {
     arr1[5] = 7.0;
     arr2[5] = 6.5;
 
-    var cfo = CFO.init_stage2();
+    var cfo = try CFO.init(page_allocator);
     var pos = cfo.get_target();
     try cfo.enter();
     try cfo.arit(.xor, idx, idx);
@@ -43,7 +43,7 @@ pub fn main2() !void {
     try cfo.finalize();
 
     // const start_parse = cfo.get_target();
-    var flir = FLIR.init_stage2(0, page_allocator);
+    var flir = try FLIR.init_stage2(0, page_allocator);
     _ = flir;
     // defer flir.deinit();
 

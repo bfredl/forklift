@@ -12,8 +12,8 @@ pub fn FakeList(comptime T: type) type {
         capacity: usize,
         pub const Slice = []T;
 
-        pub fn initCapacity(allocator: Allocator, num: usize) Self {
-            const mem = allocator.alloc(T, num) catch unreachable;
+        pub fn initCapacity(allocator: Allocator, num: usize) !Self {
+            const mem = try allocator.alloc(T, num);
             var items = mem;
             items.len = 0;
             return Self{ .items = items, .capacity = mem.len };

@@ -10,13 +10,6 @@ const ArrayListAligned = std.ArrayListAligned;
 const builtin = @import("builtin");
 const s2 = builtin.zig_backend != .stage1;
 const ArrayList = @import("./fake_list.zig").ArrayList;
-fn fake_list(T: type, size: usize, allocator: Allocator) ArrayList(T) {
-    if (s2) {
-        return ArrayList(T).initCapacity(allocator, size);
-    } else {
-        return ArrayList(T).initCapacity(allocator, size) catch unreachable;
-    }
-}
 
 code: if (s2) ArrayList(u8) else ArrayListAligned(u8, 4096),
 
@@ -221,26 +214,21 @@ pub const VMathOp = enum(u3) {
     }
 };
 
-// cannot Error!Struct because:
-// error: TODO coerce_result_ptr wrap_errunion_payload
-pub fn init_stage2() Self {
-    if (!s2) {
-        return init(page_allocator) catch unreachable;
-    }
-    return Self{
-        .code = fake_list(u8, 4096, page_allocator),
-        .inst_off = fake_list(u32, 1024, page_allocator),
-        .inst_dbg = fake_list(usize, 512, page_allocator),
-    };
-}
-
 pub fn init(allocator: Allocator) !Self {
     // TODO: allocate consequtive mprotectable pages
-    return Self{
-        .code = try ArrayListAligned(u8, 4096).initCapacity(page_allocator, 4096),
-        .inst_off = ArrayList(u32).init(allocator),
-        .inst_dbg = ArrayList(usize).init(allocator),
-    };
+    if (s2) {
+        return Self{
+            .code = try ArrayList(u8).initCapacity(page_allocator, 4096),
+            .inst_off = try ArrayList(u32).initCapacity(allocator, 1024),
+            .inst_dbg = try ArrayList(usize).initCapacity(allocator, 512),
+        };
+    } else {
+        return Self{
+            .code = try ArrayListAligned(u8, 4096).initCapacity(page_allocator, 4096),
+            .inst_off = ArrayList(u32).init(allocator),
+            .inst_dbg = ArrayList(usize).init(allocator),
+        };
+    }
 }
 
 pub fn deinit(self: *Self) void {

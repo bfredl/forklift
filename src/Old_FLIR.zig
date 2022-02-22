@@ -52,12 +52,12 @@ pub fn init(narg: u4, allocator: Allocator) !FLIR {
     return self;
 }
 
-pub fn init_stage2(narg: u4, allocator: Allocator) FLIR {
+pub fn init_stage2(narg: u4, allocator: Allocator) !FLIR {
     _ = allocator;
     var self: FLIR = .{
         .narg = narg,
-        .inst = ArrayList(Inst).initCapacity(allocator, 16),
-        .constants = ArrayList(f64).initCapacity(allocator, 16),
+        .inst = try ArrayList(Inst).initCapacity(allocator, 16),
+        .constants = try ArrayList(f64).initCapacity(allocator, 16),
         .pos_loop_start = 0,
         .pos_loop_end = 0,
         .theinst = undefined,
