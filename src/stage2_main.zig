@@ -25,7 +25,7 @@ pub fn main2() !void {
     const v0: u4 = 0;
 
     arr1[5] = 7.0;
-    arr2[5] = 4.5;
+    arr2[5] = 8.5;
 
     var cfo = try CFO.init(page_allocator);
     var pos = cfo.get_target();
@@ -50,8 +50,12 @@ pub fn main2() !void {
         _ = flir;
         try flir.loop_start();
         //_ = try parse.parse(&flir, "xi = xi + yi;");
-        const l1 = try flir.put(FLIR.Inst{ .tag = .load, .opspec = 0x11, .op1 = 0 });
-        var inst2: FLIR.Inst = .{ .tag = .store, .opspec = 0x10, .op1 = l1, .op2 = 0 };
+        const l1 = try flir.put(FLIR.Inst{ .tag = .load, .opspec = 0x10, .op1 = 0 });
+        const l2 = try flir.put(FLIR.Inst{ .tag = .load, .opspec = 0x11, .op1 = 0 });
+        const addi: FLIR.Inst = FLIR.Inst{ .tag = .vmath, .opspec = 0, .op1 = l1, .op2 = l2 };
+        const add = try flir.put(addi);
+
+        var inst2: FLIR.Inst = .{ .tag = .store, .opspec = 0x10, .op1 = add, .op2 = 0 };
         _ = try flir.put(inst2);
         try flir.loop_end();
         flir.live(true);
