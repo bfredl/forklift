@@ -923,9 +923,6 @@ pub fn scan_alloc(self: *Self) !void {
 }
 
 pub fn debug_print(self: *Self) void {
-    if (stage2) {
-        return;
-    }
     print("\n", .{});
     for (self.n.items) |*n, i| {
         print("node {} (npred {}, scc {}):", .{ i, n.npred, n.scc });
