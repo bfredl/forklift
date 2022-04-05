@@ -6,7 +6,7 @@ const print = std.debug.print;
 
 const FLIR = @import("./FLIR.zig");
 
-const ArrayList = @import("./fake_list.zig").ArrayList;
+const ArrayList = std.ArrayList;
 
 const uv = FLIR.uv;
 const DomState = @This();

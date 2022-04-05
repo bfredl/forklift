@@ -8,7 +8,7 @@ const swap = std.mem.swap;
 
 const builtin = @import("builtin");
 const s2 = builtin.zig_backend != .stage1;
-const ArrayList = @import("./fake_list.zig").ArrayList;
+const ArrayList = std.ArrayList;
 
 const VMathOp = CFO.VMathOp;
 
@@ -258,9 +258,6 @@ fn n_op(tag: Tag) u2 {
 }
 
 pub fn debug_print(self: FLIR, tmp: bool) void {
-    if (s2) {
-        return;
-    }
     var pos: u16 = 0;
     print("\n", .{});
     while (pos < self.ninst()) : (pos += 1) {

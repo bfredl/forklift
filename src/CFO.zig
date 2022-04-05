@@ -9,9 +9,9 @@ const ArrayListAligned = std.ArrayListAligned;
 
 const builtin = @import("builtin");
 const s2 = builtin.zig_backend != .stage1;
-const ArrayList = @import("./fake_list.zig").ArrayList;
+const ArrayList = std.ArrayList;
 
-code: if (s2) ArrayList(u8) else ArrayListAligned(u8, 4096),
+code: ArrayListAligned(u8, 4096),
 
 /// offset of each encoded instruction. Might not be needed
 /// but useful for debugging.
@@ -216,19 +216,11 @@ pub const VMathOp = enum(u3) {
 
 pub fn init(allocator: Allocator) !Self {
     // TODO: allocate consequtive mprotectable pages
-    if (s2) {
-        return Self{
-            .code = try ArrayList(u8).initCapacity(page_allocator, 4096),
-            .inst_off = try ArrayList(u32).initCapacity(allocator, 1024),
-            .inst_dbg = try ArrayList(usize).initCapacity(allocator, 512),
-        };
-    } else {
-        return Self{
-            .code = try ArrayListAligned(u8, 4096).initCapacity(page_allocator, 4096),
-            .inst_off = ArrayList(u32).init(allocator),
-            .inst_dbg = ArrayList(usize).init(allocator),
-        };
-    }
+    return Self{
+        .code = try ArrayListAligned(u8, 4096).initCapacity(page_allocator, 4096),
+        .inst_off = ArrayList(u32).init(allocator),
+        .inst_dbg = ArrayList(usize).init(allocator),
+    };
 }
 
 pub fn deinit(self: *Self) void {
@@ -550,20 +542,12 @@ pub fn movri(self: *Self, dst: IPReg, src: i32) !void {
 }
 
 pub fn aritri(self: *Self, op: AOp, dst: IPReg, imm: i32) !void {
-    if (s2) {
-        try self.new_inst(@returnAddress());
-        try self.rex_wrxb(true, false, false, dst.ext());
-        try self.wb(0x81);
-        try self.modRm(0b11, op.opx(), dst.lowId());
-        try self.wd(imm);
-    } else {
-        const imm8 = maybe_imm8(imm);
-        try self.new_inst(@returnAddress());
-        try self.rex_wrxb(true, false, false, dst.ext());
-        try self.wb(if (imm8 != null) 0x83 else 0x81);
-        try self.modRm(0b11, op.opx(), dst.lowId());
-        try if (imm8) |i| self.wbi(i) else self.wd(imm);
-    }
+    const imm8 = maybe_imm8(imm);
+    try self.new_inst(@returnAddress());
+    try self.rex_wrxb(true, false, false, dst.ext());
+    try self.wb(if (imm8 != null) 0x83 else 0x81);
+    try self.modRm(0b11, op.opx(), dst.lowId());
+    try if (imm8) |i| self.wbi(i) else self.wd(imm);
 }
 
 pub fn movmi(self: *Self, dst: EAddr, src: i32) !void {
@@ -717,13 +701,7 @@ pub fn dbg_nasm(self: *Self, allocator: Allocator) !void {
 }
 
 pub fn finalize(self: *Self) !void {
-    if (s2) {
-        if (os.linux.mprotect(self.code.items.ptr, self.code.capacity, os.PROT.READ | os.PROT.EXEC) != 0) {
-            return error.ComputarSaysNo;
-        }
-    } else {
-        try os.mprotect(self.code.items.ptr[0..self.code.capacity], os.PROT.READ | os.PROT.EXEC);
-    }
+    try os.mprotect(self.code.items.ptr[0..self.code.capacity], os.PROT.READ | os.PROT.EXEC);
 }
 
 pub fn get_ptr(self: *Self, target: u32, comptime T: type) T {

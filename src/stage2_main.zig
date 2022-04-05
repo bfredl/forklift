@@ -6,6 +6,7 @@ const parse = @import("./parse.zig");
 const FLIR = @import("./Old_FLIR.zig");
 
 const builtin = @import("builtin");
+
 const s2 = builtin.zig_backend != .stage1;
 
 pub fn main2() !void {
@@ -59,7 +60,7 @@ pub fn main2() !void {
         flir.live(true);
         _ = try flir.scanreg(true);
         // defer flir.deinit();
-        // flir.debug_print(false);
+        flir.debug_print(false);
 
         try cfo.enter();
         _ = try flir.codegen(&cfo, false);

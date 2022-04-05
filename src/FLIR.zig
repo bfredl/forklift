@@ -9,7 +9,7 @@ const SSA_GVN = @import("./SSA_GVN.zig");
 
 const builtin = @import("builtin");
 const stage2 = builtin.zig_backend != .stage1;
-const ArrayList = @import("./fake_list.zig").ArrayList;
+const ArrayList = std.ArrayList;
 const assert = std.debug.assert;
 
 const IPReg = CFO.IPReg;
@@ -192,7 +192,12 @@ pub fn n_op(tag: Tag, rw: bool) u2 {
         // before getting into any serious analysis.
         .putvar => 2,
         .phi => 0,
-        .putphi => @as(u2, if (rw) 2 else 1), // TODO: booooooo
+        // works on stage1:
+        // .putphi => @as(u2, if (rw) 2 else 1),
+        // works on stage2:
+        // .putphi => if (rw) 2 else 1,
+        // works on both: (clown_emoji)
+        .putphi => if (rw) @as(u2, 2) else @as(u2, 1), // TODO: booooooo
         .constant => 0,
         .renum => 1,
         .load => 2, // base, idx
