@@ -24,17 +24,17 @@ pub fn main() !void {
     // NB: assumes count > 0, always do first iteration
     self.n.items[start].s[0] = loop;
 
-    const fmode = .sd;
+    const fmode = .pd4;
 
     const valx = try self.vbinop(loop, .load, fmode, arg1, var_i);
     const valy = try self.vbinop(loop, .load, fmode, arg2, var_i);
     const newval = try self.vmath(loop, .add, fmode, valx, valy);
     _ = try self.store(loop, arg1, var_i, newval);
 
-    const const_1 = try self.const_int(loop, 1);
+    const const_4 = try self.const_int(loop, 4);
     // TODO: analysis should of course do this:
-    self.iref(const_1).?.mckind = .fused;
-    const add = try self.iop(loop, .add, var_i, const_1);
+    self.iref(const_4).?.mckind = .fused;
+    const add = try self.iop(loop, .add, var_i, const_4);
     try self.putvar(loop, var_i, add);
     _ = try self.binop(loop, .ilessthan, var_i, arg3);
 
