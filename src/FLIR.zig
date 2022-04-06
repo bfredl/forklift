@@ -8,12 +8,13 @@ const CFO = @import("./CFO.zig");
 const SSA_GVN = @import("./SSA_GVN.zig");
 
 const builtin = @import("builtin");
-const stage2 = builtin.zig_backend != .stage1;
+// const stage2 = builtin.zig_backend != .stage1;
 const ArrayList = std.ArrayList;
 const assert = std.debug.assert;
 
 const IPReg = CFO.IPReg;
 const VMathOp = CFO.VMathOp;
+const FMode = CFO.FMode;
 const AOp = CFO.AOp;
 
 a: Allocator,
@@ -97,7 +98,21 @@ pub const Inst = struct {
 
     // TODO: handle spec being split between u4 type and u4 somethingelse?
     pub fn spec_type(self: Inst) ValType {
-        return @intToEnum(ValType, self.spec);
+        // TODO: jesus this is terrible
+        return if (self.spec >= TODO_INT_SPEC) .intptr else .avxval;
+    }
+
+    const TODO_INT_SPEC: u8 = 8;
+
+    const FMODE_MASK: u8 = (1 << 4) - 1;
+    const VOP_MASK: u8 = ~FMODE_MASK;
+
+    pub fn vop(self: Inst) VMathOp {
+        return @intToEnum(VMathOp, (self.spec & VOP_MASK) >> 4);
+    }
+
+    pub fn fmode(self: Inst) FMode {
+        return @intToEnum(FMode, self.spec & FMODE_MASK);
     }
 
     pub fn res_type(inst: Inst) ?ValType {
@@ -290,6 +305,10 @@ pub fn iref(self: *Self, ref: u16) ?*Inst {
     return if (self.biref(ref)) |bi| bi.i else null;
 }
 
+pub fn vspec(vop: VMathOp, fmode: FMode) u8 {
+    return (vop.off() << 4) | @as(u8, @enumToInt(fmode));
+}
+
 pub fn addNode(self: *Self) !u16 {
     const n = try self.n.addOne();
     const b = try self.b.addOne();
@@ -367,7 +386,7 @@ pub fn preInst(self: *Self, node: u16, inst: Inst) !u16 {
 
 pub fn const_int(self: *Self, node: u16, val: u16) !u16 {
     // TODO: actually store constants in a buffer, or something
-    return self.addInst(node, .{ .tag = .constant, .op1 = val, .op2 = 0 });
+    return self.addInst(node, .{ .tag = .constant, .op1 = val, .op2 = 0, .spec = Inst.TODO_INT_SPEC });
 }
 
 pub fn binop(self: *Self, node: u16, tag: Tag, op1: u16, op2: u16) !u16 {
@@ -375,12 +394,13 @@ pub fn binop(self: *Self, node: u16, tag: Tag, op1: u16, op2: u16) !u16 {
 }
 
 // TODO: better abstraction for types (once we have real types)
-pub fn vbinop(self: *Self, node: u16, tag: Tag, op1: u16, op2: u16) !u16 {
-    return self.addInst(node, .{ .tag = tag, .op1 = op1, .op2 = op2, .spec = ValType.avxval.spec() });
+pub fn vbinop(self: *Self, node: u16, tag: Tag, fmode: FMode, op1: u16, op2: u16) !u16 {
+    return self.addInst(node, .{ .tag = tag, .op1 = op1, .op2 = op2, .spec = @enumToInt(fmode) });
 }
 
-pub fn vmath(self: *Self, node: u16, vop: VMathOp, op1: u16, op2: u16) !u16 {
-    return self.addInst(node, .{ .tag = .vmath, .spec = vop.off(), .op1 = op1, .op2 = op2 });
+pub fn vmath(self: *Self, node: u16, vop: VMathOp, fmode: FMode, op1: u16, op2: u16) !u16 {
+    // TODO: somewhere, typecheck that FMode matches fmode of args..
+    return self.addInst(node, .{ .tag = .vmath, .spec = vspec(vop, fmode), .op1 = op1, .op2 = op2 });
 }
 
 pub fn iop(self: *Self, node: u16, vop: AOp, op1: u16, op2: u16) !u16 {
@@ -394,11 +414,10 @@ pub fn putvar(self: *Self, node: u16, op1: u16, op2: u16) !void {
 pub fn store(self: *Self, node: u16, base: u16, idx: u16, val: u16) !u16 {
     // FUBBIT: all possible instances of fusing should be detected in analysis anyway
     const addr = try self.addInst(node, .{ .tag = .lea, .op1 = base, .op2 = idx, .mckind = .fused });
-    return self.addInst(node, .{ .tag = .store, .op1 = addr, .op2 = val });
+    return self.addInst(node, .{ .tag = .store, .op1 = addr, .op2 = val, .spec = self.iref(val).?.spec });
 }
 
 pub fn ret(self: *Self, node: u16, val: u16) !void {
-    // TODO: actually store constants in a buffer, or something
     _ = try self.addInst(node, .{ .tag = .ret, .op1 = val, .op2 = 0 });
 }
 
@@ -410,14 +429,14 @@ pub fn prePhi(self: *Self, node: u16, v: Inst) !u16 {
 
 pub fn arg(self: *Self) !u16 {
     if (self.n.items.len == 0) return error.EEEEE;
-    const inst = try self.addInst(0, .{ .tag = .arg, .op1 = self.narg, .op2 = 0 });
+    const inst = try self.addInst(0, .{ .tag = .arg, .op1 = self.narg, .op2 = 0, .spec = Inst.TODO_INT_SPEC });
     self.narg += 1;
     return inst;
 }
 
 pub fn variable(self: *Self) !u16 {
     if (self.n.items.len == 0) return error.EEEEE;
-    const inst = try self.addInst(0, .{ .tag = .variable, .op1 = self.nvar, .op2 = 0 });
+    const inst = try self.addInst(0, .{ .tag = .variable, .op1 = self.nvar, .op2 = 0, .spec = Inst.TODO_INT_SPEC });
     self.nvar += 1;
     return inst;
 }
@@ -975,7 +994,7 @@ fn print_blk(self: *Self, firstblk: u16) void {
             }
 
             if (i.tag == .vmath) {
-                print(".{s}", .{@tagName(@intToEnum(VMathOp, i.spec))});
+                print(".{s}", .{@tagName(i.vop())});
             } else if (i.tag == .iop) {
                 print(".{s}", .{@tagName(@intToEnum(AOp, i.spec))});
             } else if (i.tag == .constant) {

@@ -176,7 +176,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
                             try mcmovreg(cfo, i.*, dst); // elided if dst is register
                         } else {
                             const dst = i.avxreg() orelse unreachable;
-                            try cfo.vmovurm(.sd, dst, eaddr);
+                            try cfo.vmovurm(i.fmode(), dst, eaddr);
                         }
                     },
                     .lea => {
@@ -205,14 +205,14 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
                             unreachable;
                         } else {
                             const src = val.avxreg() orelse unreachable;
-                            try cfo.vmovumr(.sd, eaddr, src);
+                            try cfo.vmovumr(i.fmode(), eaddr, src);
                         }
                     },
                     .vmath => {
                         const x = self.iref(i.op1).?.avxreg() orelse unreachable;
                         const y = self.iref(i.op2).?.avxreg() orelse unreachable;
                         const dst = i.avxreg() orelse unreachable;
-                        try cfo.vmathf(@intToEnum(VMathOp, i.spec), .sd, dst, x, y);
+                        try cfo.vmathf(i.vop(), i.fmode(), dst, x, y);
                     },
 
                     else => {},

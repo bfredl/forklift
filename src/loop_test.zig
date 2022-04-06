@@ -24,9 +24,11 @@ pub fn main() !void {
     // NB: assumes count > 0, always do first iteration
     self.n.items[start].s[0] = loop;
 
-    const valx = try self.vbinop(loop, .load, arg1, var_i);
-    const valy = try self.vbinop(loop, .load, arg2, var_i);
-    const newval = try self.vmath(loop, .add, valx, valy);
+    const fmode = .sd;
+
+    const valx = try self.vbinop(loop, .load, fmode, arg1, var_i);
+    const valy = try self.vbinop(loop, .load, fmode, arg2, var_i);
+    const newval = try self.vmath(loop, .add, fmode, valx, valy);
     _ = try self.store(loop, arg1, var_i, newval);
 
     const const_1 = try self.const_int(loop, 1);
