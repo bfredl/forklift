@@ -76,6 +76,17 @@ pub const AOp = enum(u3) {
     }
 };
 
+pub const ShiftOp = enum {
+    hl, // logically left
+    ar, // arithmically right
+    hr, // logically right
+    const al = .hl; // arithmically left, same as logically left
+    //
+    pub fn to_pp(self: @This()) PP {
+        return @intToEnum(PP, @enumToInt(self) + 1);
+    }
+};
+
 pub const Cond = enum(u4) {
     o, // overflow
     no,
@@ -635,9 +646,9 @@ pub fn vcmp(self: *Self, op: VCmp, fmode: FMode, dst: u4, src1: u4, src2: EAddr)
 }
 
 // integer vector instructions
-pub inline fn vop_i_rr(self: *Self, op: u8, wide: bool, dst: u4, src1: u4, src2: u4) !void {
+pub inline fn vop_i_rr(self: *Self, op: u8, wide: bool, pp: PP, dst: u4, src1: u4, src2: u4) !void {
     try self.new_inst(@returnAddress());
-    try self.vex0fwig(dst > 7, false, src2 > 7, src1, wide, .h66);
+    try self.vex0fwig(dst > 7, false, src2 > 7, src1, wide, pp);
     try self.wb(op);
     try self.modRm(0b11, @truncate(u3, dst), @truncate(u3, src2));
 }
@@ -683,6 +694,21 @@ pub fn vzeroall(self: *Self) !void {
     try self.vex2(false, 0, true, PP.none);
     try self.wb(0x77);
 }
+
+// BMI instructions: GPR operations coded with VEX
+
+pub inline fn bmi_rr(self: *Self, op: u8, wide: bool, pp: PP, dst: IPReg, src1: IPReg, src2: IPReg) !void {
+    try self.new_inst(@returnAddress());
+    try self.vex3(wide, dst.ext(), src1.ext(), false, .h0F38, src2.id(), false, pp);
+    try self.wb(op);
+    try self.modRm(0b11, dst.lowId(), src1.lowId());
+}
+
+pub fn sx(self: *Self, op: ShiftOp, dst: IPReg, src1: IPReg, src2: IPReg) !void {
+    try self.bmi_rr(0xf7, true, op.to_pp(), dst, src1, src2);
+}
+
+// output functions
 
 pub fn dump(self: *Self) !void {
     try fs.cwd().writeFile("test.o", self.code.items);
@@ -1101,4 +1127,15 @@ test "add scalar double from memory" {
     var retval = try cfo.test_call2x(f64, &thefloat, @as(f64, 0.125));
     try expectEqual(@as(f64, 6.625), retval);
     try expectEqual(@as(f64, 6.5), thefloat);
+}
+
+test "shlx (shift left)" {
+    var cfo = try init(test_allocator);
+    defer cfo.deinit();
+
+    try cfo.sx(.hl, .rax, .rdi, .rsi);
+    try cfo.ret();
+
+    var retval = try cfo.test_call2(17, 3);
+    try expectEqual(@as(usize, 136), retval);
 }
