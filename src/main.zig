@@ -33,7 +33,8 @@ pub fn main() !void {
     const v0: u4 = 0;
     const v1: u4 = 1;
 
-    const allocator = std.testing.allocator;
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
     var cfo = try CFO.init(allocator);
     defer cfo.deinit();
 
@@ -109,13 +110,13 @@ pub fn main() !void {
     the_cfo = &cfo;
     defer the_cfo = null;
 
-    OSHA.install(&cfo);
+    try OSHA.install(&cfo);
     defer OSHA.clear();
 
-    const scalar_add = cfo.get_ptr(start, fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
-    const parse_add = cfo.get_ptr(start_parse, fn (arg1: [*]f64, arg2: [*]f64, arg3: ?[*]f64, arg3: u64) callconv(.C) void);
-    const simd_add = cfo.get_ptr(start_simd, fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
-    const simd2_add = cfo.get_ptr(start_simd2, fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
+    const scalar_add = cfo.get_ptr(start, *const fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
+    const parse_add = cfo.get_ptr(start_parse, *const fn (arg1: [*]f64, arg2: [*]f64, arg3: ?[*]f64, arg3: u64) callconv(.C) void);
+    const simd_add = cfo.get_ptr(start_simd, *const fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
+    const simd2_add = cfo.get_ptr(start_simd2, *const fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
 
     var timer = try std.time.Timer.start();
     i = 0;

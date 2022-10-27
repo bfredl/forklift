@@ -774,7 +774,6 @@ pub fn calc_use(self: *Self) !void {
             while (idx > 0) {
                 idx -= 1;
                 const i = &b.i[idx];
-                _ = i;
 
                 if (i.vreg != NoRef) {
                     live &= ~(@as(usize, 1) << @intCast(u6, i.vreg));

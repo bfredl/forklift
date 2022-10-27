@@ -43,7 +43,7 @@ fn sigHandler(sig: i32, info: *const os.siginfo_t, ctx_ptr: ?*const anyopaque) c
     debug.dumpStackTraceFromBase(bp, ip);
 }
 
-pub fn install(cfo: *CFO) void {
+pub fn install(cfo: *CFO) !void {
     the_cfo = cfo;
 
     var act = os.Sigaction{
@@ -52,11 +52,11 @@ pub fn install(cfo: *CFO) void {
         .flags = (os.SA.SIGINFO | os.SA.RESTART),
     };
 
-    os.sigaction(os.SIG.TRAP, &act, null);
+    try os.sigaction(os.SIG.TRAP, &act, null);
     act.flags |= os.SA.RESETHAND;
-    os.sigaction(os.SIG.SEGV, &act, null);
-    os.sigaction(os.SIG.ILL, &act, null);
-    os.sigaction(os.SIG.BUS, &act, null);
+    try os.sigaction(os.SIG.SEGV, &act, null);
+    try os.sigaction(os.SIG.ILL, &act, null);
+    try os.sigaction(os.SIG.BUS, &act, null);
 }
 
 pub fn clear() void {

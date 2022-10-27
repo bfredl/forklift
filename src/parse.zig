@@ -156,7 +156,9 @@ pub fn parse(flir: *FLIR, str: []const u8) !bool {
 
 pub fn main() !void {
     const arg1 = std.os.argv[1];
-    var flir = try FLIR.init(4, test_allocator);
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    var flir = try FLIR.init(4, allocator);
     defer flir.deinit();
 
     _ = try flir.add_constant(std.math.pi);
@@ -179,7 +181,7 @@ pub fn main() !void {
     print("NEW pressure {} of 16\n", .{pressure});
     flir.debug_print(false);
 
-    var cfo = try CFO.init(test_allocator);
+    var cfo = try CFO.init(allocator);
     defer cfo.deinit();
     try cfo.enter();
     var pos = try cfo.lealink(.rax);
@@ -188,5 +190,5 @@ pub fn main() !void {
     try cfo.ret();
     var target = try flir.emit_constants(&cfo);
     cfo.set_lea(pos, target);
-    // try cfo.dbg_nasm(test_allocator);
+    // try cfo.dbg_nasm(allocator);
 }

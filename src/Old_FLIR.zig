@@ -53,7 +53,6 @@ pub fn init(narg: u4, allocator: Allocator) !FLIR {
 }
 
 pub fn init_stage2(narg: u4, allocator: Allocator) !FLIR {
-    _ = allocator;
     var self: FLIR = .{
         .narg = narg,
         .inst = try ArrayList(Inst).initCapacity(allocator, 16),

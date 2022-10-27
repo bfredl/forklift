@@ -3,16 +3,18 @@ const FLIR = @import("./FLIR.zig");
 const CFO = @import("./CFO.zig");
 const codegen = @import("./codegen.zig").codegen;
 
-const test_allocator = std.testing.allocator;
-
 pub fn main() !void {
-    var self = try FLIR.init(8, test_allocator);
+    var gpa_state = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = gpa_state.allocator();
+    var self = try FLIR.init(8, gpa);
     defer self.deinit();
 
     const start = try self.addNode();
     const arg1 = try self.arg();
     const arg2 = try self.arg();
     const v = try self.variable();
+
+    _ = "h";
 
     // const const_0 = try self.const_int(start, 0);
     const const_42 = try self.const_int(start, 42);
@@ -51,9 +53,9 @@ pub fn main() !void {
 
     self.debug_print();
 
-    var cfo = try CFO.init(test_allocator);
+    var cfo = try CFO.init(gpa);
     defer cfo.deinit();
 
     _ = try @import("./codegen.zig").codegen(&self, &cfo);
-    try cfo.dbg_nasm(test_allocator);
+    try cfo.dbg_nasm(gpa);
 }
