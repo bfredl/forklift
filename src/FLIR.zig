@@ -639,8 +639,7 @@ pub fn reorder_inst(self: *Self) !void {
     const newlink = try self.a.alloc(u16, self.b.items.len * BLK_SIZE);
     mem.set(u16, newlink, NoRef);
     const newblkpos = try self.a.alloc(u16, self.b.items.len);
-    // not needed but for debug:
-    // mem.set(u16, newblkpos, NoRef);
+    mem.set(u16, newblkpos, NoRef);
     defer self.a.free(newlink);
     defer self.a.free(newblkpos);
     var newpos: u16 = 0;
@@ -653,7 +652,7 @@ pub fn reorder_inst(self: *Self) !void {
         while (cur_blk) |old_blk| {
             // TRICKY: we might have swapped out the block
             const newblk = newpos >> BLK_SHIFT;
-            const blk = if (old_blk < newblk) newblkpos[old_blk] else old_blk;
+            const blk = if (newblkpos[old_blk] != NoRef) newblkpos[old_blk] else old_blk;
 
             var b = &self.b.items[blk];
             // TODO: RUNDA UPP
@@ -670,8 +669,11 @@ pub fn reorder_inst(self: *Self) !void {
                 newpos += 1;
             }
 
-            newblkpos[newblk] = blk;
-            // newblkpos[blk] = newblk;
+            if (blk != newblk) {
+                const oldval = if (newblkpos[newblk] != NoRef) newblkpos[newblk] else newblk;
+                newblkpos[blk] = newblk;
+                newblkpos[oldval] = blk;
+            }
 
             cur_blk = b.next();
 
