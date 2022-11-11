@@ -125,7 +125,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
             continue;
         }
         labels[ni] = cfo.get_target();
-        print("LABEL: {x} {}\n", .{ labels[ni], ni });
+        // print("LABEL: {x} {}\n", .{ labels[ni], ni });
         for (self.preds(uv(ni))) |pred| {
             const pr = &self.n.items[pred];
             const si: u1 = if (pr.s[0] == ni) 0 else 1;

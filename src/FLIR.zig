@@ -429,7 +429,7 @@ pub fn prePhi(self: *Self, node: u16, v: Inst) !u16 {
 // TODO: maintain wf of block 0: first all args, then all vars.
 
 pub fn arg(self: *Self) !u16 {
-    if (self.n.items.len == 0) return error.EEEEE;
+    if (self.n.items.len == 0) return error.FLIRError;
     const inst = try self.addInst(0, .{ .tag = .arg, .op1 = self.narg, .op2 = 0, .spec = Inst.TODO_INT_SPEC });
     self.narg += 1;
     return inst;
@@ -1066,6 +1066,21 @@ pub fn test_analysis(self: *Self, comptime check: bool) !void {
     if (check) try self.check_cfg_valid();
 }
 
+pub fn empty(self: *Self, ni: u16, allow_succ: bool) bool {
+    const node = &self.n.items[ni];
+    if (!allow_succ and node.s[0] != 0) return false;
+    if (node.firstblk == node.lastblk) {
+        const blk = self.b.items[node.firstblk];
+        for (blk.i) |i| {
+            if (i.tag != .empty) return false;
+        }
+        assert(node.s[1] == 0);
+        return true;
+    } else {
+        // we assume reorder_inst will kasta empty blocks, true??
+        return false;
+    }
+}
 pub fn get_jmp_or_last(self: *Self, n: *Node) !?Tag {
     var cur_blk: ?u16 = n.firstblk;
     var last_inst: ?Tag = null;
@@ -1139,4 +1154,30 @@ test "diamond cfg" {
     try self.ret(end, v);
 
     try self.test_analysis(true);
+}
+
+const IRParse = @import("./IRParse.zig");
+
+test "returner" {
+    const ir =
+        \\func returner
+        \\  ret 7
+        \\end
+    ;
+    var self = try init(8, test_allocator);
+    defer self.deinit();
+    var parser = IRParse.init(ir);
+    try parser.parse_func(&self, test_allocator);
+    try self.test_analysis(true);
+    var cfo = try CFO.init(test_allocator);
+    defer cfo.deinit();
+
+    _ = try @import("./codegen.zig").codegen(&self, &cfo);
+    try cfo.finalize();
+    const FunPtr = *const fn () callconv(.C) usize;
+    const val = cfo.get_ptr(0, FunPtr)();
+    try expectEqual(@as(usize, 7), val);
+
+    // try cfo.dbg_nasm(test_allocator);
+
 }
