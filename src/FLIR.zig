@@ -275,6 +275,7 @@ pub fn deinit(self: *Self) void {
     self.sccorder.deinit();
     self.refs.deinit();
     self.b.deinit();
+    self.vregs.deinit();
 }
 
 pub fn toref(blkid: u16, idx: u16) u16 {
@@ -1047,15 +1048,95 @@ fn print_mcval(i: Inst) void {
 const test_allocator = std.testing.allocator;
 const expectEqual = std.testing.expectEqual;
 
-pub fn test_analysis(self: *Self) !void {
+pub fn test_analysis(self: *Self, comptime check: bool) !void {
+    if (check) try self.check_cfg_valid();
     try self.calc_preds();
 
     //try self.calc_dfs();
     try self.calc_scc(); // also provides dfs
     try self.reorder_nodes();
+    if (check) try self.check_cfg_valid();
     try SSA_GVN.ssa_gvn(self);
 
     try self.reorder_inst();
+    if (check) try self.check_cfg_valid();
     try self.calc_use();
     try self.scan_alloc();
+
+    if (check) try self.check_cfg_valid();
+}
+
+pub fn get_jmp_or_last(self: *Self, n: *Node) !?Tag {
+    var cur_blk: ?u16 = n.firstblk;
+    var last_inst: ?Tag = null;
+    while (cur_blk) |blk| {
+        var b = &self.b.items[blk];
+        for (b.i) |i| {
+            if (i.tag == .empty) {
+                continue;
+            }
+            if (last_inst) |l| if (l == .ilessthan or l == .ret) return error.InvalidCFG;
+            last_inst = i.tag;
+        }
+        cur_blk = b.next();
+    }
+    return last_inst;
+}
+
+/// does not use or verify node.npred
+pub fn check_cfg_valid(self: *Self) !void {
+    const reached = try self.a.alloc(bool, self.n.items.len);
+    defer self.a.free(reached);
+    mem.set(bool, reached, false);
+    for (self.n.items) |*n| {
+        for (n.s) |s| {
+            if (s > self.n.items.len) return error.InvalidCFG;
+            reached[s] = true;
+        }
+    }
+    for (self.n.items) |*n, ni| {
+        const last = try self.get_jmp_or_last(n);
+        if ((last == Tag.ilessthan) != (n.s[1] != 0)) return error.InvalidCFG;
+        if (last == Tag.ret and n.s[0] != 0) return error.InvalidCFG;
+        if (n.s[0] == 0 and (last != Tag.ret and reached[ni])) return error.InvalidCFG;
+        // TODO: also !reached and n.s[0] != 0 (not verified by remove_empty)
+        if (!reached[ni] and (last != null)) return error.InvalidCFG;
+    }
+}
+
+test "diamond cfg" {
+    var self = try init(8, test_allocator);
+    defer self.deinit();
+
+    const start = try self.addNode();
+    const arg1 = try self.arg();
+    const arg2 = try self.arg();
+    const v = try self.variable();
+
+    // const const_0 = try self.const_int(start, 0);
+    const const_42 = try self.const_int(start, 42);
+    try self.putvar(start, v, const_42);
+    _ = try self.binop(start, .ilessthan, arg1, v);
+
+    const left = try self.addNode();
+    self.n.items[start].s[0] = left;
+    const addl = try self.iop(left, .add, v, arg2);
+    try self.putvar(left, v, addl);
+
+    const right = try self.addNode();
+    self.n.items[start].s[1] = right;
+    const addr = try self.iop(right, .add, v, arg1);
+    try self.putvar(right, v, addr);
+
+    const end = try self.addNode();
+    self.n.items[left].s[0] = end;
+    self.n.items[right].s[0] = end;
+
+    const const_77 = try self.const_int(end, 77);
+    const adde = try self.iop(end, .add, v, const_77);
+    try self.putvar(end, v, adde);
+
+    try self.ret(end, v);
+
+    try self.test_analysis(true);
 }
