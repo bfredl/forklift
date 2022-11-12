@@ -436,7 +436,7 @@ pub fn arg(self: *Self) !u16 {
 }
 
 pub fn variable(self: *Self) !u16 {
-    if (self.n.items.len == 0) return error.EEEEE;
+    if (self.n.items.len == 0) return error.FLIRError;
     const inst = try self.addInst(0, .{ .tag = .variable, .op1 = self.nvar, .op2 = 0, .spec = Inst.TODO_INT_SPEC });
     self.nvar += 1;
     return inst;
@@ -1158,26 +1158,42 @@ test "diamond cfg" {
 
 const IRParse = @import("./IRParse.zig");
 
-test "returner" {
-    const ir =
-        \\func returner
-        \\  ret 7
-        \\end
-    ;
+fn parse_test(ir: []const u8) !CFO {
     var self = try init(8, test_allocator);
     defer self.deinit();
     var parser = IRParse.init(ir);
     try parser.parse_func(&self, test_allocator);
     try self.test_analysis(true);
     var cfo = try CFO.init(test_allocator);
-    defer cfo.deinit();
 
     _ = try @import("./codegen.zig").codegen(&self, &cfo);
     try cfo.finalize();
-    const FunPtr = *const fn () callconv(.C) usize;
-    const val = cfo.get_ptr(0, FunPtr)();
-    try expectEqual(@as(usize, 7), val);
-
     // try cfo.dbg_nasm(test_allocator);
+    return cfo;
+}
 
+const UFunc = *const fn () callconv(.C) usize;
+
+test "returner" {
+    var cfo = try parse_test(
+        \\func returner
+        \\  ret 7
+        \\end
+    );
+    defer cfo.deinit();
+
+    try expectEqual(@as(usize, 7), cfo.get_ptr(0, UFunc)());
+}
+
+test "var returner" {
+    var cfo = try parse_test(
+        \\func returner
+        \\  var %myvar
+        \\  %myvar := 57
+        \\  ret %myvar
+        \\end
+    );
+    defer cfo.deinit();
+
+    try expectEqual(@as(usize, 57), cfo.get_ptr(0, UFunc)());
 }

@@ -120,6 +120,8 @@ pub fn parse_func(self: *Self, flir: *FLIR, allocator: Allocator) !void {
         .refs = std.StringHashMap(u16).init(allocator),
         .labels = std.StringHashMap(u16).init(allocator),
     };
+    defer func.refs.deinit();
+    defer func.labels.deinit();
 
     func.curnode = try func.ir.addNode();
     while (true) {
@@ -165,10 +167,15 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
             const retval = try require(try self.call_arg(f), "return value");
             try f.ir.ret(f.curnode, retval);
             return true;
+        } else if (mem.eql(u8, kw, "var")) {
+            const name = try self.varname() orelse return error.ParseError;
+            const item = try nonexisting(&f.refs, name, "ref %");
+            item.* = try f.ir.variable();
+            return true;
         } else if (mem.eql(u8, kw, "lessthan")) {
             const dest = try require(try self.call_arg(f), "dest");
             const src = try require(try self.call_arg(f), "src");
-            const target = try require(try self.labelname(), "src");
+            const target = try require(try self.labelname(), "target");
             _ = try f.ir.binop(f.curnode, .ilessthan, dest, src);
 
             // TODO: mark current node as DED, need either a new node or an unconditional jump
@@ -186,9 +193,21 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
             //return true;
         }
     } else if (try self.varname()) |dest| {
+        const next = self.nonws();
+        const is_var = (next == @as(u8, ':'));
+        if (is_var) self.pos += 1;
         try self.expect_char('=');
-        const item = try nonexisting(&f.refs, dest, "ref %");
-        item.* = try self.expr(f);
+        if (is_var) {
+            const thevar = f.refs.get(dest) orelse {
+                print("undefined var %{s}!\n", .{dest});
+                return error.ParseError;
+            };
+            const val = try self.expr(f);
+            try f.ir.putvar(f.curnode, thevar, val);
+        } else {
+            const item = try nonexisting(&f.refs, dest, "ref %");
+            item.* = try self.expr(f);
+        }
         return true;
     } else if (try self.labelname()) |label| {
         const item = try f.labels.getOrPut(label);
