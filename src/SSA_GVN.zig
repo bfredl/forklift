@@ -3,6 +3,7 @@ const math = std.math;
 const Allocator = std.mem.Allocator;
 const assert = std.debug.assert;
 const Self = @This();
+const print = std.debug.print;
 
 const FLIR = @import("./FLIR.zig");
 
@@ -45,6 +46,7 @@ fn fill_blk(self: Self, first_blk: u16) !void {
         for (b.i) |*i| {
             if (i.tag == .putvar) {
                 const ivar = self.f.iref(i.op1) orelse return error.UW0tM8;
+                print("putta {},{} = {}\n", .{ n, ivar.op1, i.op2 });
                 self.vdi(n, ivar.op1).* = i.op2;
                 // TODO: store debug info, or some shit
                 i.tag = .empty;
@@ -73,7 +75,7 @@ fn vdi(self: Self, node: u16, v: u16) *u16 {
 fn read_ref(self: Self, node: u16, ref: u16) !u16 {
     const i = self.f.iref(ref) orelse return FLIR.NoRef;
     if (i.tag == .variable) {
-        return self.read_var(node, i.*);
+        return self.read_var(node, ref, i.*);
     } else {
         // already on SSA-form, nothing to do
         return ref;
@@ -81,9 +83,10 @@ fn read_ref(self: Self, node: u16, ref: u16) !u16 {
 }
 
 const MaybePhi = @typeInfo(@TypeOf(FLIR.prePhi)).Fn.return_type.?;
-fn read_var(self: Self, node: u16, v: FLIR.Inst) MaybePhi {
+fn read_var(self: Self, node: u16, vref: u16, v: FLIR.Inst) MaybePhi {
     // It matters where you are
     const vd = self.vdi(node, v.op1);
+    print("läsa {},{} var {}\n", .{ node, v.op1, vd.* });
     if (vd.* != FLIR.NoRef) {
         return vd.*;
     }
@@ -96,15 +99,16 @@ fn read_var(self: Self, node: u16, v: FLIR.Inst) MaybePhi {
             const pred = self.f.refs.items[n.predref];
             // assert recursion eventually terminates
             assert(self.f.n.items[pred].dfnum < n.dfnum);
-            break :thedef try self.read_var(pred, v);
+            break :thedef try self.read_var(pred, vref, v);
         } else {
             // as an optimization, we could check if all predecessors
             // are filled (pred[i].dfnum < n.dfnum), and in that case
             // fill the phi node already;
-            break :thedef try self.f.prePhi(node, v);
+            break :thedef try self.f.prePhi(node, vref);
         }
     };
     vd.* = def;
+    print("definiera {},{} så att {}\n", .{ node, v.op1, vd.* });
     return def;
 }
 
@@ -127,7 +131,7 @@ fn resolve_phi(self: Self, b: u16, idx: u16) !void {
     const ivar = self.f.iref(i.op1) orelse return error.GLUGG;
     var onlyref: ?u16 = null;
     for (self.f.preds(blk.node)) |v| {
-        const ref = try self.read_var(v, ivar.*);
+        const ref = try self.read_var(v, i.op1, ivar.*);
         _ = try self.f.binop(v, .putphi, ref, FLIR.toref(b, idx));
         onlyref = if (onlyref) |only| if (only == ref) only else FLIR.NoRef else ref;
     }

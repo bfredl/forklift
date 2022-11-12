@@ -253,6 +253,10 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
     } else if (self.keyword()) |kw| {
         if (mem.eql(u8, kw, "arg")) {
             return f.ir.arg();
+        } else if (mem.eql(u8, kw, "add")) {
+            const left = try require(try self.call_arg(f), "left");
+            const right = try require(try self.call_arg(f), "right");
+            return f.ir.iop(f.curnode, .add, left, right);
         } else if (mem.eql(u8, kw, "alloc")) {
             unreachable;
             // return f.ir.alloc(f.curnode);

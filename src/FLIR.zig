@@ -422,8 +422,9 @@ pub fn ret(self: *Self, node: u16, val: u16) !void {
     _ = try self.addInst(node, .{ .tag = .ret, .op1 = val, .op2 = 0 });
 }
 
-pub fn prePhi(self: *Self, node: u16, v: Inst) !u16 {
-    return self.preInst(node, .{ .tag = .phi, .op1 = v.op1, .op2 = 0, .spec = v.spec });
+pub fn prePhi(self: *Self, node: u16, vref: u16) !u16 {
+    const v = self.iref(vref) orelse return error.FLIRError;
+    return self.preInst(node, .{ .tag = .phi, .op1 = vref, .op2 = 0, .spec = v.spec });
 }
 
 // TODO: maintain wf of block 0: first all args, then all vars.
@@ -1056,12 +1057,15 @@ pub fn test_analysis(self: *Self, comptime check: bool) !void {
     try self.calc_scc(); // also provides dfs
     try self.reorder_nodes();
     if (check) try self.check_cfg_valid();
+    self.debug_print();
     try SSA_GVN.ssa_gvn(self);
+    self.debug_print();
 
     try self.reorder_inst();
     if (check) try self.check_cfg_valid();
     try self.calc_use();
     try self.scan_alloc();
+    self.debug_print();
 
     if (check) try self.check_cfg_valid();
 }
@@ -1222,4 +1226,33 @@ test "diamond returner" {
     const fun = cfo.get_ptr(0, AFunc);
     try expectEqual(@as(usize, 20), fun(10));
     try expectEqual(@as(usize, 98), fun(35));
+}
+
+test "loop adder" {
+    var cfo = try parse_test(
+        \\func returner
+        \\  %y = arg
+        \\  var %i
+        \\  var %acc
+        \\  %i := 0
+        \\  %acc := 0
+        \\:loop
+        \\  jge %i %y :enda
+        \\:run
+        \\  %acc := add %acc %i
+        \\  %i := add %i 1
+        \\  jmp :loop
+        \\:enda
+        \\  ret %acc
+        \\end
+    );
+    defer cfo.deinit();
+
+    try cfo.dbg_nasm(test_allocator);
+    const fun = cfo.get_ptr(0, AFunc);
+    try expectEqual(@as(usize, 0), fun(0));
+    try expectEqual(@as(usize, 0), fun(1));
+    try expectEqual(@as(usize, 1), fun(2));
+    try expectEqual(@as(usize, 10), fun(5));
+    try expectEqual(@as(usize, 45), fun(10));
 }
