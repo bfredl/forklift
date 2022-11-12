@@ -46,7 +46,6 @@ fn fill_blk(self: Self, first_blk: u16) !void {
         for (b.i) |*i| {
             if (i.tag == .putvar) {
                 const ivar = self.f.iref(i.op1) orelse return error.UW0tM8;
-                print("putta {},{} = {}\n", .{ n, ivar.op1, i.op2 });
                 self.vdi(n, ivar.op1).* = i.op2;
                 // TODO: store debug info, or some shit
                 i.tag = .empty;
@@ -86,7 +85,6 @@ const MaybePhi = @typeInfo(@TypeOf(FLIR.prePhi)).Fn.return_type.?;
 fn read_var(self: Self, node: u16, vref: u16, v: FLIR.Inst) MaybePhi {
     // It matters where you are
     const vd = self.vdi(node, v.op1);
-    print("läsa {},{} var {}\n", .{ node, v.op1, vd.* });
     if (vd.* != FLIR.NoRef) {
         return vd.*;
     }
@@ -108,7 +106,6 @@ fn read_var(self: Self, node: u16, vref: u16, v: FLIR.Inst) MaybePhi {
         }
     };
     vd.* = def;
-    print("definiera {},{} så att {}\n", .{ node, v.op1, vd.* });
     return def;
 }
 

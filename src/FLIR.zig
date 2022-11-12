@@ -1057,15 +1057,12 @@ pub fn test_analysis(self: *Self, comptime check: bool) !void {
     try self.calc_scc(); // also provides dfs
     try self.reorder_nodes();
     if (check) try self.check_cfg_valid();
-    self.debug_print();
     try SSA_GVN.ssa_gvn(self);
-    self.debug_print();
 
     try self.reorder_inst();
     if (check) try self.check_cfg_valid();
     try self.calc_use();
     try self.scan_alloc();
-    self.debug_print();
 
     if (check) try self.check_cfg_valid();
 }
@@ -1248,11 +1245,11 @@ test "loop adder" {
     );
     defer cfo.deinit();
 
-    try cfo.dbg_nasm(test_allocator);
     const fun = cfo.get_ptr(0, AFunc);
     try expectEqual(@as(usize, 0), fun(0));
     try expectEqual(@as(usize, 0), fun(1));
-    try expectEqual(@as(usize, 1), fun(2));
     try expectEqual(@as(usize, 10), fun(5));
     try expectEqual(@as(usize, 45), fun(10));
+    try expectEqual(@as(usize, 1), fun(2));
+    try expectEqual(@as(usize, 3), fun(3));
 }
