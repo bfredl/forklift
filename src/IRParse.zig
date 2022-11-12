@@ -172,13 +172,19 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
             const item = try nonexisting(&f.refs, name, "ref %");
             item.* = try f.ir.variable();
             return true;
-        } else if (mem.eql(u8, kw, "lessthan")) {
+        } else if (mem.eql(u8, kw, "jmp")) {
+            const target = try require(try self.labelname(), "target");
+            // TODO: mark current node as DED, need a new node
+            f.ir.n.items[f.curnode].s[0] = try get_label(f, target, true);
+            return true;
+        } else if (mem.eql(u8, kw, "jge")) {
             const dest = try require(try self.call_arg(f), "dest");
             const src = try require(try self.call_arg(f), "src");
             const target = try require(try self.labelname(), "target");
             _ = try f.ir.binop(f.curnode, .ilessthan, dest, src);
 
             // TODO: mark current node as DED, need either a new node or an unconditional jump
+            // TODO: this is reverse polarity than Eiri. fix it!
             f.ir.n.items[f.curnode].s[1] = try get_label(f, target, true);
             return true;
         } else if (mem.eql(u8, kw, "store")) {

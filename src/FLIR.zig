@@ -1162,7 +1162,10 @@ fn parse_test(ir: []const u8) !CFO {
     var self = try init(8, test_allocator);
     defer self.deinit();
     var parser = IRParse.init(ir);
-    try parser.parse_func(&self, test_allocator);
+    parser.parse_func(&self, test_allocator) catch |e| {
+        print("fail at {}\n", .{parser.pos});
+        return e;
+    };
     try self.test_analysis(true);
     var cfo = try CFO.init(test_allocator);
 
@@ -1173,6 +1176,7 @@ fn parse_test(ir: []const u8) !CFO {
 }
 
 const UFunc = *const fn () callconv(.C) usize;
+const AFunc = *const fn (arg: usize) callconv(.C) usize;
 
 test "returner" {
     var cfo = try parse_test(
@@ -1196,4 +1200,26 @@ test "var returner" {
     defer cfo.deinit();
 
     try expectEqual(@as(usize, 57), cfo.get_ptr(0, UFunc)());
+}
+
+test "diamond returner" {
+    var cfo = try parse_test(
+        \\func returner
+        \\  %y = arg
+        \\  var %foo
+        \\  jge %y 17 :big
+        \\:small
+        \\  %foo := 20
+        \\  jmp :enda
+        \\:big
+        \\  %foo := 98
+        \\:enda
+        \\  ret %foo
+        \\end
+    );
+    defer cfo.deinit();
+
+    const fun = cfo.get_ptr(0, AFunc);
+    try expectEqual(@as(usize, 20), fun(10));
+    try expectEqual(@as(usize, 98), fun(35));
 }
