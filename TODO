@@ -1,0 +1,9 @@
+- make s[1] the taken branch of conditional jumps
+- support all jmp instuction of x86
+- port "delete unused critical node" from Eiri
+- calls:
+  - use qbe-style encoding (args as insructions b4 call)
+  - linux syscall
+  - amd64-sysv funccall
+
+Long term: integrate codebase completely with EIRI
