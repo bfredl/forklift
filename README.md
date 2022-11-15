@@ -16,7 +16,6 @@ Features:
 - [x] Unaligned and aligned load/store of XMM/YMM vectors
 - [x] Dump final output using `ndisasm`
 - [x] Tracebacks to generated code (using a custom signal handler or patch to stlib)
-- [x] _Partial_ support for being compiled with zig stage2
 
 Secondly, `src/FLIR.zig` implements a simple SSA IR on top of the above. What is implemented is a few basic compiler passes, like
 

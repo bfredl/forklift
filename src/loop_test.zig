@@ -39,13 +39,13 @@ pub fn main() !void {
     _ = try self.binop(loop, .ilessthan, var_i, arg3);
 
     // if true
-    self.n.items[loop].s[0] = loop;
+    self.n.items[loop].s[1] = loop;
     const end = try self.addNode();
-    self.n.items[loop].s[1] = end;
+    self.n.items[loop].s[0] = end;
 
     try self.ret(end, const_0);
 
-    try self.test_analysis();
+    try self.test_analysis(false);
 
     self.debug_print();
 

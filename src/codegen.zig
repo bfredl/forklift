@@ -224,19 +224,11 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
 
         // TODO: handle trivial critical-edge block.
         const fallthru = ni + 1;
-        if (n.s[0] == fallthru and n.s[1] != 0) {
-            try makejmp(self, cfo, .nl, uv(ni), 1, labels, targets);
-        } else {
-            const default: u1 = default: {
-                if (n.s[1] != 0) {
-                    try makejmp(self, cfo, .l, uv(ni), 0, labels, targets);
-                    break :default 1;
-                } else break :default 0;
-            };
-
-            if (n.s[default] != fallthru and n.s[default] != 0) {
-                try makejmp(self, cfo, null, uv(ni), default, labels, targets);
-            }
+        if (n.s[1] != 0) {
+            try makejmp(self, cfo, .l, uv(ni), 1, labels, targets);
+        }
+        if (n.s[0] != fallthru and n.s[0] != 0) {
+            try makejmp(self, cfo, null, uv(ni), 0, labels, targets);
         }
     }
 

@@ -22,12 +22,12 @@ pub fn main() !void {
     _ = try self.binop(start, .ilessthan, arg1, v);
 
     const left = try self.addNode();
-    self.n.items[start].s[0] = left;
+    self.n.items[start].s[1] = left;
     const addl = try self.iop(left, .add, v, arg2);
     try self.putvar(left, v, addl);
 
     const right = try self.addNode();
-    self.n.items[start].s[1] = right;
+    self.n.items[start].s[0] = right;
     const addr = try self.iop(right, .add, v, arg1);
     try self.putvar(right, v, addr);
 
@@ -41,7 +41,7 @@ pub fn main() !void {
 
     try self.ret(end, v);
 
-    try self.test_analysis();
+    try self.test_analysis(false);
 
     if (false) {
         var phii = self.iref(adde).?.op1;

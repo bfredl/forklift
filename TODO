@@ -6,4 +6,4 @@
   - linux syscall
   - amd64-sysv funccall
 
-Long term: integrate codebase completely with EIRI
+Long term: integrate codebase completely with EIRI (submodules bad! monorepos good!)

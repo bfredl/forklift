@@ -177,7 +177,7 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
             // TODO: mark current node as DED, need a new node
             f.ir.n.items[f.curnode].s[0] = try get_label(f, target, true);
             return true;
-        } else if (mem.eql(u8, kw, "jge")) {
+        } else if (mem.eql(u8, kw, "jlt")) {
             const dest = try require(try self.call_arg(f), "dest");
             const src = try require(try self.call_arg(f), "src");
             const target = try require(try self.labelname(), "target");
