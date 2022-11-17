@@ -16,6 +16,7 @@ const IPReg = CFO.IPReg;
 const VMathOp = CFO.VMathOp;
 const FMode = CFO.FMode;
 const AOp = CFO.AOp;
+const Cond = CFO.Cond;
 
 a: Allocator,
 // TODO: unmanage all these:
@@ -129,7 +130,7 @@ pub const Inst = struct {
             .lea => .intptr, // Lea? Who's Lea??
             .store => null,
             .iop => .intptr,
-            .ilessthan => null, // technically the FLAG register but anyway
+            .icmp => null, // technically the FLAG register but anyway
             .vmath => .avxval,
             .ret => null,
         };
@@ -160,7 +161,7 @@ pub const Tag = enum(u8) {
     lea,
     store,
     iop, // imath group?
-    ilessthan, // icmp group?
+    icmp,
     vmath,
     ret,
 };
@@ -219,7 +220,7 @@ pub fn n_op(tag: Tag, rw: bool) u2 {
         .lea => 2, // base, idx. elided when only used for a store!
         .store => 2, // addr, val
         .iop => 2,
-        .ilessthan => 2,
+        .icmp => 2,
         .vmath => 2,
         .ret => 1,
     };
@@ -251,7 +252,7 @@ pub fn has_res(tag: Tag) bool {
         .lea => true, // Lea? Who's Lea??
         .store => false,
         .iop => true,
-        .ilessthan => false, // technically yes, but no
+        .icmp => false, // technically yes, but no
         .vmath => true,
         .ret => false,
     };
@@ -406,6 +407,10 @@ pub fn vmath(self: *Self, node: u16, vop: VMathOp, fmode: FMode, op1: u16, op2: 
 
 pub fn iop(self: *Self, node: u16, vop: AOp, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .iop, .spec = vop.opx(), .op1 = op1, .op2 = op2 });
+}
+
+pub fn icmp(self: *Self, node: u16, cond: Cond, op1: u16, op2: u16) !u16 {
+    return self.addInst(node, .{ .tag = .iop, .spec = cond.off(), .op1 = op1, .op2 = op2 });
 }
 
 pub fn putvar(self: *Self, node: u16, op1: u16, op2: u16) !void {
@@ -1091,7 +1096,7 @@ pub fn get_jmp_or_last(self: *Self, n: *Node) !?Tag {
             if (i.tag == .empty) {
                 continue;
             }
-            if (last_inst) |l| if (l == .ilessthan or l == .ret) return error.InvalidCFG;
+            if (last_inst) |l| if (l == .icmp or l == .ret) return error.InvalidCFG;
             last_inst = i.tag;
         }
         cur_blk = b.next();
@@ -1112,7 +1117,7 @@ pub fn check_cfg_valid(self: *Self) !void {
     }
     for (self.n.items) |*n, ni| {
         const last = try self.get_jmp_or_last(n);
-        if ((last == Tag.ilessthan) != (n.s[1] != 0)) return error.InvalidCFG;
+        if ((last == Tag.icmp) != (n.s[1] != 0)) return error.InvalidCFG;
         if (last == Tag.ret and n.s[0] != 0) return error.InvalidCFG;
         if (n.s[0] == 0 and (last != Tag.ret and reached[ni])) return error.InvalidCFG;
         // TODO: also !reached and n.s[0] != 0 (not verified by remove_empty)

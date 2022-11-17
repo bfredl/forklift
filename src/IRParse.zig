@@ -2,11 +2,13 @@ str: []const u8,
 pos: usize = 0,
 
 const FLIR = @import("./FLIR.zig");
+const CFO = @import("./CFO.zig");
 const Self = @This();
 const std = @import("std");
 const print = std.debug.print;
 const mem = std.mem;
 const ParseError = error{ ParseError, OutOfMemory, FLIRError };
+const Cond = CFO.Cond;
 
 const Allocator = mem.Allocator;
 
@@ -159,6 +161,13 @@ fn get_label(f: *Func, name: []const u8, allow_existing: bool) ParseError!u16 {
     return item.value_ptr.*;
 }
 
+const jmpmap = std.ComptimeStringMap(Cond, .{
+    .{ "je", .e },
+    .{ "jne", .ne },
+    .{ "jl", .l },
+    .{ "jge", .nl },
+});
+
 pub fn stmt(self: *Self, f: *Func) ParseError!bool {
     if (self.keyword()) |kw| {
         if (mem.eql(u8, kw, "end")) {
@@ -177,14 +186,13 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
             // TODO: mark current node as DED, need a new node
             f.ir.n.items[f.curnode].s[0] = try get_label(f, target, true);
             return true;
-        } else if (mem.eql(u8, kw, "jlt")) {
+        } else if (jmpmap.get(kw)) |cond| {
             const dest = try require(try self.call_arg(f), "dest");
             const src = try require(try self.call_arg(f), "src");
             const target = try require(try self.labelname(), "target");
-            _ = try f.ir.binop(f.curnode, .ilessthan, dest, src);
+            _ = try f.ir.icmp(f.curnode, cond, dest, src);
 
             // TODO: mark current node as DED, need either a new node or an unconditional jump
-            // TODO: this is reverse polarity than Eiri. fix it!
             f.ir.n.items[f.curnode].s[1] = try get_label(f, target, true);
             return true;
         } else if (mem.eql(u8, kw, "store")) {

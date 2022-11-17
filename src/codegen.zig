@@ -138,6 +138,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
         var cur_blk: ?u16 = n.firstblk;
         var ea_fused: CFO.EAddr = undefined;
         var fused_inst: ?*Inst = null;
+        var cond: ?CFO.Cond = null;
         while (cur_blk) |blk| {
             var b = &self.b.items[blk];
             for (b.i) |*i| {
@@ -155,10 +156,11 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
                         try mcmovreg(cfo, i.*, dst); // elided if dst is register
                     },
                     .constant => try mcmovi(cfo, i.*),
-                    .ilessthan => {
+                    .icmp => {
                         const firstop = self.iref(i.op1).?.ipreg() orelse .rax;
                         try regmovmc(cfo, firstop, self.iref(i.op1).?.*);
                         try regaritmc(cfo, .cmp, firstop, self.iref(i.op2).?.*);
+                        cond = i.spec;
                     },
                     .putphi => {
                         // TODO: actually check for parallell-move conflicts
