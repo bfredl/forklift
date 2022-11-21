@@ -1186,8 +1186,13 @@ fn parse_test(ir: []const u8) !CFO {
     return cfo;
 }
 
+fn expect(comptime T: type, x: T, y: T) !void {
+    return expectEqual(x, y);
+}
+
 const UFunc = *const fn () callconv(.C) usize;
-const AFunc = *const fn (arg: usize) callconv(.C) usize;
+const AFunc = *const fn (arg1: usize) callconv(.C) usize;
+const BFunc = *const fn (arg1: usize, arg2: usize) callconv(.C) usize;
 
 test "returner" {
     var cfo = try parse_test(
@@ -1197,7 +1202,7 @@ test "returner" {
     );
     defer cfo.deinit();
 
-    try expectEqual(@as(usize, 7), cfo.get_ptr(0, UFunc)());
+    try expect(usize, 7, cfo.get_ptr(0, UFunc)());
 }
 
 test "var returner" {
@@ -1210,7 +1215,7 @@ test "var returner" {
     );
     defer cfo.deinit();
 
-    try expectEqual(@as(usize, 57), cfo.get_ptr(0, UFunc)());
+    try expect(usize, 57, cfo.get_ptr(0, UFunc)());
 }
 
 test "diamond returner" {
@@ -1231,12 +1236,11 @@ test "diamond returner" {
     defer cfo.deinit();
 
     const fun = cfo.get_ptr(0, AFunc);
-    try expectEqual(@as(usize, 20), fun(10));
-    try expectEqual(@as(usize, 98), fun(35));
+    try expect(usize, 20, fun(10));
+    try expect(usize, 98, fun(35));
 }
 
 test "loop adder" {
-    // TODO: horrific, but works (restore jge properly)
     var cfo = try parse_test(
         \\func returner
         \\  %y = arg
@@ -1257,10 +1261,35 @@ test "loop adder" {
     defer cfo.deinit();
 
     const fun = cfo.get_ptr(0, AFunc);
-    try expectEqual(@as(usize, 0), fun(0));
-    try expectEqual(@as(usize, 0), fun(1));
-    try expectEqual(@as(usize, 10), fun(5));
-    try expectEqual(@as(usize, 45), fun(10));
-    try expectEqual(@as(usize, 1), fun(2));
-    try expectEqual(@as(usize, 3), fun(3));
+    try expect(usize, 0, fun(0));
+    try expect(usize, 0, fun(1));
+    try expect(usize, 10, fun(5));
+    try expect(usize, 45, fun(10));
+    try expect(usize, 1, fun(2));
+    try expect(usize, 3, fun(3));
+}
+
+test "equality" {
+    var cfo = try parse_test(
+        \\func returner
+        \\  %x = arg
+        \\  %y = arg
+        \\  var %res
+        \\  jne %x %y :noteq
+        \\:eq
+        \\  %res := 1
+        \\  jmp :enda
+        \\:noteq
+        \\  %res := 0
+        \\:enda
+        \\  ret %res
+        \\end
+    );
+    defer cfo.deinit();
+
+    const fun = cfo.get_ptr(0, BFunc);
+    try expect(usize, 0, fun(2, 4));
+    try expect(usize, 1, fun(3, 3));
+    try expect(usize, 0, fun(4, 2));
+    try expect(usize, 1, fun(3, 3));
 }

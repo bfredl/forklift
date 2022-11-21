@@ -1,8 +1,21 @@
-- support all jmp instuction of x86
 - port "delete unused critical node" from Eiri
 - calls:
   - use qbe-style encoding (args as insructions b4 call)
   - linux syscall
   - amd64-sysv funccall
+
+- regalloc:
+ - first, implement liveness interval spliting:
+   - implement block-splitting to insert insns in the middle of a node
+   - "%b = copy %a" instruction
+     - for node-locals, rename all %a to %b later in the node
+     - for vregs: introduce some kind of vreg-to-ref table per node?
+ - mostly following "Linear Scan Register Allocation on SSA Form"; Wimmer, Franz; 2010
+ - model the data structures needed to implement ssa-linearscan
+   - allow ~O(v^2) where v are all temps+vregs visible in a _single_ node
+   - but strive for ~ O(V^1) for total number of vregs V
+
+ - follow up project: attempt to generalize reverse-mode linear scan to general (at least reducible) CFG:s.
+  (only worth it if the struct/algo becomes simpler than
 
 Long term: integrate codebase completely with EIRI (submodules bad! monorepos good!)
