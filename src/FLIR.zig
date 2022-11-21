@@ -832,6 +832,17 @@ pub fn alloc_arg(self: *Self, inst: *Inst) !void {
     inst.mcidx = regs[inst.op1].id();
 }
 
+// makes space for a slot after instruction "after"
+// invalidates all refs after "after" (in self.n order), but leaves earlier untouched.
+// returns the slot (currenty having an Empty filler)
+// no need to split if there is an Empty in the same block (or just after if "after" is last)
+// TODO: take an arg for how many slots are needed?
+pub fn maybe_split(self: *Self, after: u16) u16 {
+    const r = fromref(after);
+    const blk = &self.b.items[r.block];
+    _ = blk;
+}
+
 // fills up some registers, and then goes to the stack.
 // reuses op1 if it is from the same block and we are the last user
 pub fn trivial_alloc(self: *Self) !void {
@@ -1071,9 +1082,6 @@ pub fn test_analysis(self: *Self, comptime check: bool) !void {
     try self.reorder_inst();
     if (check) try self.check_cfg_valid();
     try self.calc_use();
-    try self.scan_alloc();
-
-    if (check) try self.check_cfg_valid();
 }
 
 pub fn empty(self: *Self, ni: u16, allow_succ: bool) bool {

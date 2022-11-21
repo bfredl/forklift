@@ -15,6 +15,9 @@ pub fn parse_test(ir: []const u8) !CFO {
         return e;
     };
     try self.test_analysis(true);
+    try self.scan_alloc();
+    try self.check_cfg_valid();
+
     var cfo = try CFO.init(test_allocator);
 
     _ = try @import("./codegen.zig").codegen(&self, &cfo);
@@ -166,4 +169,6 @@ test "diamond cfg" {
     try self.ret(end, v);
 
     try self.test_analysis(true);
+    try self.scan_alloc();
+    try self.check_cfg_valid();
 }
