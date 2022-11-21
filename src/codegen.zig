@@ -160,7 +160,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
                         const firstop = self.iref(i.op1).?.ipreg() orelse .rax;
                         try regmovmc(cfo, firstop, self.iref(i.op1).?.*);
                         try regaritmc(cfo, .cmp, firstop, self.iref(i.op2).?.*);
-                        cond = i.spec;
+                        cond = @intToEnum(CFO.Cond, i.spec);
                     },
                     .putphi => {
                         // TODO: actually check for parallell-move conflicts
@@ -227,7 +227,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
         // TODO: handle trivial critical-edge block.
         const fallthru = ni + 1;
         if (n.s[1] != 0) {
-            try makejmp(self, cfo, .l, uv(ni), 1, labels, targets);
+            try makejmp(self, cfo, cond.?, uv(ni), 1, labels, targets);
         }
         if (n.s[0] != fallthru and n.s[0] != 0) {
             try makejmp(self, cfo, null, uv(ni), 0, labels, targets);

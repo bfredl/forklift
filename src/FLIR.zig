@@ -410,7 +410,7 @@ pub fn iop(self: *Self, node: u16, vop: AOp, op1: u16, op2: u16) !u16 {
 }
 
 pub fn icmp(self: *Self, node: u16, cond: Cond, op1: u16, op2: u16) !u16 {
-    return self.addInst(node, .{ .tag = .iop, .spec = cond.off(), .op1 = op1, .op2 = op2 });
+    return self.addInst(node, .{ .tag = .icmp, .spec = cond.off(), .op1 = op1, .op2 = op2 });
 }
 
 pub fn putvar(self: *Self, node: u16, op1: u16, op2: u16) !void {
@@ -1055,7 +1055,12 @@ const test_allocator = std.testing.allocator;
 const expectEqual = std.testing.expectEqual;
 
 pub fn test_analysis(self: *Self, comptime check: bool) !void {
-    if (check) try self.check_cfg_valid();
+    if (check) {
+        self.check_cfg_valid() catch |err| {
+            self.debug_print();
+            return err;
+        };
+    }
     try self.calc_preds();
 
     //try self.calc_dfs();
@@ -1137,7 +1142,7 @@ test "diamond cfg" {
     // const const_0 = try self.const_int(start, 0);
     const const_42 = try self.const_int(start, 42);
     try self.putvar(start, v, const_42);
-    _ = try self.binop(start, .ilessthan, arg1, v);
+    _ = try self.icmp(start, .l, arg1, v);
 
     const left = try self.addNode();
     self.n.items[start].s[0] = left;
@@ -1191,7 +1196,6 @@ test "returner" {
         \\end
     );
     defer cfo.deinit();
-    try cfo.dbg_nasm(test_allocator);
 
     try expectEqual(@as(usize, 7), cfo.get_ptr(0, UFunc)());
 }
@@ -1205,7 +1209,6 @@ test "var returner" {
         \\end
     );
     defer cfo.deinit();
-    try cfo.dbg_nasm(test_allocator);
 
     try expectEqual(@as(usize, 57), cfo.get_ptr(0, UFunc)());
 }
@@ -1215,7 +1218,7 @@ test "diamond returner" {
         \\func returner
         \\  %y = arg
         \\  var %foo
-        \\  jlt %y 17 :small
+        \\  jl %y 17 :small
         \\:big
         \\  %foo := 98
         \\  jmp :enda
@@ -1242,8 +1245,7 @@ test "loop adder" {
         \\  %i := 0
         \\  %acc := 0
         \\:loop
-        \\  jlt %i %y :run
-        \\  jmp :enda
+        \\  jge %i %y :enda
         \\:run
         \\  %acc := add %acc %i
         \\  %i := add %i 1

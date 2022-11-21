@@ -113,7 +113,7 @@ pub const Cond = enum(u4) {
     pub const be = C.na;
     pub const ge = C.nl;
     pub const le = C.ng;
-    fn off(self: @This()) u8 {
+    pub fn off(self: @This()) u8 {
         return @as(u8, @enumToInt(self));
     }
 };
