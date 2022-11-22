@@ -1,0 +1,55 @@
+const FLIR = @import("./FLIR.zig");
+const CFO = @import("./CFO.zig");
+const print = std.debug.print;
+
+const IRParse = @import("./IRParse.zig");
+const std = @import("std");
+const mem = std.mem;
+const os = std.os;
+
+pub fn usage() void {
+    print("no.\n", .{});
+}
+
+pub fn main() !void {
+    const argv = std.os.argv;
+    if (argv.len < 2) return usage();
+    const firstarg = mem.span(argv[1]);
+    var filearg = firstarg;
+
+    const mode = @import("builtin").mode;
+    var gpa = if (mode == .Debug)
+        std.heap.GeneralPurposeAllocator(.{}){}
+    else
+        std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const allocator = gpa.allocator();
+
+    const fil = try std.fs.cwd().openFile(filearg, .{});
+    const stat = try os.fstat(fil.handle);
+    const size = std.math.cast(usize, stat.size) orelse return error.FileTooBig;
+    const buf = try allocator.alloc(u8, size);
+    defer allocator.free(buf);
+
+    if (try fil.readAll(buf) < size) {
+        return error.IOError;
+    }
+
+    var ir = try FLIR.init(8, allocator);
+    defer ir.deinit();
+    var parser = IRParse.init(buf);
+    // try parser.fd_objs.put("count", map_count);
+    parser.parse_func(&ir, allocator) catch |e| {
+        print("error at byte {} of {}\n", .{ parser.pos, buf.len });
+        return e;
+    };
+
+    try ir.test_analysis(true);
+    try ir.scan_alloc();
+    try ir.check_cfg_valid();
+
+    var cfo = try CFO.init(allocator);
+
+    _ = try @import("./codegen.zig").codegen(&ir, &cfo);
+    try cfo.finalize();
+    try cfo.dbg_nasm(allocator);
+}
