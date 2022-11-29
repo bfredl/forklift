@@ -204,6 +204,14 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
             // TODO: mark current node as DED, need either a new node or an unconditional jump
             f.ir.n.items[f.curnode].s[1] = try get_label(f, target, true);
             return true;
+        } else if (mem.eql(u8, kw, "vstore")) { // TODO: NIIN
+            try self.expect_char('[');
+            const dest = try require(try self.call_arg(f), "destination");
+            const idx = try require(try self.call_arg(f), "idx");
+            try self.expect_char(']');
+            const value = try require(try self.call_arg(f), "value");
+            _ = try f.ir.store(f.curnode, dest, idx, value);
+            return true;
         } else if (mem.eql(u8, kw, "store")) {
             try self.expect_char('[');
             const dest = try require(try self.call_arg(f), "destination");
@@ -270,10 +278,36 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
     } else if (self.keyword()) |kw| {
         if (mem.eql(u8, kw, "arg")) {
             return f.ir.arg();
+        } else if (mem.eql(u8, kw, "vload")) {
+            const name = try require(self.keyword(), "fmode");
+            const fmode = meta.stringToEnum(CFO.FMode, name) orelse {
+                print("eioouuu: '{s}'\n", .{name});
+                return error.ParseError;
+            };
+            // TODO: absract away EAddr properly
+            const base = try require(try self.call_arg(f), "base");
+            const idx = try require(try self.call_arg(f), "idx");
+            return f.ir.vbinop(f.curnode, .load, fmode, base, idx);
         } else if (alumap.get(kw)) |op| {
             const left = try require(try self.call_arg(f), "left");
             const right = try require(try self.call_arg(f), "right");
             return f.ir.iop(f.curnode, op, left, right);
+        } else if (mem.eql(u8, kw, "vop")) {
+            // TODO: make this optional, if both op1/op2 share a fmode
+            const modename = try require(self.keyword(), "fmode");
+            const fmode = meta.stringToEnum(CFO.FMode, modename) orelse {
+                print("eioouuu: '{s}'\n", .{modename});
+                return error.ParseError;
+            };
+            const opname = try require(self.keyword(), "vop");
+            const op = meta.stringToEnum(CFO.VMathOp, opname) orelse {
+                print("aeue-r: '{s}'\n", .{opname});
+                return error.ParseError;
+            };
+
+            const left = try require(try self.call_arg(f), "left");
+            const right = try require(try self.call_arg(f), "right");
+            return f.ir.vmath(f.curnode, op, fmode, left, right);
         } else if (mem.eql(u8, kw, "syscall")) {
             const name = try require(self.keyword(), "name");
             // TODO: non-native for

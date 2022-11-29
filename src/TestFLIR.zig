@@ -239,3 +239,27 @@ test "bander" {
     try expect(usize, 4, fun(5, 6));
     try expect(usize, 2, fun(10, 34));
 }
+
+test "vopper" {
+    // TODO: lol obviously support this without %z arg as well
+    var cfo = try parse_test(
+        \\func returner
+        \\  %x = arg
+        \\  %y = arg
+        \\  %z = arg
+        \\  %xa = vload sd %x %z
+        \\  %ya = vload sd %y %z
+        \\  %za = vop sd add %xa %ya
+        \\  vstore [%x %z] %za
+        \\  ret 0
+        \\end
+    );
+    defer cfo.deinit();
+    var x: f64 = 28.0;
+    var y: f64 = 2.75;
+
+    const FFunc = *const fn (arg1: *f64, arg2: *f64, yark: usize) callconv(.C) usize;
+    const fun = cfo.get_ptr(0, FFunc);
+    try expect(usize, 0, fun(&x, &y, 0));
+    try expect(f64, 30.75, x);
+}
