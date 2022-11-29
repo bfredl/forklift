@@ -427,6 +427,20 @@ pub fn ret(self: *Self, node: u16, val: u16) !void {
     _ = try self.addInst(node, .{ .tag = .ret, .op1 = val, .op2 = 0 });
 }
 
+pub fn callarg(self: *Self, node: u16, num: u8, ref: u16) !void {
+    // TODO: add a separate "abi" analysis step for this, like QBE does
+    const callregs: IPReg = .{ .rdi, .rsi, .rdx, .rcx, .r8, .r9 };
+    if (num >= callregs.size) error.@"big oooof";
+    _ = try self.addInst(node, .{
+        .tag = .callarg,
+        .spec = num,
+        .op1 = ref,
+        .op2 = 0,
+        .mckind = .ipreg,
+        .mcidx = @enumToInt(callregs[num]),
+    });
+}
+
 pub fn prePhi(self: *Self, node: u16, vref: u16) !u16 {
     const v = self.iref(vref) orelse return error.FLIRError;
     return self.preInst(node, .{ .tag = .phi, .op1 = vref, .op2 = 0, .spec = v.spec });
@@ -837,10 +851,58 @@ pub fn alloc_arg(self: *Self, inst: *Inst) !void {
 // returns the slot (currenty having an Empty filler)
 // no need to split if there is an Empty in the same block (or just after if "after" is last)
 // TODO: take an arg for how many slots are needed?
-pub fn maybe_split(self: *Self, after: u16) u16 {
+pub fn maybe_split(self: *Self, after: u16) !u16 {
     const r = fromref(after);
     const blk = &self.b.items[r.block];
-    _ = blk;
+    const node = &self.n.items[blk.node];
+    if (r.idx < BLK_SIZE - 1) {
+        if (blk.i[r.idx + 1].tag == .empty) {
+            return after + 1;
+        }
+    } else {
+        if (blk.succ != NoRef) {
+            const blk2 = &self.b.items[blk.succ];
+            if (blk2.i[0].tag == .empty) {
+                return toref(blk.succ, 0);
+            }
+        }
+    }
+
+    // TODO: if block looks like {xx, after, yy, empty}, we could instead move yy to empty
+    // and return its place
+
+    const old_succ = blk.succ;
+    const blkid = uv(self.b.items.len);
+    blk.succ = blkid;
+    var newblk = try self.b.addOne();
+    newblk.* = .{ .node = blk.node, .succ = old_succ };
+    node.lastblk = blkid;
+
+    if (r.idx < BLK_SIZE - 1) {
+        mem.copy(Inst, newblk.i[r.idx + 1 ..], blk.i[r.idx + 1 ..]);
+        mem.set(Inst, blk.i[r.idx + 1 ..], EMPTY);
+        var i = r.idx + 1;
+        while (i < BLK_SIZE) : (i += 1) {
+            self.renumber_sloow(toref(r.block, i), toref(blkid, i));
+        }
+        return toref(r.block, r.idx + 1);
+    } else {
+        return toref(blkid, 0);
+    }
+}
+
+pub fn renumber_sloow(self: *Self, from: u16, to: u16) void {
+    for (self.b.items) |*blk| {
+        for (blk.i) |*i| {
+            const nop = n_op(i.tag, false);
+            if (nop > 0) {
+                if (i.op1 == from) i.op1 = to;
+                if (nop > 1) {
+                    if (i.op2 == from) i.op2 = to;
+                }
+            }
+        }
+    }
 }
 
 // fills up some registers, and then goes to the stack.
@@ -921,6 +983,9 @@ pub fn scan_alloc(self: *Self) !void {
                     try self.alloc_arg(i);
                     assert(active_ipreg[i.mcidx] <= ref);
                     active_ipreg[i.mcidx] = i.last_use;
+                } else if (i.tag == .constant) {
+                    // TODO: check as needed
+                    i.mckind = .fused;
                 } else if (has_res(i.tag) and i.mckind.unallocated()) {
                     const is_avx = (i.res_type() == ValType.avxval);
                     const regkind: MCKind = if (is_avx) .vfreg else .ipreg;
@@ -1030,7 +1095,7 @@ fn print_blk(self: *Self, firstblk: u16) void {
             }
             print_mcval(i);
             if (i.last_use != NoRef) {
-                // this is a compiler bug ("*" emitted for Noref)
+                // this is a compiler bug ("*" emitted for NoRef)
                 //print(" <{}{s}>", .{ i.n_use, @as([]const u8, if (i.vreg != NoRef) "*" else "") });
                 // this is getting ridiculous
                 if (i.vreg != NoRef) {

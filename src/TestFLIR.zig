@@ -6,24 +6,32 @@ const std = @import("std");
 const IRParse = @import("./IRParse.zig");
 const test_allocator = std.testing.allocator;
 
-pub fn parse_test(ir: []const u8) !CFO {
+pub fn parse(ir: []const u8) !FLIR {
     var self = try FLIR.init(8, test_allocator);
-    defer self.deinit();
     var parser = IRParse.init(ir);
     parser.parse_func(&self, test_allocator) catch |e| {
         print("fail at {}\n", .{parser.pos});
         return e;
     };
+    return self;
+}
+
+pub fn analyze_generate(self: *FLIR) !CFO {
     try self.test_analysis(true);
     try self.scan_alloc();
     try self.check_cfg_valid();
 
     var cfo = try CFO.init(test_allocator);
 
-    _ = try @import("./codegen.zig").codegen(&self, &cfo);
+    _ = try @import("./codegen.zig").codegen(self, &cfo);
     try cfo.finalize();
-    // try cfo.dbg_nasm(test_allocator);
     return cfo;
+}
+
+pub fn parse_test(ir: []const u8) !CFO {
+    var self = try parse(ir);
+    defer self.deinit();
+    return analyze_generate(&self);
 }
 
 pub fn expect(comptime T: type, x: T, y: T) !void {
@@ -171,4 +179,24 @@ test "diamond cfg" {
     try self.test_analysis(true);
     try self.scan_alloc();
     try self.check_cfg_valid();
+}
+
+test "maybe_split" {
+    var self = try parse(
+        \\func returner
+        \\  %x = arg
+        \\  %c = 1
+        \\  %y = add %x %c
+        \\  ret %y
+        \\end
+    );
+    defer self.deinit();
+
+    const pos = 1; // TODO: get("%c")
+    const new_pos = try self.maybe_split(pos);
+    try std.testing.expectEqual(self.iref(new_pos).?.tag, .empty);
+    var cfo = try analyze_generate(&self);
+    defer cfo.deinit();
+    const fun = cfo.get_ptr(0, AFunc);
+    try expect(usize, 12, fun(11));
 }
