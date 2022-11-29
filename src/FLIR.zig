@@ -133,6 +133,8 @@ pub const Inst = struct {
             .icmp => null, // technically the FLAG register but anyway
             .vmath => .avxval,
             .ret => null,
+            .call => .intptr,
+            .callarg => null,
         };
     }
 
@@ -164,6 +166,8 @@ pub const Tag = enum(u8) {
     icmp,
     vmath,
     ret,
+    call,
+    callarg,
 };
 
 pub const MCKind = enum(u8) {
@@ -223,6 +227,8 @@ pub fn n_op(tag: Tag, rw: bool) u2 {
         .icmp => 2,
         .vmath => 2,
         .ret => 1,
+        .callarg => 1,
+        .call => 0, // could be for funptr/dynamic syscall?
     };
 }
 
@@ -255,6 +261,8 @@ pub fn has_res(tag: Tag) bool {
         .icmp => false, // technically yes, but no
         .vmath => true,
         .ret => false,
+        .call => true,
+        .callarg => true,
     };
 }
 
@@ -429,8 +437,8 @@ pub fn ret(self: *Self, node: u16, val: u16) !void {
 
 pub fn callarg(self: *Self, node: u16, num: u8, ref: u16) !void {
     // TODO: add a separate "abi" analysis step for this, like QBE does
-    const callregs: IPReg = .{ .rdi, .rsi, .rdx, .rcx, .r8, .r9 };
-    if (num >= callregs.size) error.@"big oooof";
+    const callregs: [6]IPReg = .{ .rdi, .rsi, .rdx, .rcx, .r8, .r9 };
+    if (num >= callregs.len) return error.FLIRError;
     _ = try self.addInst(node, .{
         .tag = .callarg,
         .spec = num,
@@ -438,6 +446,17 @@ pub fn callarg(self: *Self, node: u16, num: u8, ref: u16) !void {
         .op2 = 0,
         .mckind = .ipreg,
         .mcidx = @enumToInt(callregs[num]),
+    });
+}
+
+pub fn call(self: *Self, node: u16, num: u16) !u16 {
+    return try self.addInst(node, .{
+        .tag = .call,
+        .op1 = num,
+        .op2 = NoRef,
+        .mckind = .ipreg,
+        // TODO: add a separate "abi" analysis step for this, like QBE does
+        .mcidx = @enumToInt(IPReg.rax),
     });
 }
 
@@ -983,7 +1002,7 @@ pub fn scan_alloc(self: *Self) !void {
                     try self.alloc_arg(i);
                     assert(active_ipreg[i.mcidx] <= ref);
                     active_ipreg[i.mcidx] = i.last_use;
-                } else if (i.tag == .constant) {
+                } else if (i.tag == .constant and i.mckind.unallocated()) {
                     // TODO: check as needed
                     i.mckind = .fused;
                 } else if (has_res(i.tag) and i.mckind.unallocated()) {

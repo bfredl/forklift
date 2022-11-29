@@ -426,6 +426,13 @@ pub fn trap(self: *Self) !void {
     try self.wb(0xCC); // INT 03h
 }
 
+pub fn syscall(self: *Self) !void {
+    try self.new_inst(@returnAddress());
+    // hello?
+    try self.wb(0x0F);
+    try self.wb(0x05);
+}
+
 // there..
 pub fn jfwd(self: *Self, cond: ?Cond) !u32 {
     try self.new_inst(@returnAddress());

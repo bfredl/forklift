@@ -148,6 +148,8 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
                 switch (i.tag) {
                     // empty doesn't flush fused value
                     .empty => continue,
+                    // these expect their values to be in place when executed
+                    .arg, .phi => {},
                     .ret => try regmovmc(cfo, .rax, self.iref(i.op1).?.*),
                     .iop => {
                         const dst = i.ipreg() orelse .rax;
@@ -216,8 +218,23 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
                         const dst = i.avxreg() orelse unreachable;
                         try cfo.vmathf(i.vop(), i.fmode(), dst, x, y);
                     },
+                    .callarg => {
+                        try regmovmc(cfo, i.ipreg().?, self.iref(i.op1).?.*);
+                    },
+                    .call => {
+                        if (i.op1 != 0) { // TODO: le wat
+                            try cfo.movri(.rax, i.op1);
+                        } else {
+                            // THANKS INTEL
+                            try cfo.arit(.xor, .rax, .rax);
+                        }
+                        try cfo.syscall();
+                    },
 
-                    else => {},
+                    else => {
+                        print("unhandled tag: {}\n", .{i.tag});
+                        return error.Panik;
+                    },
                 }
                 fused_inst = if (was_fused) i else null;
             }

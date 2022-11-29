@@ -9,6 +9,7 @@ const print = std.debug.print;
 const mem = std.mem;
 const ParseError = error{ ParseError, OutOfMemory, FLIRError };
 const Cond = CFO.Cond;
+const meta = std.meta;
 
 const Allocator = mem.Allocator;
 
@@ -265,6 +266,22 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
             const left = try require(try self.call_arg(f), "left");
             const right = try require(try self.call_arg(f), "right");
             return f.ir.iop(f.curnode, .add, left, right);
+        } else if (mem.eql(u8, kw, "syscall")) {
+            const name = try require(self.keyword(), "name");
+            // TODO: non-native for
+            const syscall = meta.stringToEnum(std.os.linux.SYS, name) orelse {
+                print("unknown syscall: '{s}'\n", .{name});
+                return error.ParseError;
+            };
+            var argno: u8 = 0;
+            // TODO: call_arg could be something more complex later,
+            // to simplify analyis we want all .callarg insn
+            // in a row before the .call
+            while (try self.call_arg(f)) |arg| {
+                try f.ir.callarg(f.curnode, argno, arg);
+                argno += 1;
+            }
+            return try f.ir.call(f.curnode, @intCast(u16, @enumToInt(syscall)));
         } else if (mem.eql(u8, kw, "alloc")) {
             unreachable;
             // return f.ir.alloc(f.curnode);
