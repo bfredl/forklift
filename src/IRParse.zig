@@ -169,6 +169,14 @@ const jmpmap = std.ComptimeStringMap(Cond, .{
     .{ "jge", .nl },
 });
 
+const alumap = std.ComptimeStringMap(CFO.AOp, .{
+    .{ "add", .add },
+    .{ "sub", .sub },
+    .{ "and", .band },
+    .{ "or", .bor },
+    .{ "xor", .xor },
+});
+
 pub fn stmt(self: *Self, f: *Func) ParseError!bool {
     if (self.keyword()) |kw| {
         if (mem.eql(u8, kw, "end")) {
@@ -262,10 +270,10 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
     } else if (self.keyword()) |kw| {
         if (mem.eql(u8, kw, "arg")) {
             return f.ir.arg();
-        } else if (mem.eql(u8, kw, "add")) {
+        } else if (alumap.get(kw)) |op| {
             const left = try require(try self.call_arg(f), "left");
             const right = try require(try self.call_arg(f), "right");
-            return f.ir.iop(f.curnode, .add, left, right);
+            return f.ir.iop(f.curnode, op, left, right);
         } else if (mem.eql(u8, kw, "syscall")) {
             const name = try require(self.keyword(), "name");
             // TODO: non-native for

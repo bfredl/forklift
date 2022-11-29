@@ -223,3 +223,19 @@ test "syscall" {
         @panic("exit syscall failed");
     }
 }
+
+test "bander" {
+    var cfo = try parse_test(
+        \\func returner
+        \\  %x = arg
+        \\  %y = arg
+        \\  %z = and %x %y
+        \\  ret %z
+        \\end
+    );
+    defer cfo.deinit();
+
+    const fun = cfo.get_ptr(0, BFunc);
+    try expect(usize, 4, fun(5, 6));
+    try expect(usize, 2, fun(10, 34));
+}
