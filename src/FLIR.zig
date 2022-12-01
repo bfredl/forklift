@@ -1037,7 +1037,7 @@ pub fn scan_alloc(self: *Self) !void {
                     if (i.tag == .iop) {
                         if (self.iref(i.op1).?.ipreg()) |reg| {
                             if (the_active[@enumToInt(reg)] <= ref) {
-                                // regid = @enumToInt(reg);
+                                regid = @enumToInt(reg);
                             }
                         }
                     }
