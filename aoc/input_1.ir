@@ -4,6 +4,15 @@ func returner
   %x = arg
   %len = arg
   %ipos := 0
+  %num := 0
+:loop
   %byte = load byte [%x %ipos]
-  ret %byte
+  %token = sub %byte 48
+  ja %token 9 :enda
+:doit
+  %num := add %token %num
+  %ipos := add %ipos 1
+  jmp :loop
+:enda
+  ret %num
 end

@@ -167,6 +167,8 @@ const jmpmap = std.ComptimeStringMap(Cond, .{
     .{ "jne", .ne },
     .{ "jl", .l },
     .{ "jge", .nl },
+    .{ "ja", .a },
+    .{ "jna", .na },
 });
 
 const alumap = std.ComptimeStringMap(CFO.AOp, .{
