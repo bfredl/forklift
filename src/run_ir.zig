@@ -11,6 +11,17 @@ pub fn usage() void {
     print("no.\n", .{});
 }
 
+pub fn readall(allocator: mem.Allocator, filename: []u8) ![]u8 {
+    const fil = try std.fs.cwd().openFile(filename, .{});
+    const stat = try os.fstat(fil.handle);
+    const size = std.math.cast(usize, stat.size) orelse return error.FileTooBig;
+    const buf = try allocator.alloc(u8, size);
+    if (try fil.readAll(buf) < size) {
+        return error.IOError;
+    }
+    return buf;
+}
+
 pub fn main() !void {
     const argv = std.os.argv;
     if (argv.len < 2) return usage();
@@ -24,15 +35,11 @@ pub fn main() !void {
         std.heap.ArenaAllocator.init(std.heap.page_allocator);
     const allocator = gpa.allocator();
 
-    const fil = try std.fs.cwd().openFile(filearg, .{});
-    const stat = try os.fstat(fil.handle);
-    const size = std.math.cast(usize, stat.size) orelse return error.FileTooBig;
-    const buf = try allocator.alloc(u8, size);
+    const buf = try readall(allocator, filearg);
     defer allocator.free(buf);
 
-    if (try fil.readAll(buf) < size) {
-        return error.IOError;
-    }
+    const inbuf = if (argv.len >= 3) try readall(allocator, mem.span(argv[2])) else null;
+    defer if (inbuf) |b| allocator.free(b);
 
     var ir = try FLIR.init(8, allocator);
     defer ir.deinit();
@@ -52,4 +59,10 @@ pub fn main() !void {
     _ = try @import("./codegen.zig").codegen(&ir, &cfo);
     try cfo.finalize();
     try cfo.dbg_nasm(allocator);
+
+    if (inbuf) |b| {
+        const SFunc = *const fn (arg1: [*]u8, arg2: usize) callconv(.C) usize;
+        const fun = cfo.get_ptr(0, SFunc);
+        print("res: {}\n", .{fun(b.ptr, b.len)});
+    }
 }
