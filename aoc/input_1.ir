@@ -1,0 +1,9 @@
+func returner
+  var %num
+  var %ipos
+  %x = arg
+  %len = arg
+  %ipos := 0
+  %byte = load byte [%x %ipos]
+  ret %byte
+end

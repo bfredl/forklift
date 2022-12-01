@@ -278,6 +278,17 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
     } else if (self.keyword()) |kw| {
         if (mem.eql(u8, kw, "arg")) {
             return f.ir.arg();
+        } else if (mem.eql(u8, kw, "load")) {
+            const sizename = try require(self.keyword(), "size");
+            const size = meta.stringToEnum(CFO.ISize, sizename) orelse {
+                print("NÄ NU: '{s}'\n", .{sizename});
+                return error.ParseError;
+            };
+            try self.expect_char('[');
+            const base = try require(try self.call_arg(f), "base");
+            const idx = try require(try self.call_arg(f), "idx");
+            try self.expect_char(']');
+            return f.ir.load(f.curnode, size, base, idx);
         } else if (mem.eql(u8, kw, "vload")) {
             const name = try require(self.keyword(), "fmode");
             const fmode = meta.stringToEnum(CFO.FMode, name) orelse {
@@ -287,7 +298,7 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
             // TODO: absract away EAddr properly
             const base = try require(try self.call_arg(f), "base");
             const idx = try require(try self.call_arg(f), "idx");
-            return f.ir.vbinop(f.curnode, .load, fmode, base, idx);
+            return f.ir.vload(f.curnode, fmode, base, idx);
         } else if (alumap.get(kw)) |op| {
             const left = try require(try self.call_arg(f), "left");
             const right = try require(try self.call_arg(f), "right");

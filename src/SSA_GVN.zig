@@ -74,7 +74,7 @@ fn vdi(self: Self, node: u16, v: u16) *u16 {
 fn read_ref(self: Self, node: u16, ref: u16) !u16 {
     const i = self.f.iref(ref) orelse return FLIR.NoRef;
     if (i.tag == .variable) {
-        return self.read_var(node, ref, i.*);
+        return try self.read_var(node, ref, i.*);
     } else {
         // already on SSA-form, nothing to do
         return ref;
@@ -92,7 +92,7 @@ fn read_var(self: Self, node: u16, vref: u16, v: FLIR.Inst) MaybePhi {
     const n = self.f.n.items[node];
     const def = thedef: {
         if (n.npred == 0) {
-            unreachable; // TODO: error for undefined var
+            return error.FLIRError; // undefined var
         } else if (n.npred == 1) {
             const pred = self.f.refs.items[n.predref];
             // assert recursion eventually terminates

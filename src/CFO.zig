@@ -118,6 +118,14 @@ pub const Cond = enum(u4) {
     }
 };
 
+// size for integer operations
+pub const ISize = enum(u2) {
+    byte,
+    word,
+    dword,
+    quadword,
+};
+
 pub const VCmp = enum(u5) {
     eq,
     lt,
@@ -522,6 +530,15 @@ pub inline fn op_rm(self: *Self, opcode: u8, reg: IPReg, ea: EAddr) !void {
 
 pub fn movrm(self: *Self, dst: IPReg, src: EAddr) !void {
     try self.op_rm(0x8b, dst, src); // MOV reg, \rm
+}
+
+// FIXME: all IPReg ops should take size!
+pub fn movrm_byte(self: *Self, dst: IPReg, src: EAddr) !void {
+    const reg = dst;
+    const ea = src;
+    try self.rex_wrxb(false, reg.ext(), ea.x(), ea.b());
+    try self.wb(0x8a);
+    try self.modRmEA(reg.lowId(), ea);
 }
 
 pub fn movmr(self: *Self, dst: EAddr, src: IPReg) !void {

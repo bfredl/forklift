@@ -169,14 +169,28 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
                         // either here or as an extra deconstruction step
                         try movmcs(cfo, self.iref(i.op2).?.*, self.iref(i.op1).?.*, .rax);
                     },
-                    .load => {
+                    .load, .vload => {
                         // TODO: spill spall supllit?
                         const base = self.iref(i.op1).?.ipreg() orelse unreachable;
-                        const idx = self.iref(i.op2).?.ipreg() orelse unreachable;
-                        const eaddr = CFO.qi(base, idx);
-                        if (i.spec_type() == .intptr) {
+                        var eaddr = CFO.a(base);
+                        const idx = self.iref(i.op2).?;
+                        if (idx.ipreg()) |reg| {
+                            eaddr.index = reg;
+                            // TODO: fyyy
+                            eaddr.scale = (if (i.tag == .vload) 2 else 0);
+                        } else if (idx.tag == .constant) {
+                            eaddr = eaddr.o(idx.op1);
+                        } else {
+                            return error.VOLKTANZ;
+                        }
+
+                        if (i.res_type().? == .intptr) {
                             const dst = i.ipreg() orelse .rax;
-                            try cfo.movrm(dst, eaddr);
+                            switch (@intToEnum(CFO.ISize, i.spec)) {
+                                .byte => try cfo.movrm_byte(dst, eaddr),
+                                .quadword => try cfo.movrm(dst, eaddr),
+                                else => unreachable,
+                            }
                             try mcmovreg(cfo, i.*, dst); // elided if dst is register
                         } else {
                             const dst = i.avxreg() orelse unreachable;

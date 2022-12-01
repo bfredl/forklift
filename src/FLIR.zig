@@ -126,7 +126,8 @@ pub const Inst = struct {
             .putphi => null, // stated in the phi instruction
             .constant => inst.spec_type(),
             .renum => null, // should be removed at this point
-            .load => inst.spec_type(),
+            .load => .intptr,
+            .vload => inst.spec_type(),
             .lea => .intptr, // Lea? Who's Lea??
             .store => null,
             .iop => .intptr,
@@ -160,6 +161,7 @@ pub const Tag = enum(u8) {
     renum,
     constant,
     load,
+    vload,
     lea,
     store,
     iop, // imath group?
@@ -221,6 +223,7 @@ pub fn n_op(tag: Tag, rw: bool) u2 {
         .constant => 0,
         .renum => 1,
         .load => 2, // base, idx
+        .vload => 2, // base, idx
         .lea => 2, // base, idx. elided when only used for a store!
         .store => 2, // addr, val
         .iop => 2,
@@ -255,6 +258,7 @@ pub fn has_res(tag: Tag) bool {
         .constant => true,
         .renum => true, // TODO: removed at this point
         .load => true,
+        .vload => true,
         .lea => true, // Lea? Who's Lea??
         .store => false,
         .iop => true,
@@ -403,9 +407,14 @@ pub fn binop(self: *Self, node: u16, tag: Tag, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = tag, .op1 = op1, .op2 = op2 });
 }
 
+pub fn load(self: *Self, node: u16, size: CFO.ISize, base: u16, idx: u16) !u16 {
+    return self.addInst(node, .{ .tag = .load, .op1 = base, .op2 = idx, .spec = @enumToInt(size) });
+}
+
 // TODO: better abstraction for types (once we have real types)
-pub fn vbinop(self: *Self, node: u16, tag: Tag, fmode: FMode, op1: u16, op2: u16) !u16 {
-    return self.addInst(node, .{ .tag = tag, .op1 = op1, .op2 = op2, .spec = @enumToInt(fmode) });
+// then .vload should be merged back into .load
+pub fn vload(self: *Self, node: u16, fmode: FMode, base: u16, idx: u16) !u16 {
+    return self.addInst(node, .{ .tag = .vload, .op1 = base, .op2 = idx, .spec = @enumToInt(fmode) });
 }
 
 pub fn vmath(self: *Self, node: u16, vop: VMathOp, fmode: FMode, op1: u16, op2: u16) !u16 {
@@ -1137,7 +1146,7 @@ fn print_mcval(i: Inst) void {
         .ipreg => print(" ${s}", .{@tagName(@intToEnum(IPReg, i.mcidx))}),
         .vfreg => print(" $ymm{}", .{i.mcidx}),
         else => {
-            if (i.tag == .load or i.tag == .phi or i.tag == .arg) {
+            if (i.tag == .load or i.tag == .vload or i.tag == .phi or i.tag == .arg) {
                 if (i.res_type()) |t| {
                     print(" {s}", .{@tagName(t)});
                 }
