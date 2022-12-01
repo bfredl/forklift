@@ -152,10 +152,14 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
                     .arg, .phi => {},
                     .ret => try regmovmc(cfo, .rax, self.iref(i.op1).?.*),
                     .iop => {
+                        const lhs = self.iref(i.op1).?;
+                        const rhs = self.iref(i.op2).?;
                         const dst = i.ipreg() orelse .rax;
-                        try regmovmc(cfo, dst, self.iref(i.op1).?.*);
-                        try regaritmc(cfo, @intToEnum(CFO.AOp, i.spec), dst, self.iref(i.op2).?.*);
-                        try mcmovreg(cfo, i.*, dst); // elided if dst is register
+                        // TODO: fugly: remove once we have constraint handling in regalloc
+                        const tmpdst = if (dst == rhs.ipreg() and dst != lhs.ipreg()) .rax else dst;
+                        try regmovmc(cfo, tmpdst, self.iref(i.op1).?.*);
+                        try regaritmc(cfo, @intToEnum(CFO.AOp, i.spec), tmpdst, self.iref(i.op2).?.*);
+                        try mcmovreg(cfo, i.*, tmpdst); // elided if dst is a conflict-free register
                     },
                     .constant => try mcmovi(cfo, i.*),
                     .icmp => {
