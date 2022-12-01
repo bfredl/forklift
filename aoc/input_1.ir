@@ -10,7 +10,9 @@ func returner
   %token = sub %byte 48
   ja %token 9 :enda
 :doit
-  %num := add %num %token 
+  %base = 10
+  %adjust = mul %num %base
+  %num := add %adjust %token
   %ipos := add %ipos 1
   jmp :loop
 :enda

@@ -132,6 +132,7 @@ pub const Inst = struct {
             .store => null,
             .iop => .intptr,
             .icmp => null, // technically the FLAG register but anyway
+            .imul => .intptr,
             .vmath => .avxval,
             .ret => null,
             .call => .intptr,
@@ -162,6 +163,7 @@ pub const Tag = enum(u8) {
     constant,
     load,
     vload,
+    imul,
     lea,
     store,
     iop, // imath group?
@@ -228,6 +230,7 @@ pub fn n_op(tag: Tag, rw: bool) u2 {
         .store => 2, // addr, val
         .iop => 2,
         .icmp => 2,
+        .imul => 2,
         .vmath => 2,
         .ret => 1,
         .callarg => 1,
@@ -263,6 +266,7 @@ pub fn has_res(tag: Tag) bool {
         .store => false,
         .iop => true,
         .icmp => false, // technically yes, but no
+        .imul => true,
         .vmath => true,
         .ret => false,
         .call => true,
@@ -428,6 +432,11 @@ pub fn iop(self: *Self, node: u16, vop: AOp, op1: u16, op2: u16) !u16 {
 
 pub fn icmp(self: *Self, node: u16, cond: Cond, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .icmp, .spec = cond.off(), .op1 = op1, .op2 = op2 });
+}
+
+// TODO: fold into iop, no need to special case x86 weirdology here
+pub fn imul(self: *Self, node: u16, op1: u16, op2: u16) !u16 {
+    return self.addInst(node, .{ .tag = .imul, .op1 = op1, .op2 = op2 });
 }
 
 pub fn putvar(self: *Self, node: u16, op1: u16, op2: u16) !void {
@@ -1024,12 +1033,22 @@ pub fn scan_alloc(self: *Self) !void {
                         continue;
                     }
 
-                    // TODO: reghint
                     var regid: ?u4 = null;
-                    for (the_active) |l, ri| {
-                        if (l <= ref) {
-                            regid = @intCast(u4, ri);
-                            break;
+                    if (i.tag == .iop) {
+                        if (self.iref(i.op1).?.ipreg()) |reg| {
+                            if (the_active[@enumToInt(reg)] <= ref) {
+                                // regid = @enumToInt(reg);
+                            }
+                        }
+                    }
+
+                    // TODO: reghint
+                    if (regid == null) {
+                        for (the_active) |l, ri| {
+                            if (l <= ref) {
+                                regid = @intCast(u4, ri);
+                                break;
+                            }
                         }
                     }
 

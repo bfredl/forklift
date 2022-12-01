@@ -593,6 +593,16 @@ pub fn movmi(self: *Self, dst: EAddr, src: i32) !void {
     try self.wd(src);
 }
 
+// MUL/DIV instructions
+
+// RDX:RAX = RAX * SRC
+pub fn mulr(self: *Self, src: IPReg) !void {
+    try self.new_inst(@returnAddress());
+    try self.rex_wrxb(true, false, false, src.ext());
+    try self.wb(0xf7); // MUL \rm
+    try self.modRm(0b11, 4, src.lowId());
+}
+
 // VEX instructions
 // note: for now we use VEX for all xmm/ymm operations.
 // old school SSE forms might be shorter for some 128/scalar ops?

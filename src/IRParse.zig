@@ -305,6 +305,10 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
             const left = try require(try self.call_arg(f), "left");
             const right = try require(try self.call_arg(f), "right");
             return f.ir.iop(f.curnode, op, left, right);
+        } else if (mem.eql(u8, kw, "mul")) {
+            const left = try require(try self.call_arg(f), "left");
+            const right = try require(try self.call_arg(f), "right");
+            return f.ir.imul(f.curnode, left, right);
         } else if (mem.eql(u8, kw, "vop")) {
             // TODO: make this optional, if both op1/op2 share a fmode
             const modename = try require(self.keyword(), "fmode");

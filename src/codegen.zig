@@ -157,9 +157,24 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
                         const dst = i.ipreg() orelse .rax;
                         // TODO: fugly: remove once we have constraint handling in regalloc
                         const tmpdst = if (dst == rhs.ipreg() and dst != lhs.ipreg()) .rax else dst;
-                        try regmovmc(cfo, tmpdst, self.iref(i.op1).?.*);
-                        try regaritmc(cfo, @intToEnum(CFO.AOp, i.spec), tmpdst, self.iref(i.op2).?.*);
+                        try regmovmc(cfo, tmpdst, lhs.*);
+                        try regaritmc(cfo, @intToEnum(CFO.AOp, i.spec), tmpdst, rhs.*);
                         try mcmovreg(cfo, i.*, tmpdst); // elided if dst is a conflict-free register
+                    },
+                    .imul => {
+                        const lhs = self.iref(i.op1).?;
+                        const rhs = self.iref(i.op2).?;
+                        try cfo.wb(@as(u8, 0x50) + @enumToInt(IPReg.rdx));
+                        try regmovmc(cfo, .rax, lhs.*);
+                        if (rhs.ipreg()) |reg| {
+                            try cfo.mulr(reg);
+                        } else {
+                            if (rhs.tag != .constant) unreachable;
+                            try cfo.movri(.rdx, rhs.op1);
+                            try cfo.mulr(.rdx);
+                        }
+                        try cfo.wb(@as(u8, 0x58) + @enumToInt(IPReg.rdx));
+                        try mcmovreg(cfo, i.*, .rax); // elided if dst is .rax (not yet but soon™)
                     },
                     .constant => try mcmovi(cfo, i.*),
                     .icmp => {
