@@ -41,7 +41,7 @@ pub fn main() !void {
     const inbuf = if (argv.len >= 3) try readall(allocator, mem.span(argv[2])) else null;
     defer if (inbuf) |b| allocator.free(b);
 
-    var ir = try FLIR.init(8, allocator);
+    var ir = try FLIR.init(16, allocator);
     defer ir.deinit();
     var parser = IRParse.init(buf);
     // try parser.fd_objs.put("count", map_count);
@@ -50,6 +50,7 @@ pub fn main() !void {
         return e;
     };
 
+    ir.debug_print();
     try ir.test_analysis(true);
     try ir.scan_alloc();
     // ir.debug_print();

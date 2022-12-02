@@ -1251,7 +1251,9 @@ pub fn test_analysis(self: *Self, comptime check: bool) !void {
     try self.reorder_nodes();
     if (check) try self.check_cfg_valid();
     try SSA_GVN.ssa_gvn(self);
+    if (check) try self.check_cfg_valid();
 
+    // self.debug_print();
     try self.reorder_inst();
     if (check) try self.check_cfg_valid();
     try self.calc_use();
@@ -1277,6 +1279,7 @@ pub fn get_jmp_or_last(self: *Self, n: *Node) !?Tag {
     var last_inst: ?Tag = null;
     while (cur_blk) |blk| {
         var b = &self.b.items[blk];
+        // print("bolk: {}\n", .{blk});
         for (b.i) |i| {
             if (i.tag == .empty) {
                 continue;

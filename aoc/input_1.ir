@@ -9,6 +9,10 @@ func returner
 :sumloop
   %item := 0
   jge %ipos %len :retvrn
+:check
+  %prebyte = load byte [%x %ipos]
+  %pretoken = sub %prebyte 48
+  ja %pretoken 9 :retvrn
 :parseloop
   %byte = load byte [%x %ipos]
   %token = sub %byte 48
