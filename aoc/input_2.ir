@@ -1,0 +1,13 @@
+func scorer
+  var %ipos
+  %data = arg
+  %len = arg
+  %ipos := 0
+  %abyte = load byte [%data %ipos]
+  %apos = sub %abyte 65
+  %ipos := add %ipos 2
+  %xbyte = load byte [%data 2]
+  %xpos = sub %xbyte 88
+  ret %xpos
+end
+  

@@ -50,7 +50,7 @@ pub fn main() !void {
         return e;
     };
 
-    ir.debug_print();
+    // ir.debug_print();
     try ir.test_analysis(true);
     try ir.scan_alloc();
     // ir.debug_print();

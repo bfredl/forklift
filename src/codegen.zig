@@ -207,9 +207,6 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
                             const dst = i.ipreg() orelse .rax;
                             switch (@intToEnum(CFO.ISize, i.spec)) {
                                 .byte => {
-                                    // TODO: be smarter about this. This zeros
-                                    // rxx and then assigns rxxb
-                                    try cfo.arit(.xor, dst, dst);
                                     try cfo.movrm_byte(dst, eaddr);
                                 },
                                 .quadword => try cfo.movrm(dst, eaddr),

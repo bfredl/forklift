@@ -282,7 +282,7 @@ pub fn set_align(self: *Self, alignment: u32) !void {
 }
 
 // encodings
-pub fn rex_wrxb(self: *Self, w: bool, r: bool, x: bool, b: bool) !void {
+pub fn rex_wrxb_force(self: *Self, w: bool, r: bool, x: bool, b: bool, force: bool) !void {
     var value: u8 = 0x40;
 
     if (w) value |= 0b1000;
@@ -290,9 +290,12 @@ pub fn rex_wrxb(self: *Self, w: bool, r: bool, x: bool, b: bool) !void {
     if (x) value |= 0b0010;
     if (b) value |= 0b0001;
 
-    if (value != 0x40) {
+    if (value != 0x40 or force) {
         try self.wb(value);
     }
+}
+pub fn rex_wrxb(self: *Self, w: bool, r: bool, x: bool, b: bool) !void {
+    return self.rex_wrxb_force(w, r, x, b, false);
 }
 
 pub fn modRm(self: *Self, mod: u2, reg_or_opx: u3, rm: u3) !void {
@@ -536,8 +539,10 @@ pub fn movrm(self: *Self, dst: IPReg, src: EAddr) !void {
 pub fn movrm_byte(self: *Self, dst: IPReg, src: EAddr) !void {
     const reg = dst;
     const ea = src;
-    try self.rex_wrxb(false, reg.ext(), ea.x(), ea.b());
-    try self.wb(0x8a);
+    try self.rex_wrxb(true, reg.ext(), ea.x(), ea.b());
+    // MOVZX. TODO: indicate zero vs sign explicitly!
+    try self.wb(0x0F);
+    try self.wb(0xB6);
     try self.modRmEA(reg.lowId(), ea);
 }
 
