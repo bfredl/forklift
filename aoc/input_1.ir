@@ -1,20 +1,28 @@
 func returner
-  var %num
+  var %sum
+  var %item
   var %ipos
   %x = arg
   %len = arg
   %ipos := 0
-  %num := 0
-:loop
+  %sum := 0
+:sumloop
+  %item := 0
+  jge %ipos %len :retvrn
+:parseloop
   %byte = load byte [%x %ipos]
   %token = sub %byte 48
   ja %token 9 :enda
 :doit
   %base = 10
-  %adjust = mul %num %base
-  %num := add %adjust %token
+  %adjust = mul %item %base
+  %item := add %adjust %token
   %ipos := add %ipos 1
-  jmp :loop
+  jmp :parseloop
 :enda
-  ret %num
+  %sum := add %sum %item
+  %ipos := add %ipos 1
+  jmp :sumloop
+:retvrn
+  ret %sum
 end

@@ -1,5 +1,7 @@
 str: []const u8,
 pos: usize = 0,
+lnum: u32 = 0,
+lpos: usize = 0,
 
 const FLIR = @import("./FLIR.zig");
 const CFO = @import("./CFO.zig");
@@ -31,6 +33,8 @@ fn lbrk(self: *Self) ParseError!void {
     if (val) |v| {
         if (v != '\n') return error.ParseError;
         self.pos += 1;
+        self.lnum += 1;
+        self.lpos = self.pos;
     }
 }
 

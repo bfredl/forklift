@@ -1070,6 +1070,67 @@ pub fn scan_alloc(self: *Self) !void {
             cur_blk = b.next();
         }
     }
+    try self.resolve_phi();
+}
+
+pub fn resolve_phi(self: *Self) !void {
+    for (self.n.items) |*n| {
+        // putphi are at the end blocks before a join node, and
+        // cannot be in a split node
+        if (n.s[1] != 0) continue;
+        const first_putphi = first: {
+            var cur_blk: ?u16 = n.firstblk;
+            while (cur_blk) |blk| {
+                var b = &self.b.items[blk];
+                for (b.i) |*i, idx| {
+                    if (i.tag == .putphi) break :first .{ .b = blk, .idx = @intCast(u16, idx) };
+                }
+                cur_blk = b.next();
+            }
+            // no putphi, skip the node
+            continue;
+        };
+
+        // TODO: this obviously hints towards some kind of block iterator
+        var phi_1 = first_putphi;
+        while (true) : (phi_1.idx += 1) {
+            if (phi_1.idx == BLK_SIZE) {
+                phi_1.b = self.b.items[phi_1.b].next() orelse break;
+                phi_1.idx = 0;
+            }
+            const before = &self.b.items[phi_1.b].i[phi_1.idx];
+            if (before.tag != .putphi) continue;
+
+            var phi_2 = phi_1;
+            phi_2.idx += 1;
+            while (true) : (phi_2.idx += 1) {
+                if (phi_2.idx == BLK_SIZE) {
+                    phi_2.b = self.b.items[phi_2.b].next() orelse break;
+                    phi_2.idx = 0;
+                }
+                // print("considering: {} {}\n", .{ toref(phi_1.b, phi_1.idx), toref(phi_2.b, phi_2.idx) });
+
+                const after = &self.b.items[phi_2.b].i[phi_2.idx];
+                if (after.tag != .putphi) continue;
+                if (self.conflict(before, after)) {
+                    // print("DID\n", .{});
+                    mem.swap(Inst, before, after);
+                }
+                if (self.conflict(before, after)) {
+                    self.debug_print();
+                    print("cycles detected: {} {}\n", .{ toref(phi_1.b, phi_1.idx), toref(phi_2.b, phi_2.idx) });
+                    return error.FLIRError;
+                }
+            }
+        }
+    }
+}
+
+pub fn conflict(self: *Self, before: *Inst, after: *Inst) bool {
+    const written = self.iref(before.op2) orelse return false;
+    const read = self.iref(after.op1) orelse return false;
+    if (written.mckind == read.mckind and written.mcidx == read.mcidx) return true;
+    return false;
 }
 
 pub fn debug_print(self: *Self) void {

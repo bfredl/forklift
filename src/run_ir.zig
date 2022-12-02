@@ -46,12 +46,13 @@ pub fn main() !void {
     var parser = IRParse.init(buf);
     // try parser.fd_objs.put("count", map_count);
     parser.parse_func(&ir, allocator) catch |e| {
-        print("error at byte {} of {}\n", .{ parser.pos, buf.len });
+        print("error at pos {}:{} (byte {} of {})\n", .{ parser.lnum + 1, 1 + parser.pos - parser.lpos, parser.pos, buf.len });
         return e;
     };
 
     try ir.test_analysis(true);
     try ir.scan_alloc();
+    // ir.debug_print();
     try ir.check_cfg_valid();
 
     var cfo = try CFO.init(allocator);
