@@ -279,8 +279,8 @@ pub fn call_arg(self: *Self, f: *Func) ParseError!?u16 {
 }
 
 pub fn expr(self: *Self, f: *Func) ParseError!u16 {
-    if (self.num()) |numval| {
-        return f.ir.const_int(f.curnode, @intCast(u16, numval));
+    if (try self.call_arg(f)) |arg| {
+        return arg;
     } else if (self.keyword()) |kw| {
         if (mem.eql(u8, kw, "arg")) {
             return f.ir.arg();

@@ -1314,6 +1314,7 @@ pub fn check_cfg_valid(self: *Self) !void {
 }
 
 // force tests to run:
-test "run" {
-    try @import("./TestFLIR.zig").expect(usize, 0, 0);
+test {
+    std.testing.refAllDecls(@import("./TestFLIR.zig"));
+    std.testing.refAllDecls(@import("./TestAOC.zig"));
 }
