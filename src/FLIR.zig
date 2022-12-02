@@ -648,11 +648,16 @@ pub fn reorder_nodes(self: *Self) !void {
     var sci = self.sccorder.items.len - 1;
     while (true) : (sci -= 1) {
         const old_ni = self.sccorder.items[sci];
-        const ni = if (old_ni < newpos) oldlink[old_ni] else old_ni;
+        const ni = if (oldlink[old_ni] != NoRef) oldlink[old_ni] else old_ni;
         const n = &self.n.items[ni];
 
-        oldlink[newpos] = ni;
         newlink[old_ni] = newpos;
+
+        if (ni != newpos) {
+            const oldval = if (oldlink[newpos] != NoRef) oldlink[newpos] else newpos;
+            oldlink[ni] = newpos;
+            oldlink[oldval] = ni;
+        }
 
         if (n.scc != last_scc) {
             last_scc = n.scc;
@@ -1297,10 +1302,19 @@ pub fn check_cfg_valid(self: *Self) !void {
     const reached = try self.a.alloc(bool, self.n.items.len);
     defer self.a.free(reached);
     mem.set(bool, reached, false);
-    for (self.n.items) |*n| {
+    for (self.n.items) |*n, ni| {
         for (n.s) |s| {
             if (s > self.n.items.len) return error.InvalidCFG;
             reached[s] = true;
+        }
+        // TODO: explicit condition for this
+        if (self.refs.items.len > 0) {
+            for (self.preds(@intCast(u16, ni))) |pred| {
+                const pn = self.n.items[pred];
+                if (pn.s[0] != ni and pn.s[1] != ni) {
+                    return error.InvalidCFG;
+                }
+            }
         }
     }
     for (self.n.items) |*n, ni| {

@@ -10,10 +10,11 @@ pub fn build(b: *Builder) void {
     exe_parse.install();
 
     const ir = b.step("ir", "run some ir");
-    var run_ir = b.addExecutable("run", "src/run_ir.zig");
-    run_ir.setBuildMode(mode);
-    run_ir.install();
-    ir.dependOn(&run_ir.step);
+    var exe_ir = b.addExecutable("run", "src/run_ir.zig");
+    exe_ir.setBuildMode(mode);
+    exe_ir.install();
+    const install_ir = b.addInstallArtifact(exe_ir);
+    ir.dependOn(&install_ir.step);
 
     const operate = b.step("operate", "operate the forklift");
     const run = exe.run();
