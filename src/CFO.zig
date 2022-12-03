@@ -600,6 +600,25 @@ pub fn movmi(self: *Self, dst: EAddr, src: i32) !void {
 
 // MUL/DIV instructions
 
+// DST = DST * SRC
+fn imulrr(self: *Self, dst: IPReg, src: IPReg) !void {
+    try self.new_inst(@returnAddress());
+    try self.rex_wrxb(true, dst.ext(), false, src.ext());
+    try self.wb(0x0f); // IMUL reg, \rm
+    try self.wb(0xaf);
+    try self.modRm(0b11, dst.lowId(), src.lowId());
+}
+
+// DST = SRC * imm
+// TODO: be smart and fit factor in ib,iw,id as fits
+fn imulrri(self: *Self, dst: IPReg, src: IPReg, factor: i8) !void {
+    try self.new_inst(@returnAddress());
+    try self.rex_wrxb(true, dst.ext(), false, src.ext());
+    try self.wb(0x6b); // IMUL reg, \rm, ib
+    try self.modRm(0b11, dst.lowId(), src.lowId());
+    try self.wbi(factor);
+}
+
 // RDX:RAX = RAX * SRC
 pub fn mulr(self: *Self, src: IPReg) !void {
     try self.new_inst(@returnAddress());
