@@ -1266,6 +1266,34 @@ pub fn test_analysis(self: *Self, comptime check: bool) !void {
     try self.reorder_inst();
     if (check) try self.check_cfg_valid();
     try self.calc_use();
+
+    // NB: breaks the critical-edge invariant.
+    // move after scan_alloc in case it needs it?
+    try self.remove_empty();
+    if (check) try self.check_cfg_valid();
+}
+
+pub fn trivial_succ(self: *Self, ni: u16) ?u16 {
+    const node = &self.n.items[ni];
+    if (!self.empty(ni, true)) return null;
+    return node.s[0];
+}
+
+pub fn remove_empty(self: *Self) !void {
+    for (self.n.items) |*n, ni| {
+        for (n.s) |*s| {
+            if (s.* == 0) continue;
+            // TODO: could potentially skip through multiple
+            // empty blocks!
+            const fallthrough = self.trivial_succ(s.*);
+            if (fallthrough) |f| {
+                const b = &self.n.items[s.*];
+                b.npred = 0;
+                s.* = f;
+                self.addpred(f, @intCast(u16, ni));
+            }
+        }
+    }
 }
 
 pub fn empty(self: *Self, ni: u16, allow_succ: bool) bool {
