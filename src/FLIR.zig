@@ -655,7 +655,8 @@ pub fn reorder_nodes(self: *Self) !void {
 
         if (ni != newpos) {
             const oldval = if (oldlink[newpos] != NoRef) oldlink[newpos] else newpos;
-            oldlink[ni] = newpos;
+            oldlink[ni] = oldval;
+
             oldlink[oldval] = ni;
         }
 
@@ -665,7 +666,9 @@ pub fn reorder_nodes(self: *Self) !void {
         }
         n.scc = cur_scc;
 
-        mem.swap(Node, n, &self.n.items[newpos]);
+        if (ni != newpos) {
+            mem.swap(Node, n, &self.n.items[newpos]);
+        }
         newpos += 1;
 
         if (sci == 0) break;
@@ -734,6 +737,7 @@ pub fn reorder_inst(self: *Self) !void {
 
             if (blk != newblk) {
                 const oldval = if (newblkpos[newblk] != NoRef) newblkpos[newblk] else newblk;
+                // TODO: should be newblkpos[blk] = oldval ????
                 newblkpos[blk] = newblk;
                 newblkpos[oldval] = blk;
             }
