@@ -164,17 +164,19 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
                     .imul => {
                         const lhs = self.iref(i.op1).?;
                         const rhs = self.iref(i.op2).?;
-                        try cfo.wb(@as(u8, 0x50) + @enumToInt(IPReg.rdx));
-                        try regmovmc(cfo, .rax, lhs.*);
-                        if (rhs.ipreg()) |reg| {
-                            try cfo.mulr(reg);
+                        const dst = i.ipreg() orelse .rax;
+                        if (rhs.tag == .constant) {
+                            const src = lhs.ipreg() orelse unreachable;
+                            try cfo.imulrri(dst, src, @intCast(i8, rhs.op1));
                         } else {
-                            if (rhs.tag != .constant) unreachable;
-                            try cfo.movri(.rdx, rhs.op1);
-                            try cfo.mulr(.rdx);
+                            if (rhs.ipreg()) |rhsreg| {
+                                try regmovmc(cfo, dst, lhs.*);
+                                try cfo.imulrr(dst, rhsreg);
+                            } else {
+                                unreachable;
+                            }
                         }
-                        try cfo.wb(@as(u8, 0x58) + @enumToInt(IPReg.rdx));
-                        try mcmovreg(cfo, i.*, .rax); // elided if dst is .rax (not yet but soon™)
+                        try mcmovreg(cfo, i.*, dst); // elided if dst is ipreg
                     },
                     .constant => try mcmovi(cfo, i.*),
                     .icmp => {
