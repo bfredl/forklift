@@ -199,7 +199,9 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
         } else if (mem.eql(u8, kw, "jmp")) {
             const target = try require(try self.labelname(), "target");
             // TODO: mark current node as DED, need a new node
-            f.ir.n.items[f.curnode].s[0] = try get_label(f, target, true);
+            // TODO: HUR STÅR DET TILL I PALLET? explicit syntax for evaluating lhs before rhs.* !
+            const node = try get_label(f, target, true);
+            f.ir.n.items[f.curnode].s[0] = node;
             return true;
         } else if (jmpmap.get(kw)) |cond| {
             const dest = try require(try self.call_arg(f), "dest");
@@ -208,7 +210,8 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
             _ = try f.ir.icmp(f.curnode, cond, dest, src);
 
             // TODO: mark current node as DED, need either a new node or an unconditional jump
-            f.ir.n.items[f.curnode].s[1] = try get_label(f, target, true);
+            const node = try get_label(f, target, true);
+            f.ir.n.items[f.curnode].s[1] = node;
             return true;
         } else if (mem.eql(u8, kw, "vstore")) { // TODO: NIIN
             try self.expect_char('[');

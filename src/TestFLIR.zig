@@ -9,7 +9,7 @@ const IRParse = @import("./IRParse.zig");
 const test_allocator = std.testing.allocator;
 
 pub fn parse(ir: []const u8) !FLIR {
-    var self = try FLIR.init(8, test_allocator);
+    var self = try FLIR.init(4, test_allocator);
     var parser = IRParse.init(ir);
     parser.parse_func(&self, test_allocator) catch |e| {
         print("fail at {}\n", .{parser.pos});
