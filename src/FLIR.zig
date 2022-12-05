@@ -759,19 +759,15 @@ pub fn reorder_inst(self: *Self) !void {
             n.lastblk = NoRef;
             continue;
         }
-        var cur_blk: ?u16 = n.firstblk;
-        while (cur_blk) |blk| {
-            var b = &self.b.items[blk];
-            for (b.i) |*i| {
-                const nops = n_op(i.tag, true);
-                if (nops > 0) {
-                    i.op1 = newlink[i.op1];
-                    if (nops > 1) {
-                        i.op2 = newlink[i.op2];
-                    }
+        var it = self.ins_iterator(n.firstblk);
+        while (it.next()) |item| {
+            const nops = n_op(item.i.tag, true);
+            if (nops > 0) {
+                item.i.op1 = newlink[item.i.op1];
+                if (nops > 1) {
+                    item.i.op2 = newlink[item.i.op2];
                 }
             }
-            cur_blk = b.next();
         }
     }
 }
@@ -1020,63 +1016,60 @@ pub fn scan_alloc(self: *Self) !void {
     active_ipreg[IPReg.r15.id()] = NoRef;
 
     for (self.n.items) |*n| {
-        var cur_blk: ?u16 = n.firstblk;
-        while (cur_blk) |blk| {
-            var b = &self.b.items[blk];
-            for (b.i) |*i, idx| {
-                const ref = toref(blk, uv(idx));
-                if (i.tag == .arg) {
-                    try self.alloc_arg(i);
-                    assert(active_ipreg[i.mcidx] <= ref);
-                    active_ipreg[i.mcidx] = i.last_use;
-                } else if (i.tag == .constant and i.mckind.unallocated()) {
-                    // TODO: check as needed
+        var it = self.ins_iterator(n.firstblk);
+        while (it.next()) |item| {
+            const i = item.i;
+            const ref = item.ref;
+            if (i.tag == .arg) {
+                try self.alloc_arg(i);
+                assert(active_ipreg[i.mcidx] <= ref);
+                active_ipreg[i.mcidx] = i.last_use;
+            } else if (i.tag == .constant and i.mckind.unallocated()) {
+                // TODO: check as needed
+                i.mckind = .fused;
+            } else if (has_res(i.tag) and i.mckind.unallocated()) {
+                const is_avx = (i.res_type() == ValType.avxval);
+                const regkind: MCKind = if (is_avx) .vfreg else .ipreg;
+                const the_active = if (is_avx) &active_avx else &active_ipreg;
+
+                if (i.tag == .constant and i.spec == 0) {
                     i.mckind = .fused;
-                } else if (has_res(i.tag) and i.mckind.unallocated()) {
-                    const is_avx = (i.res_type() == ValType.avxval);
-                    const regkind: MCKind = if (is_avx) .vfreg else .ipreg;
-                    const the_active = if (is_avx) &active_avx else &active_ipreg;
+                    continue;
+                }
 
-                    if (i.tag == .constant and i.spec == 0) {
-                        i.mckind = .fused;
-                        continue;
-                    }
-
-                    var regid: ?u4 = null;
-                    if (i.tag == .iop) {
-                        if (self.iref(i.op1).?.ipreg()) |reg| {
-                            if (the_active[@enumToInt(reg)] <= ref) {
-                                regid = @enumToInt(reg);
-                            }
+                var regid: ?u4 = null;
+                if (i.tag == .iop) {
+                    if (self.iref(i.op1).?.ipreg()) |reg| {
+                        if (the_active[@enumToInt(reg)] <= ref) {
+                            regid = @enumToInt(reg);
                         }
-                    }
-
-                    // TODO: reghint
-                    if (regid == null) {
-                        for (the_active) |l, ri| {
-                            if (l <= ref) {
-                                regid = @intCast(u4, ri);
-                                break;
-                            }
-                        }
-                    }
-
-                    if (regid) |ri| {
-                        i.mckind = regkind;
-                        i.mcidx = ri;
-                        the_active[ri] = i.last_use;
-                    } else {
-                        i.mckind = .frameslot;
-                        if (self.nslots == 255) {
-                            return error.UDunGoofed;
-                        }
-                        i.mcidx = self.nslots;
-                        // TODO: lol reuse slots
-                        self.nslots += 1;
                     }
                 }
+
+                // TODO: reghint
+                if (regid == null) {
+                    for (the_active) |l, ri| {
+                        if (l <= ref) {
+                            regid = @intCast(u4, ri);
+                            break;
+                        }
+                    }
+                }
+
+                if (regid) |ri| {
+                    i.mckind = regkind;
+                    i.mcidx = ri;
+                    the_active[ri] = i.last_use;
+                } else {
+                    i.mckind = .frameslot;
+                    if (self.nslots == 255) {
+                        return error.UDunGoofed;
+                    }
+                    i.mcidx = self.nslots;
+                    // TODO: lol reuse slots
+                    self.nslots += 1;
+                }
             }
-            cur_blk = b.next();
         }
     }
     try self.resolve_phi();
@@ -1088,38 +1081,26 @@ pub fn resolve_phi(self: *Self) !void {
         // cannot be in a split node
         if (n.s[1] != 0) continue;
         const first_putphi = first: {
-            var cur_blk: ?u16 = n.firstblk;
-            while (cur_blk) |blk| {
-                var b = &self.b.items[blk];
-                for (b.i) |*i, idx| {
-                    if (i.tag == .putphi) break :first .{ .b = blk, .idx = @intCast(u16, idx) };
-                }
-                cur_blk = b.next();
+            var iter = self.ins_iterator(n.firstblk);
+            var peek = iter;
+            while (peek.next()) |it| {
+                if (it.i.tag == .putphi) break :first iter;
+                iter = peek; // TODO: be smarter than this (or not)
             }
             // no putphi, skip the node
             continue;
         };
 
-        // TODO: this obviously hints towards some kind of block iterator
         var phi_1 = first_putphi;
-        while (true) : (phi_1.idx += 1) {
-            if (phi_1.idx == BLK_SIZE) {
-                phi_1.b = self.b.items[phi_1.b].next() orelse break;
-                phi_1.idx = 0;
-            }
-            const before = &self.b.items[phi_1.b].i[phi_1.idx];
+        while (phi_1.next()) |p1| {
+            const before = p1.i;
             if (before.tag != .putphi) continue;
 
-            var phi_2 = phi_1;
-            phi_2.idx += 1;
-            while (true) : (phi_2.idx += 1) {
-                if (phi_2.idx == BLK_SIZE) {
-                    phi_2.b = self.b.items[phi_2.b].next() orelse break;
-                    phi_2.idx = 0;
-                }
-                // print("considering: {} {}\n", .{ toref(phi_1.b, phi_1.idx), toref(phi_2.b, phi_2.idx) });
+            var phi_2 = phi_1; // starts after phi_1
+            while (phi_2.next()) |p2| {
+                // print("considering: {} {}\n", .{ p1.ref, p2.ref });
 
-                const after = &self.b.items[phi_2.b].i[phi_2.idx];
+                const after = p2.i;
                 if (after.tag != .putphi) continue;
                 if (self.conflict(before, after)) {
                     // print("DID\n", .{});
@@ -1127,7 +1108,7 @@ pub fn resolve_phi(self: *Self) !void {
                 }
                 if (self.conflict(before, after)) {
                     self.debug_print();
-                    print("cycles detected: {} {}\n", .{ toref(phi_1.b, phi_1.idx), toref(phi_2.b, phi_2.idx) });
+                    print("cycles detected: {} {}\n", .{ p1.ref, p2.ref });
                     return error.FLIRError;
                 }
             }
@@ -1178,58 +1159,92 @@ pub fn debug_print(self: *Self) void {
     }
 }
 
-fn print_blk(self: *Self, firstblk: u16) void {
-    var cur_blk: ?u16 = firstblk;
-    while (cur_blk) |blk| {
-        // print("THE BLOCK: {}\n", .{blk});
-        var b = &self.b.items[blk];
-        for (b.i) |i, idx| {
-            if (i.tag == .empty) {
-                continue;
-            }
-            const chr: u8 = if (has_res(i.tag)) '=' else ' ';
-            print("  %{} {c} {s}", .{ toref(blk, uv(idx)), chr, @tagName(i.tag) });
+const InsIterator = struct {
+    self: *Self,
+    cur_blk: u16,
+    blk: *Block,
+    idx: u16,
 
-            if (i.tag == .variable) {
-                print(" {s}", .{@tagName(i.spec_type())});
+    pub const IYtem = struct { i: *Inst, ref: u16 };
+    fn next(it: *InsIterator) ?IYtem {
+        while (true) {
+            if (it.cur_blk == NoRef) return null;
+            const retval = IYtem{ .i = &it.blk.i[it.idx], .ref = toref(it.cur_blk, it.idx) };
+            it.idx += 1;
+            if (it.idx == BLK_SIZE) {
+                it.idx = 0;
+                it.cur_blk = it.blk.succ;
+                if (it.cur_blk != NoRef) it.blk = &it.self.b.items[it.cur_blk];
             }
-
-            if (i.tag == .vmath) {
-                print(".{s}", .{@tagName(i.vop())});
-            } else if (i.tag == .iop) {
-                print(".{s}", .{@tagName(@intToEnum(AOp, i.spec))});
-            } else if (i.tag == .constant) {
-                print(" c[{}]", .{i.op1});
-            } else if (i.tag == .putphi) {
-                print(" %{} <-", .{i.op2});
+            if (retval.i.tag != .empty) {
+                return retval;
             }
-            const nop = n_op(i.tag, false);
-            if (nop > 0) {
-                print(" %{}", .{i.op1});
-                if (nop > 1) {
-                    print(", %{}", .{i.op2});
-                }
-            }
-            print_mcval(i);
-            if (i.last_use != NoRef) {
-                // this is a compiler bug ("*" emitted for NoRef)
-                //print(" <{}{s}>", .{ i.n_use, @as([]const u8, if (i.vreg != NoRef) "*" else "") });
-                // this is getting ridiculous
-                if (i.vreg != NoRef) {
-                    print(" |{}=>%{}|", .{ i.vreg, i.last_use });
-                } else {
-                    print(" <%{}>", .{i.last_use});
-                }
-                // print(" <{}{s}>", .{ i.last_use, marker });
-                //print(" <{}:{}>", .{ i.n_use, i.vreg });
-            }
-            print("\n", .{});
         }
-        cur_blk = b.next();
+    }
+};
+
+pub fn ins_iterator(self: *Self, first_blk: u16) InsIterator {
+    var it = InsIterator{ .self = self, .cur_blk = first_blk, .idx = 0, .blk = undefined };
+    if (it.cur_blk != NoRef) it.blk = &self.b.items[it.cur_blk];
+    return it;
+}
+
+fn print_blk(self: *Self, firstblk: u16) void {
+    var it = self.ins_iterator(firstblk);
+    while (it.next()) |item| {
+        const i = item.i.*;
+        const chr: u8 = if (has_res(i.tag)) '=' else ' ';
+        print("  %{} {c} {s}", .{ item.ref, chr, @tagName(i.tag) });
+
+        if (i.tag == .variable) {
+            print(" {s}", .{@tagName(i.spec_type())});
+        }
+
+        if (i.tag == .vmath) {
+            print(".{s}", .{@tagName(i.vop())});
+        } else if (i.tag == .iop) {
+            print(".{s}", .{@tagName(@intToEnum(AOp, i.spec))});
+        } else if (i.tag == .icmp) {
+            print(".{s}", .{@tagName(@intToEnum(Cond, i.spec))});
+        } else if (i.tag == .constant) {
+            print(" c[{}]", .{i.op1});
+        } else if (i.tag == .putphi) {
+            print(" %{} <-", .{i.op2});
+        }
+        const nop = n_op(i.tag, false);
+        if (nop > 0) {
+            print(" %{}", .{i.op1});
+            if (nop > 1) {
+                print(", %{}", .{i.op2});
+            }
+        }
+        print_mcval(i);
+        if (i.last_use != NoRef) {
+            // this is a compiler bug ("*" emitted for NoRef)
+            //print(" <{}{s}>", .{ i.n_use, @as([]const u8, if (i.vreg != NoRef) "*" else "") });
+            // this is getting ridiculous
+            if (i.vreg != NoRef) {
+                print(" |{}=>%{}|", .{ i.vreg, i.last_use });
+            } else {
+                print(" <%{}>", .{i.last_use});
+            }
+            // print(" <{}{s}>", .{ i.last_use, marker });
+            //print(" <{}:{}>", .{ i.n_use, i.vreg });
+        }
+        if (i.tag == .putphi) {
+            if (self.iref(i.op2).?.ipreg()) |reg| {
+                const regsrc = self.iref(i.op1).?.ipreg();
+                print(" [{s} <- {s}] ", .{ @tagName(reg), if (regsrc) |r| @tagName(r) else "XX" });
+            }
+        }
+        print("\n", .{});
     }
 }
 
 fn print_mcval(i: Inst) void {
+    if (i.tag != .phi and i.tag != .arg and !i.mckind.unallocated() and i.mckind != .fused) {
+        print(" =>", .{});
+    }
     switch (i.mckind) {
         .frameslot => print(" [rbp-8*{}]", .{i.mcidx}),
         .ipreg => print(" ${s}", .{@tagName(@intToEnum(IPReg, i.mcidx))}),
@@ -1312,19 +1327,11 @@ pub fn empty(self: *Self, ni: u16, allow_succ: bool) bool {
     }
 }
 pub fn get_jmp_or_last(self: *Self, n: *Node) !?Tag {
-    var cur_blk: ?u16 = n.firstblk;
     var last_inst: ?Tag = null;
-    while (cur_blk) |blk| {
-        var b = &self.b.items[blk];
-        // print("bolk: {}\n", .{blk});
-        for (b.i) |i| {
-            if (i.tag == .empty) {
-                continue;
-            }
-            if (last_inst) |l| if (l == .icmp or l == .ret) return error.InvalidCFG;
-            last_inst = i.tag;
-        }
-        cur_blk = b.next();
+    var iter = self.ins_iterator(n.firstblk);
+    while (iter.next()) |it| {
+        if (last_inst) |l| if (l == .icmp or l == .ret) return error.InvalidCFG;
+        last_inst = it.i.tag;
     }
     return last_inst;
 }
