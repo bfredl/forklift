@@ -1162,19 +1162,17 @@ pub fn debug_print(self: *Self) void {
 const InsIterator = struct {
     self: *Self,
     cur_blk: u16,
-    blk: *Block,
     idx: u16,
 
     pub const IYtem = struct { i: *Inst, ref: u16 };
-    fn next(it: *InsIterator) ?IYtem {
+    pub fn next(it: *InsIterator) ?IYtem {
         while (true) {
             if (it.cur_blk == NoRef) return null;
-            const retval = IYtem{ .i = &it.blk.i[it.idx], .ref = toref(it.cur_blk, it.idx) };
+            const retval = IYtem{ .i = &it.self.b.items[it.cur_blk].i[it.idx], .ref = toref(it.cur_blk, it.idx) };
             it.idx += 1;
             if (it.idx == BLK_SIZE) {
                 it.idx = 0;
-                it.cur_blk = it.blk.succ;
-                if (it.cur_blk != NoRef) it.blk = &it.self.b.items[it.cur_blk];
+                it.cur_blk = it.self.b.items[it.cur_blk].succ;
             }
             if (retval.i.tag != .empty) {
                 return retval;
@@ -1184,9 +1182,7 @@ const InsIterator = struct {
 };
 
 pub fn ins_iterator(self: *Self, first_blk: u16) InsIterator {
-    var it = InsIterator{ .self = self, .cur_blk = first_blk, .idx = 0, .blk = undefined };
-    if (it.cur_blk != NoRef) it.blk = &self.b.items[it.cur_blk];
-    return it;
+    return .{ .self = self, .cur_blk = first_blk, .idx = 0 };
 }
 
 fn print_blk(self: *Self, firstblk: u16) void {

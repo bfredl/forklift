@@ -22,48 +22,44 @@ pub fn ssa_gvn(flir: *FLIR) !void {
 }
 
 fn ssa(self: Self) !void {
-    for (self.f.n.items) |n| {
-        try self.fill_blk(n.firstblk);
+    for (self.f.n.items) |n, ni| {
+        try self.fill_blk(@intCast(u16, ni), n.firstblk);
     }
 
     // at this point all nodes have been _filled_ but join nodes (npred > 1)
     // have not been _sealed_, in the terminology of Braun 2013
     // TODO: keep a worklist of unfinished phi nodes, more effective +
     // otherwise might need multiple passes until a fix point
-    for (self.f.n.items) |n| {
-        try self.resolve_blk(n.firstblk);
+    for (self.f.n.items) |n, ni| {
+        try self.resolve_blk(@intCast(u16, ni), n.firstblk);
     }
 
     try self.delete_vars(self.f.n.items[0].firstblk);
 }
 
-fn fill_blk(self: Self, first_blk: u16) !void {
-    var cur_blk: ?u16 = first_blk;
-    while (cur_blk) |blk| {
-        var b = &self.f.b.items[blk];
-        const n = b.node;
-
-        for (b.i) |*i| {
-            if (i.tag == .putvar) {
-                const ivar = self.f.iref(i.op1) orelse return error.UW0tM8;
-                self.vdi(n, ivar.op1).* = i.op2;
-                // TODO: store debug info, or some shit
-                i.tag = .empty;
-            } else if (.tag == .phi) {
-                // TODO: likely we'll never need to consider an existing
-                // phi node here but verify this!
-            } else {
-                const nop = FLIR.n_op(i.tag, false);
-                if (nop > 0) {
-                    i.op1 = try self.read_ref(n, i.op1);
-                    if (nop > 1) {
-                        i.op2 = try self.read_ref(n, i.op2);
-                    }
+fn fill_blk(self: Self, n: u16, first_blk: u16) !void {
+    var it = self.f.ins_iterator(first_blk);
+    while (it.next()) |item| {
+        const i = item.i;
+        if (i.tag == .putvar) {
+            const ivar = self.f.iref(i.op1) orelse return error.UW0tM8;
+            self.vdi(n, ivar.op1).* = i.op2;
+            // TODO: store debug info, or some shit
+            i.tag = .empty;
+        } else if (.tag == .phi) {
+            // TODO: likely we'll never need to consider an existing
+            // phi node here but verify this!
+        } else {
+            const nop = FLIR.n_op(i.tag, false);
+            var ival = i.*;
+            if (nop > 0) {
+                ival.op1 = try self.read_ref(n, ival.op1);
+                if (nop > 1) {
+                    ival.op2 = try self.read_ref(n, ival.op2);
                 }
             }
+            self.f.iref(item.ref).?.* = ival;
         }
-
-        cur_blk = b.next();
     }
 }
 
@@ -109,42 +105,36 @@ fn read_var(self: Self, node: u16, vref: u16, v: FLIR.Inst) MaybePhi {
     return def;
 }
 
-fn resolve_blk(self: Self, first_blk: u16) !void {
-    var cur_blk: ?u16 = first_blk;
-    while (cur_blk) |blk| {
-        var b = &self.f.b.items[blk];
-        for (b.i) |*i, idx| {
-            if (i.tag == .phi) {
-                try self.resolve_phi(blk, FLIR.uv(idx));
-            }
+fn resolve_blk(self: Self, node: u16, first_blk: u16) !void {
+    var it = self.f.ins_iterator(first_blk);
+    while (it.next()) |item| {
+        if (item.i.tag == .phi) {
+            try self.resolve_phi(node, item.i.*, item.ref);
         }
-        cur_blk = b.next();
     }
 }
-fn resolve_phi(self: Self, b: u16, idx: u16) !void {
-    const blk = &self.f.b.items[b];
-    const i = &blk.i[idx];
+
+fn resolve_phi(self: Self, n: u16, i: FLIR.Inst, iref: u16) !void {
     if (i.op2 == 1) return;
-    const ivar = self.f.iref(i.op1) orelse return error.GLUGG;
+    const ivar = (self.f.iref(i.op1) orelse return error.GLUGG).*;
     var onlyref: ?u16 = null;
-    for (self.f.preds(blk.node)) |v| {
-        const ref = try self.read_var(v, i.op1, ivar.*);
-        _ = try self.f.binop(v, .putphi, ref, FLIR.toref(b, idx));
+    for (self.f.preds(n)) |v| {
+        const ref = try self.read_var(v, i.op1, ivar);
+        _ = try self.f.binop(v, .putphi, ref, iref);
         onlyref = if (onlyref) |only| if (only == ref) only else FLIR.NoRef else ref;
     }
-    i.op1 = 0;
-    i.op2 = 1; // flag for "phi already resolved"
+
+    // lookup again in case self.f.b.items changed
+    const i_ref = self.f.iref(iref).?;
+    i_ref.op1 = 0;
+    i_ref.op2 = 1; // flag for "phi already resolved"
 }
 
 fn delete_vars(self: Self, first_blk: u16) !void {
-    var cur_blk: ?u16 = first_blk;
-    while (cur_blk) |blk| {
-        var b = &self.f.b.items[blk];
-        for (b.i) |*i| {
-            if (i.tag == .variable) {
-                i.tag = .empty;
-            }
+    var it = self.f.ins_iterator(first_blk);
+    while (it.next()) |item| {
+        if (item.i.tag == .variable) {
+            item.i.tag = .empty; // this is explicitly allowed
         }
-        cur_blk = b.next();
     }
 }

@@ -53,7 +53,7 @@ pub fn main() !void {
     // ir.debug_print();
     try ir.test_analysis(true);
     try ir.scan_alloc();
-    // ir.debug_print();
+    ir.debug_print();
     try ir.check_cfg_valid();
 
     var cfo = try CFO.init(allocator);

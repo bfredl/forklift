@@ -135,147 +135,143 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
             }
         }
 
-        var cur_blk: ?u16 = n.firstblk;
         var ea_fused: CFO.EAddr = undefined;
         var fused_inst: ?*Inst = null;
         var cond: ?CFO.Cond = null;
-        while (cur_blk) |blk| {
-            var b = &self.b.items[blk];
-            for (b.i) |*i| {
-                if (i.tag == .empty) continue;
+        var it = self.ins_iterator(n.firstblk);
+        while (it.next()) |item| {
+            const i = item.i;
 
-                var was_fused: bool = false;
-                switch (i.tag) {
-                    // empty doesn't flush fused value
-                    .empty => continue,
-                    // these expect their values to be in place when executed
-                    .arg, .phi => {},
-                    .ret => try regmovmc(cfo, .rax, self.iref(i.op1).?.*),
-                    .iop => {
-                        const lhs = self.iref(i.op1).?;
-                        const rhs = self.iref(i.op2).?;
-                        const dst = i.ipreg() orelse .rax;
-                        // TODO: fugly: remove once we have constraint handling in regalloc
-                        const tmpdst = if (dst == rhs.ipreg() and dst != lhs.ipreg()) .rax else dst;
-                        try regmovmc(cfo, tmpdst, lhs.*);
-                        try regaritmc(cfo, @intToEnum(CFO.AOp, i.spec), tmpdst, rhs.*);
-                        try mcmovreg(cfo, i.*, tmpdst); // elided if dst is a conflict-free register
-                    },
-                    .imul => {
-                        const lhs = self.iref(i.op1).?;
-                        const rhs = self.iref(i.op2).?;
-                        const dst = i.ipreg() orelse .rax;
-                        if (rhs.tag == .constant) {
-                            const src = lhs.ipreg() orelse unreachable;
-                            try cfo.imulrri(dst, src, @intCast(i8, rhs.op1));
+            var was_fused: bool = false;
+            switch (i.tag) {
+                // empty doesn't flush fused value
+                .empty => continue,
+                // these expect their values to be in place when executed
+                .arg, .phi => {},
+                .ret => try regmovmc(cfo, .rax, self.iref(i.op1).?.*),
+                .iop => {
+                    const lhs = self.iref(i.op1).?;
+                    const rhs = self.iref(i.op2).?;
+                    const dst = i.ipreg() orelse .rax;
+                    // TODO: fugly: remove once we have constraint handling in regalloc
+                    const tmpdst = if (dst == rhs.ipreg() and dst != lhs.ipreg()) .rax else dst;
+                    try regmovmc(cfo, tmpdst, lhs.*);
+                    try regaritmc(cfo, @intToEnum(CFO.AOp, i.spec), tmpdst, rhs.*);
+                    try mcmovreg(cfo, i.*, tmpdst); // elided if dst is a conflict-free register
+                },
+                .imul => {
+                    const lhs = self.iref(i.op1).?;
+                    const rhs = self.iref(i.op2).?;
+                    const dst = i.ipreg() orelse .rax;
+                    if (rhs.tag == .constant) {
+                        const src = lhs.ipreg() orelse unreachable;
+                        try cfo.imulrri(dst, src, @intCast(i8, rhs.op1));
+                    } else {
+                        if (rhs.ipreg()) |rhsreg| {
+                            try regmovmc(cfo, dst, lhs.*);
+                            try cfo.imulrr(dst, rhsreg);
                         } else {
-                            if (rhs.ipreg()) |rhsreg| {
-                                try regmovmc(cfo, dst, lhs.*);
-                                try cfo.imulrr(dst, rhsreg);
-                            } else {
-                                unreachable;
-                            }
-                        }
-                        try mcmovreg(cfo, i.*, dst); // elided if dst is ipreg
-                    },
-                    .constant => try mcmovi(cfo, i.*),
-                    .icmp => {
-                        const firstop = self.iref(i.op1).?.ipreg() orelse .rax;
-                        try regmovmc(cfo, firstop, self.iref(i.op1).?.*);
-                        try regaritmc(cfo, .cmp, firstop, self.iref(i.op2).?.*);
-                        cond = @intToEnum(CFO.Cond, i.spec);
-                    },
-                    .putphi => {
-                        // TODO: actually check for parallell-move conflicts
-                        // either here or as an extra deconstruction step
-                        try movmcs(cfo, self.iref(i.op2).?.*, self.iref(i.op1).?.*, .rax);
-                    },
-                    .load, .vload => {
-                        // TODO: spill spall supllit?
-                        const base = self.iref(i.op1).?.ipreg() orelse unreachable;
-                        var eaddr = CFO.a(base);
-                        const idx = self.iref(i.op2).?;
-                        if (idx.ipreg()) |reg| {
-                            eaddr.index = reg;
-                            // TODO: fyyy
-                            eaddr.scale = (if (i.tag == .vload) 2 else 0);
-                        } else if (idx.tag == .constant) {
-                            eaddr = eaddr.o(idx.op1);
-                        } else {
-                            return error.VOLKTANZ;
-                        }
-
-                        if (i.res_type().? == .intptr) {
-                            const dst = i.ipreg() orelse .rax;
-                            switch (@intToEnum(CFO.ISize, i.spec)) {
-                                .byte => {
-                                    try cfo.movrm_byte(dst, eaddr);
-                                },
-                                .quadword => try cfo.movrm(dst, eaddr),
-                                else => unreachable,
-                            }
-                            try mcmovreg(cfo, i.*, dst); // elided if dst is register
-                        } else {
-                            const dst = i.avxreg() orelse unreachable;
-                            try cfo.vmovurm(i.fmode(), dst, eaddr);
-                        }
-                    },
-                    .lea => {
-                        // TODO: spill spall supllit?
-                        const base = self.iref(i.op1).?.ipreg() orelse unreachable;
-                        const idx = self.iref(i.op2).?.ipreg() orelse unreachable;
-                        const eaddr = CFO.qi(base, idx);
-                        if (i.mckind == .fused) {
-                            ea_fused = eaddr;
-                            was_fused = true;
-                        } else {
-                            const dst = i.ipreg() orelse .rax;
-                            try cfo.lea(dst, CFO.qi(base, idx));
-                            try mcmovreg(cfo, i.*, dst); // elided if dst is register
-                        }
-                    },
-                    .store => {
-                        // TODO: fuse lea with store
-                        const addr = self.iref(i.op1).?;
-                        const eaddr = if (addr == fused_inst)
-                            ea_fused
-                        else
-                            CFO.a(self.iref(i.op1).?.ipreg() orelse unreachable);
-                        const val = self.iref(i.op2).?;
-                        if (val.res_type().? == .intptr) {
                             unreachable;
-                        } else {
-                            const src = val.avxreg() orelse unreachable;
-                            try cfo.vmovumr(i.fmode(), eaddr, src);
                         }
-                    },
-                    .vmath => {
-                        const x = self.iref(i.op1).?.avxreg() orelse unreachable;
-                        const y = self.iref(i.op2).?.avxreg() orelse unreachable;
-                        const dst = i.avxreg() orelse unreachable;
-                        try cfo.vmathf(i.vop(), i.fmode(), dst, x, y);
-                    },
-                    .callarg => {
-                        try regmovmc(cfo, i.ipreg().?, self.iref(i.op1).?.*);
-                    },
-                    .call => {
-                        if (i.op1 != 0) { // TODO: le wat
-                            try cfo.movri(.rax, i.op1);
-                        } else {
-                            // THANKS INTEL
-                            try cfo.arit(.xor, .rax, .rax);
-                        }
-                        try cfo.syscall();
-                    },
+                    }
+                    try mcmovreg(cfo, i.*, dst); // elided if dst is ipreg
+                },
+                .constant => try mcmovi(cfo, i.*),
+                .icmp => {
+                    const firstop = self.iref(i.op1).?.ipreg() orelse .rax;
+                    try regmovmc(cfo, firstop, self.iref(i.op1).?.*);
+                    try regaritmc(cfo, .cmp, firstop, self.iref(i.op2).?.*);
+                    cond = @intToEnum(CFO.Cond, i.spec);
+                },
+                .putphi => {
+                    // TODO: actually check for parallell-move conflicts
+                    // either here or as an extra deconstruction step
+                    try movmcs(cfo, self.iref(i.op2).?.*, self.iref(i.op1).?.*, .rax);
+                },
+                .load, .vload => {
+                    // TODO: spill spall supllit?
+                    const base = self.iref(i.op1).?.ipreg() orelse unreachable;
+                    var eaddr = CFO.a(base);
+                    const idx = self.iref(i.op2).?;
+                    if (idx.ipreg()) |reg| {
+                        eaddr.index = reg;
+                        // TODO: fyyy
+                        eaddr.scale = (if (i.tag == .vload) 2 else 0);
+                    } else if (idx.tag == .constant) {
+                        eaddr = eaddr.o(idx.op1);
+                    } else {
+                        return error.VOLKTANZ;
+                    }
 
-                    else => {
-                        print("unhandled tag: {}\n", .{i.tag});
-                        return error.Panik;
-                    },
-                }
-                fused_inst = if (was_fused) i else null;
+                    if (i.res_type().? == .intptr) {
+                        const dst = i.ipreg() orelse .rax;
+                        switch (@intToEnum(CFO.ISize, i.spec)) {
+                            .byte => {
+                                try cfo.movrm_byte(dst, eaddr);
+                            },
+                            .quadword => try cfo.movrm(dst, eaddr),
+                            else => unreachable,
+                        }
+                        try mcmovreg(cfo, i.*, dst); // elided if dst is register
+                    } else {
+                        const dst = i.avxreg() orelse unreachable;
+                        try cfo.vmovurm(i.fmode(), dst, eaddr);
+                    }
+                },
+                .lea => {
+                    // TODO: spill spall supllit?
+                    const base = self.iref(i.op1).?.ipreg() orelse unreachable;
+                    const idx = self.iref(i.op2).?.ipreg() orelse unreachable;
+                    const eaddr = CFO.qi(base, idx);
+                    if (i.mckind == .fused) {
+                        ea_fused = eaddr;
+                        was_fused = true;
+                    } else {
+                        const dst = i.ipreg() orelse .rax;
+                        try cfo.lea(dst, CFO.qi(base, idx));
+                        try mcmovreg(cfo, i.*, dst); // elided if dst is register
+                    }
+                },
+                .store => {
+                    // TODO: fuse lea with store
+                    const addr = self.iref(i.op1).?;
+                    const eaddr = if (addr == fused_inst)
+                        ea_fused
+                    else
+                        CFO.a(self.iref(i.op1).?.ipreg() orelse unreachable);
+                    const val = self.iref(i.op2).?;
+                    if (val.res_type().? == .intptr) {
+                        unreachable;
+                    } else {
+                        const src = val.avxreg() orelse unreachable;
+                        try cfo.vmovumr(i.fmode(), eaddr, src);
+                    }
+                },
+                .vmath => {
+                    const x = self.iref(i.op1).?.avxreg() orelse unreachable;
+                    const y = self.iref(i.op2).?.avxreg() orelse unreachable;
+                    const dst = i.avxreg() orelse unreachable;
+                    try cfo.vmathf(i.vop(), i.fmode(), dst, x, y);
+                },
+                .callarg => {
+                    try regmovmc(cfo, i.ipreg().?, self.iref(i.op1).?.*);
+                },
+                .call => {
+                    if (i.op1 != 0) { // TODO: le wat
+                        try cfo.movri(.rax, i.op1);
+                    } else {
+                        // THANKS INTEL
+                        try cfo.arit(.xor, .rax, .rax);
+                    }
+                    try cfo.syscall();
+                },
+
+                else => {
+                    print("unhandled tag: {}\n", .{i.tag});
+                    return error.Panik;
+                },
             }
-            cur_blk = b.next();
+            fused_inst = if (was_fused) i else null;
         }
 
         // TODO: handle trivial critical-edge block.
