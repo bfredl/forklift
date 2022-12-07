@@ -526,19 +526,19 @@ fn predlink(self: *Self, i: u16, si: u1, split: bool) !void {
         n[inter].npred = 1;
         n[i].s[si] = inter;
         n[inter].s[0] = s;
-        addpred(self, s, inter);
-        addpred(self, inter, i);
+        try addpred(self, s, inter);
+        try addpred(self, inter, i);
     } else {
-        addpred(self, s, i);
+        try addpred(self, s, i);
     }
 }
 
-fn addpred(self: *Self, s: u16, i: u16) void {
+fn addpred(self: *Self, s: u16, i: u16) !void {
     const n = self.n.items;
     // tricky: build the reflist per node backwards,
     // so the end result is the start index
     if (n[s].predref == 0) {
-        self.refs.appendNTimesAssumeCapacity(DEAD, n[s].npred);
+        try self.refs.appendNTimes(DEAD, n[s].npred);
         n[s].predref = uv(self.refs.items.len);
     }
     n[s].predref -= 1;
@@ -1308,7 +1308,6 @@ pub fn test_analysis(self: *Self, comptime check: bool) !void {
     try SSA_GVN.ssa_gvn(self);
     if (check) try self.check_cfg_valid();
 
-    // self.debug_print();
     try self.reorder_inst();
     if (check) try self.check_cfg_valid();
     try self.calc_use();
@@ -1336,7 +1335,7 @@ pub fn remove_empty(self: *Self) !void {
                 const b = &self.n.items[s.*];
                 b.npred = 0;
                 s.* = f;
-                self.addpred(f, @intCast(u16, ni));
+                try self.addpred(f, @intCast(u16, ni));
             }
         }
     }

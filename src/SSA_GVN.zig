@@ -28,10 +28,13 @@ fn ssa(self: Self) !void {
 
     // at this point all nodes have been _filled_ but join nodes (npred > 1)
     // have not been _sealed_, in the terminology of Braun 2013
-    // TODO: keep a worklist of unfinished phi nodes, more effective +
-    // otherwise might need multiple passes until a fix point
-    for (self.f.n.items) |n, ni| {
-        try self.resolve_blk(@intCast(u16, ni), n.firstblk);
+    // TODO: keep a worklist of unfinished phi nodes, more effective
+    while (true) {
+        var did_phi: bool = false;
+        for (self.f.n.items) |n, ni| {
+            did_phi = did_phi or try self.resolve_blk(@intCast(u16, ni), n.firstblk);
+        }
+        if (!did_phi) break;
     }
 
     try self.delete_vars(self.f.n.items[0].firstblk);
@@ -105,21 +108,24 @@ fn read_var(self: Self, node: u16, vref: u16, v: FLIR.Inst) MaybePhi {
     return def;
 }
 
-fn resolve_blk(self: Self, node: u16, first_blk: u16) !void {
+fn resolve_blk(self: Self, node: u16, first_blk: u16) !bool {
     var it = self.f.ins_iterator(first_blk);
+    var any = false;
     while (it.next()) |item| {
         if (item.i.tag == .phi) {
-            try self.resolve_phi(node, item.i.*, item.ref);
+            any = any or try self.resolve_phi(node, item.i.*, item.ref);
         }
     }
+    return any;
 }
 
-fn resolve_phi(self: Self, n: u16, i: FLIR.Inst, iref: u16) !void {
-    if (i.op2 == 1) return;
+fn resolve_phi(self: Self, n: u16, i: FLIR.Inst, iref: u16) !bool {
+    if (i.op2 == 1) return false;
     const ivar = (self.f.iref(i.op1) orelse return error.GLUGG).*;
     var onlyref: ?u16 = null;
     for (self.f.preds(n)) |v| {
         const ref = try self.read_var(v, i.op1, ivar);
+
         _ = try self.f.binop(v, .putphi, ref, iref);
         onlyref = if (onlyref) |only| if (only == ref) only else FLIR.NoRef else ref;
     }
@@ -128,6 +134,7 @@ fn resolve_phi(self: Self, n: u16, i: FLIR.Inst, iref: u16) !void {
     const i_ref = self.f.iref(iref).?;
     i_ref.op1 = 0;
     i_ref.op2 = 1; // flag for "phi already resolved"
+    return true;
 }
 
 fn delete_vars(self: Self, first_blk: u16) !void {
