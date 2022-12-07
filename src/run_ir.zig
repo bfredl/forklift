@@ -22,11 +22,34 @@ pub fn readall(allocator: mem.Allocator, filename: []u8) ![]u8 {
     return buf;
 }
 
+pub var options = struct {
+    dbg_raw_ir: bool = false,
+    dbg_analysed_ir: bool = false,
+    dbg_disasm: bool = false,
+    dbg_trap: bool = false,
+}{};
+
 pub fn main() !void {
     const argv = std.os.argv;
     if (argv.len < 2) return usage();
-    const firstarg = mem.span(argv[1]);
-    var filearg = firstarg;
+    var nextarg: u8 = 1;
+    const firstarg = mem.span(argv[nextarg]);
+    if (firstarg[0] == '-') {
+        if (argv.len < 3) return usage();
+        nextarg += 1;
+        for (firstarg[1..]) |a| {
+            switch (a) {
+                'i' => options.dbg_raw_ir = true,
+                'a' => options.dbg_analysed_ir = true,
+                'd' => options.dbg_disasm = true,
+                't' => options.dbg_trap = true,
+                else => return usage(),
+            }
+        }
+    }
+
+    var filearg = mem.span(argv[nextarg]);
+    nextarg += 1;
 
     const mode = @import("builtin").mode;
     var gpa = if (mode == .Debug)
@@ -38,7 +61,7 @@ pub fn main() !void {
     const buf = try readall(allocator, filearg);
     defer allocator.free(buf);
 
-    const inbuf = if (argv.len >= 3) try readall(allocator, mem.span(argv[2])) else null;
+    const inbuf = if (argv.len > nextarg) try readall(allocator, mem.span(argv[nextarg])) else null;
     defer if (inbuf) |b| allocator.free(b);
 
     var ir = try FLIR.init(16, allocator);
@@ -50,17 +73,20 @@ pub fn main() !void {
         return e;
     };
 
-    // ir.debug_print();
+    if (options.dbg_raw_ir) ir.debug_print();
     try ir.test_analysis(true);
     try ir.scan_alloc();
-    ir.debug_print();
+    if (options.dbg_analysed_ir) ir.debug_print();
     try ir.check_cfg_valid();
 
     var cfo = try CFO.init(allocator);
 
+    // emit trap instruction to invoke debugger
+    if (options.dbg_trap) try cfo.trap();
+
     _ = try @import("./codegen.zig").codegen(&ir, &cfo);
     try cfo.finalize();
-    try cfo.dbg_nasm(allocator);
+    if (options.dbg_disasm) try cfo.dbg_nasm(allocator);
 
     if (inbuf) |b| {
         const SFunc = *const fn (arg1: [*]u8, arg2: usize) callconv(.C) usize;

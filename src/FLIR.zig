@@ -1116,6 +1116,41 @@ pub fn resolve_phi(self: *Self) !void {
     }
 }
 
+pub fn check_phi(self: *Self, worklist: *ArrayList(u16), pred: u16, succ: u16) !void {
+    const pn = self.n.items[pred];
+    var iter = self.ins_iterator(pn.firstblk);
+    var saw_putphi = false;
+
+    while (iter.next()) |it| {
+        if (it.i.tag == .putphi) {
+            saw_putphi = true;
+            // it.op1 == NoRef is techy allowed ( %thephi := undefined )
+            if (it.i.op2 == NoRef) return error.InvalidCFG;
+            try worklist.append(it.i.op2); // TODO: check duplicate
+        } else {
+            // error: regular instruction after putphi
+            if (saw_putphi) return error.InvalidCFG;
+        }
+    }
+
+    var left: u16 = uv(worklist.items.len);
+
+    var siter = self.ins_iterator(self.n.items[succ].firstblk);
+    while (siter.next()) |it| {
+        if (it.i.tag == .phi) {
+            const idx = mem.indexOfScalar(u16, worklist.items, it.ref) orelse return error.InvalidCFG;
+            left -= 1;
+            worklist.items[idx] = NoRef;
+        } else {
+            // TODO: check for phi in the wild if we memoize this before going thu preds
+            break;
+        }
+    }
+    if (left > 0) return error.InvalidCFG;
+    worklist.items.len = 0; // ALL RESET
+    // RETURN
+}
+
 pub fn conflict(self: *Self, before: *Inst, after: *Inst) bool {
     const written = self.iref(before.op2) orelse return false;
     const read = self.iref(after.op1) orelse return false;
@@ -1337,6 +1372,9 @@ pub fn check_cfg_valid(self: *Self) !void {
     const reached = try self.a.alloc(bool, self.n.items.len);
     defer self.a.free(reached);
     mem.set(bool, reached, false);
+
+    var worklist = ArrayList(u16).init(self.a);
+    defer worklist.deinit();
     for (self.n.items) |*n, ni| {
         for (n.s) |s| {
             if (s > self.n.items.len) return error.InvalidCFG;
@@ -1349,6 +1387,7 @@ pub fn check_cfg_valid(self: *Self) !void {
                 if (pn.s[0] != ni and pn.s[1] != ni) {
                     return error.InvalidCFG;
                 }
+                try self.check_phi(&worklist, pred, uv(ni));
             }
         }
     }
