@@ -125,6 +125,7 @@ pub const Inst = struct {
             .phi => inst.spec_type(),
             .putphi => null, // stated in the phi instruction
             .constant => inst.spec_type(),
+            .alloc => .intptr, // the type of .alloc is a pointer to it
             .renum => null, // should be removed at this point
             .load => .intptr,
             .vload => inst.spec_type(),
@@ -140,6 +141,10 @@ pub const Inst = struct {
         };
     }
 
+    pub fn has_res(inst: Inst) bool {
+        return inst.res_type() != null;
+    }
+
     pub fn ipreg(i: Inst) ?IPReg {
         return if (i.mckind == .ipreg) @intToEnum(IPReg, i.mcidx) else null;
     }
@@ -150,6 +155,7 @@ pub const Inst = struct {
 };
 pub const Tag = enum(u8) {
     empty = 0, // empty slot. must not be refered to!
+    alloc,
     arg,
     variable,
     putvar, // non-phi assignment
@@ -235,6 +241,7 @@ pub fn n_op(tag: Tag, rw: bool) u2 {
         .ret => 1,
         .callarg => 1,
         .call => 0, // could be for funptr/dynamic syscall?
+        .alloc => 0,
     };
 }
 
@@ -247,32 +254,6 @@ const ValType = enum(u4) {
         return @enumToInt(self);
     }
 };
-
-// TODO: refactor these to an array of InstMetadata structs
-// or this is res_type != null?
-pub fn has_res(tag: Tag) bool {
-    return switch (tag) {
-        .empty => false,
-        .arg => true,
-        .variable => true, // ASCHUALLY no, but looks like yes
-        .putvar => false,
-        .phi => true,
-        .putphi => false, // storage location is stated in the phi instruction
-        .constant => true,
-        .renum => true, // TODO: removed at this point
-        .load => true,
-        .vload => true,
-        .lea => true, // Lea? Who's Lea??
-        .store => false,
-        .iop => true,
-        .icmp => false, // technically yes, but no
-        .imul => true,
-        .vmath => true,
-        .ret => false,
-        .call => true,
-        .callarg => true,
-    };
-}
 
 pub fn init(n: u16, allocator: Allocator) !Self {
     return Self{
@@ -888,6 +869,15 @@ pub fn alloc_arg(self: *Self, inst: *Inst) !void {
     inst.mcidx = regs[inst.op1].id();
 }
 
+pub fn alloc(self: *Self, node: u16, size: u8) !u16 {
+    if (self.nslots == 255) {
+        return error.OutOfMemory; // TODO: yes, but actually no
+    }
+    const slot = self.nslots + size - 1;
+    self.nslots += size;
+    return self.addInst(node, .{ .tag = .alloc, .op1 = slot, .op2 = 0, .spec = Inst.TODO_INT_SPEC, .mckind = .fused });
+}
+
 // makes space for a slot after instruction "after"
 // invalidates all refs after "after" (in self.n order), but leaves earlier untouched.
 // returns the slot (currenty having an Empty filler)
@@ -963,7 +953,7 @@ pub fn trivial_alloc(self: *Self) !void {
 
                 if (i.tag == .arg) {
                     try self.alloc_arg(i);
-                } else if (has_res(i.tag) and i.mckind.unallocated()) {
+                } else if (i.has_res() and i.mckind.unallocated()) {
                     const regkind: MCKind = if (i.res_type() == ValType.avxval) .vfreg else .ipreg;
                     const op1 = if (n_op(i.tag, false) > 0) self.iref(i.op1) else null;
                     if (op1) |o| {
@@ -1027,7 +1017,7 @@ pub fn scan_alloc(self: *Self) !void {
             } else if (i.tag == .constant and i.mckind.unallocated()) {
                 // TODO: check as needed
                 i.mckind = .fused;
-            } else if (has_res(i.tag) and i.mckind.unallocated()) {
+            } else if (i.has_res() and i.mckind.unallocated()) {
                 const is_avx = (i.res_type() == ValType.avxval);
                 const regkind: MCKind = if (is_avx) .vfreg else .ipreg;
                 const the_active = if (is_avx) &active_avx else &active_ipreg;
@@ -1224,7 +1214,7 @@ fn print_blk(self: *Self, firstblk: u16) void {
     var it = self.ins_iterator(firstblk);
     while (it.next()) |item| {
         const i = item.i.*;
-        const chr: u8 = if (has_res(i.tag)) '=' else ' ';
+        const chr: u8 = if (i.has_res()) '=' else ' ';
         print("  %{} {c} {s}", .{ item.ref, chr, @tagName(i.tag) });
 
         if (i.tag == .variable) {

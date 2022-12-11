@@ -1,5 +1,6 @@
 func scorer
   var %ipos
+  %table = alloc 2
   %data = arg
   %len = arg
   %ipos := 0
@@ -8,6 +9,7 @@ func scorer
   %ipos := add %ipos 2
   %xbyte = load byte [%data 2]
   %xpos = sub %xbyte 88
+  %tabval = load byte [%table %xpos]
   ret %xpos
 end
   

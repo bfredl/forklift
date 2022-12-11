@@ -7,10 +7,15 @@ const IPReg = CFO.IPReg;
 const VMathOp = CFO.VMathOp;
 const Inst = FLIR.Inst;
 const uv = FLIR.uv;
+const EAddr = CFO.EAddr;
+
+fn slotoff(slotid: anytype) i32 {
+    return -8 * (1 + @intCast(i32, slotid));
+}
 
 fn regmovmc(cfo: *CFO, dst: IPReg, src: Inst) !void {
     switch (src.mckind) {
-        .frameslot => try cfo.movrm(dst, CFO.a(.rbp).o(-8 * @as(i32, src.mcidx))),
+        .frameslot => try cfo.movrm(dst, CFO.a(.rbp).o(slotoff(src.mcidx))),
         .ipreg => {
             const reg = @intToEnum(IPReg, src.mcidx);
             if (dst != reg) try cfo.mov(dst, reg);
@@ -101,6 +106,16 @@ pub fn makejmp(self: *FLIR, cfo: *CFO, cond: ?CFO.Cond, ni: u16, si: u1, labels:
     }
 }
 
+fn get_eaddr(i: Inst) !EAddr {
+    if (i.tag == .alloc) {
+        return CFO.a(.rbp).o(slotoff(i.op1));
+    } else {
+        // TODO: spill spall supllit?
+        const base = i.ipreg() orelse return error.WHAAAAA;
+        return CFO.a(base);
+    }
+}
+
 pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
     var labels = try self.a.alloc(u32, self.dfs.items.len);
     var targets = try self.a.alloc([2]u32, self.dfs.items.len);
@@ -135,7 +150,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
             }
         }
 
-        var ea_fused: CFO.EAddr = undefined;
+        var ea_fused: EAddr = undefined;
         var fused_inst: ?*Inst = null;
         var cond: ?CFO.Cond = null;
         var it = self.ins_iterator(n.firstblk);
@@ -148,6 +163,8 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
                 .empty => continue,
                 // these expect their values to be in place when executed
                 .arg, .phi => {},
+                // lea relative RBP when used
+                .alloc => {},
                 .ret => try regmovmc(cfo, .rax, self.iref(i.op1).?.*),
                 .iop => {
                     const lhs = self.iref(i.op1).?;
@@ -189,9 +206,8 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
                     try movmcs(cfo, self.iref(i.op2).?.*, self.iref(i.op1).?.*, .rax);
                 },
                 .load, .vload => {
-                    // TODO: spill spall supllit?
-                    const base = self.iref(i.op1).?.ipreg() orelse unreachable;
-                    var eaddr = CFO.a(base);
+                    var eaddr = try get_eaddr(self.iref(i.op1).?.*);
+
                     const idx = self.iref(i.op2).?;
                     if (idx.ipreg()) |reg| {
                         eaddr.index = reg;

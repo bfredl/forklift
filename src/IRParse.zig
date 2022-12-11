@@ -349,8 +349,8 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
             }
             return try f.ir.call(f.curnode, @intCast(u16, @enumToInt(syscall)));
         } else if (mem.eql(u8, kw, "alloc")) {
-            unreachable;
-            // return f.ir.alloc(f.curnode);
+            const size = self.num() orelse 1;
+            return f.ir.alloc(f.curnode, @intCast(u8, size));
         }
     }
     return error.ParseError;
