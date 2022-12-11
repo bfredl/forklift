@@ -205,21 +205,21 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
                     // either here or as an extra deconstruction step
                     try movmcs(cfo, self.iref(i.op2).?.*, self.iref(i.op1).?.*, .rax);
                 },
-                .load, .vload => {
+                .load => {
                     var eaddr = try get_eaddr(self.iref(i.op1).?.*);
 
                     const idx = self.iref(i.op2).?;
                     if (idx.ipreg()) |reg| {
                         eaddr.index = reg;
-                        // TODO: fyyy
-                        eaddr.scale = (if (i.tag == .vload) 2 else 0);
+                        // TODO: fyyy, make scale part of instruction (usused spec bytes?)
+                        eaddr.scale = (if (i.spec_type() == .avxval) 2 else 0);
                     } else if (idx.tag == .constant) {
                         eaddr = eaddr.o(idx.op1);
                     } else {
                         return error.VOLKTANZ;
                     }
 
-                    if (i.res_type().? == .intptr) {
+                    if (i.spec_type() == .intptr) {
                         const dst = i.ipreg() orelse .rax;
                         switch (@intToEnum(CFO.ISize, i.spec)) {
                             .byte => {

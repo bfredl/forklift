@@ -1,6 +1,7 @@
 func scorer
   var %ipos
   %table = alloc 2
+  store byte [%table 0] 4
   %data = arg
   %len = arg
   %ipos := 0

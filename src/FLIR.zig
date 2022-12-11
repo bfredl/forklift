@@ -99,11 +99,10 @@ pub const Inst = struct {
 
     // TODO: handle spec being split between u4 type and u4 somethingelse?
     pub fn spec_type(self: Inst) ValType {
-        // TODO: jesus this is terrible
-        return if (self.spec >= TODO_INT_SPEC) .intptr else .avxval;
+        return if (self.spec >= INT_SPEC_OFF) .intptr else .avxval;
     }
 
-    const TODO_INT_SPEC: u8 = 8;
+    const INT_SPEC_OFF: u8 = 8;
 
     const FMODE_MASK: u8 = (1 << 4) - 1;
     const VOP_MASK: u8 = ~FMODE_MASK;
@@ -127,8 +126,7 @@ pub const Inst = struct {
             .constant => inst.spec_type(),
             .alloc => .intptr, // the type of .alloc is a pointer to it
             .renum => null, // should be removed at this point
-            .load => .intptr,
-            .vload => inst.spec_type(),
+            .load => inst.spec_type(),
             .lea => .intptr, // Lea? Who's Lea??
             .store => null,
             .iop => .intptr,
@@ -168,7 +166,6 @@ pub const Tag = enum(u8) {
     renum,
     constant,
     load,
-    vload,
     imul,
     lea,
     store,
@@ -231,7 +228,6 @@ pub fn n_op(tag: Tag, rw: bool) u2 {
         .constant => 0,
         .renum => 1,
         .load => 2, // base, idx
-        .vload => 2, // base, idx
         .lea => 2, // base, idx. elided when only used for a store!
         .store => 2, // addr, val
         .iop => 2,
@@ -385,21 +381,24 @@ pub fn preInst(self: *Self, node: u16, inst: Inst) !u16 {
 
 pub fn const_int(self: *Self, node: u16, val: u16) !u16 {
     // TODO: actually store constants in a buffer, or something
-    return self.addInst(node, .{ .tag = .constant, .op1 = val, .op2 = 0, .spec = Inst.TODO_INT_SPEC });
+    return self.addInst(node, .{ .tag = .constant, .op1 = val, .op2 = 0, .spec = intspec(.dword) });
 }
 
 pub fn binop(self: *Self, node: u16, tag: Tag, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = tag, .op1 = op1, .op2 = op2 });
 }
 
+fn intspec(size: CFO.ISize) u8 {
+    return Inst.INT_SPEC_OFF + @enumToInt(size);
+}
+
 pub fn load(self: *Self, node: u16, size: CFO.ISize, base: u16, idx: u16) !u16 {
-    return self.addInst(node, .{ .tag = .load, .op1 = base, .op2 = idx, .spec = @enumToInt(size) });
+    return self.addInst(node, .{ .tag = .load, .op1 = base, .op2 = idx, .spec = intspec(size) });
 }
 
 // TODO: better abstraction for types (once we have real types)
-// then .vload should be merged back into .load
 pub fn vload(self: *Self, node: u16, fmode: FMode, base: u16, idx: u16) !u16 {
-    return self.addInst(node, .{ .tag = .vload, .op1 = base, .op2 = idx, .spec = @enumToInt(fmode) });
+    return self.addInst(node, .{ .tag = .load, .op1 = base, .op2 = idx, .spec = @enumToInt(fmode) });
 }
 
 pub fn vmath(self: *Self, node: u16, vop: VMathOp, fmode: FMode, op1: u16, op2: u16) !u16 {
@@ -468,14 +467,14 @@ pub fn prePhi(self: *Self, node: u16, vref: u16) !u16 {
 
 pub fn arg(self: *Self) !u16 {
     if (self.n.items.len == 0) return error.FLIRError;
-    const inst = try self.addInst(0, .{ .tag = .arg, .op1 = self.narg, .op2 = 0, .spec = Inst.TODO_INT_SPEC });
+    const inst = try self.addInst(0, .{ .tag = .arg, .op1 = self.narg, .op2 = 0, .spec = intspec(.dword) });
     self.narg += 1;
     return inst;
 }
 
 pub fn variable(self: *Self) !u16 {
     if (self.n.items.len == 0) return error.FLIRError;
-    const inst = try self.addInst(0, .{ .tag = .variable, .op1 = self.nvar, .op2 = 0, .spec = Inst.TODO_INT_SPEC });
+    const inst = try self.addInst(0, .{ .tag = .variable, .op1 = self.nvar, .op2 = 0, .spec = intspec(.dword) });
     self.nvar += 1;
     return inst;
 }
@@ -875,7 +874,8 @@ pub fn alloc(self: *Self, node: u16, size: u8) !u16 {
     }
     const slot = self.nslots + size - 1;
     self.nslots += size;
-    return self.addInst(node, .{ .tag = .alloc, .op1 = slot, .op2 = 0, .spec = Inst.TODO_INT_SPEC, .mckind = .fused });
+    // TODO: store actual size in .spec (alloc is always typed as a pointer)
+    return self.addInst(node, .{ .tag = .alloc, .op1 = slot, .op2 = 0, .spec = intspec(.dword), .mckind = .fused });
 }
 
 // makes space for a slot after instruction "after"
@@ -1271,7 +1271,7 @@ fn print_mcval(i: Inst) void {
         .ipreg => print(" ${s}", .{@tagName(@intToEnum(IPReg, i.mcidx))}),
         .vfreg => print(" $ymm{}", .{i.mcidx}),
         else => {
-            if (i.tag == .load or i.tag == .vload or i.tag == .phi or i.tag == .arg) {
+            if (i.tag == .load or i.tag == .phi or i.tag == .arg) {
                 if (i.res_type()) |t| {
                     print(" {s}", .{@tagName(t)});
                 }
