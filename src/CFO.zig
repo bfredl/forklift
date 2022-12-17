@@ -652,6 +652,19 @@ pub fn mulr(self: *Self, src: IPReg) !void {
     try self.modRm(0b11, 4, src.lowId());
 }
 
+// bitshift instructions
+//
+
+pub fn shr_ri(self: *Self, dst: IPReg, count: u8) !void {
+    if (count == 1) {
+        try self.rex_wrxb(true, false, false, dst.ext());
+        try self.wb(0xD1); // SHR \rm, 1
+        try self.modRm(0b11, 5, dst.lowId());
+    } else {
+        unreachable;
+    }
+}
+
 // VEX instructions
 // note: for now we use VEX for all xmm/ymm operations.
 // old school SSE forms might be shorter for some 128/scalar ops?

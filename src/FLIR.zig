@@ -191,6 +191,7 @@ pub const Inst = struct {
             .iop => .intptr,
             .icmp => null, // technically the FLAG register but anyway
             .imul => .intptr,
+            .shr => .intptr,
             .vmath => .avxval,
             .ret => null,
             .call => .intptr,
@@ -226,6 +227,7 @@ pub const Tag = enum(u8) {
     constant,
     load,
     imul,
+    shr, // TODO: all shifts to a family
     lea,
     store,
     iop, // imath group?
@@ -292,6 +294,7 @@ pub fn n_op(tag: Tag, rw: bool) u2 {
         .iop => 2,
         .icmp => 2,
         .imul => 2,
+        .shr => 2,
         .vmath => 2,
         .ret => 1,
         .callarg => 1,
@@ -466,6 +469,10 @@ pub fn icmp(self: *Self, node: u16, cond: Cond, op1: u16, op2: u16) !u16 {
 // TODO: fold into iop, no need to special case x86 weirdology here
 pub fn imul(self: *Self, node: u16, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .imul, .op1 = op1, .op2 = op2 });
+}
+
+pub fn shr(self: *Self, node: u16, op1: u16, op2: u16) !u16 {
+    return self.addInst(node, .{ .tag = .shr, .op1 = op1, .op2 = op2 });
 }
 
 pub fn putvar(self: *Self, node: u16, op1: u16, op2: u16) !void {

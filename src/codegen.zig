@@ -223,6 +223,17 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     }
                     try mcmovreg(cfo, i.*, dst); // elided if dst is ipreg
                 },
+                .shr => {
+                    const val = self.iref(i.op1).?;
+                    const count = self.iref(i.op2).?;
+                    const dst = i.ipreg() orelse .rax;
+                    if (count.tag == .constant) {
+                        try regmovmc(cfo, dst, val.*);
+                        try cfo.shr_ri(dst, @intCast(u8, count.op1));
+                    } else {
+                        unreachable;
+                    }
+                },
                 .constant => try mcmovi(cfo, i.*),
                 .icmp => {
                     const firstop = self.iref(i.op1).?.ipreg() orelse .rax;
