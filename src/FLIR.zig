@@ -92,7 +92,7 @@ pub const ValType = enum(u4) {
 pub const SpecType = union(ValType) {
     intptr: ISize,
     avxval: FMode,
-    const INT_SPEC_OFF: u8 = 8;
+    const INT_SPEC_OFF: u4 = 8;
     pub fn val_type(self: @This()) ValType {
         return if (@enumToInt(self) >= INT_SPEC_OFF) .intptr else .avxval;
     }
@@ -103,7 +103,7 @@ pub const SpecType = union(ValType) {
             return .{ .avxval = @intToEnum(FMode, val) };
         }
     }
-    pub fn into(self: SpecType) u8 {
+    pub fn into(self: SpecType) u4 {
         return switch (self) {
             .intptr => |i| INT_SPEC_OFF + @enumToInt(i),
             .avxval => |a| @enumToInt(a),
@@ -144,24 +144,28 @@ pub const Inst = struct {
 
     // TODO: handle spec being split between u4 type and u4 somethingelse?
     pub fn spec_type(self: Inst) ValType {
-        return if (self.spec >= SpecType.INT_SPEC_OFF) .intptr else .avxval;
+        return self.mem_type();
     }
 
     // TODO: handle spec being split between u4 type and u4 somethingelse?
     // for load/store insts that can handle both intptr and avxvalues
     pub fn mem_type(self: Inst) SpecType {
-        return SpecType.from(self.spec);
+        return SpecType.from(self.spec & TYPE_MASK);
     }
 
-    const FMODE_MASK: u8 = (1 << 4) - 1;
-    const VOP_MASK: u8 = ~FMODE_MASK;
+    const TYPE_MASK: u8 = (1 << 4) - 1;
+    const HIGH_MASK: u8 = ~TYPE_MASK;
+
+    pub fn high_spec(self: Inst) u4 {
+        return @intCast(u4, (self.spec & HIGH_MASK) >> 4);
+    }
 
     pub fn vop(self: Inst) VMathOp {
-        return @intToEnum(VMathOp, (self.spec & VOP_MASK) >> 4);
+        return @intToEnum(VMathOp, self.high_spec());
     }
 
     pub fn fmode(self: Inst) FMode {
-        return @intToEnum(FMode, self.spec & FMODE_MASK);
+        return @intToEnum(FMode, self.spec & TYPE_MASK);
     }
 
     pub fn res_type(inst: Inst) ?ValType {
@@ -427,14 +431,19 @@ pub fn binop(self: *Self, node: u16, tag: Tag, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = tag, .op1 = op1, .op2 = op2 });
 }
 
+pub fn sphigh(high: u4, low: u4) u8 {
+    return @as(u8, high) << 4 | low;
+}
+
 pub fn load(self: *Self, node: u16, kind: SpecType, base: u16, idx: u16) !u16 {
-    return self.addInst(node, .{ .tag = .load, .op1 = base, .op2 = idx, .spec = kind.into() });
+    const scale: u2 = if (kind == .avxval) 2 else 0; // nu börjar det APA sig
+    return self.addInst(node, .{ .tag = .load, .op1 = base, .op2 = idx, .spec = sphigh(scale, kind.into()) });
 }
 pub fn store(self: *Self, node: u16, kind: SpecType, base: u16, idx: u16, val: u16) !u16 {
     // FUBBIT: all possible instances of fusing should be detected in analysis anyway
     // fyy: make scale explicit. caller should call lea for this!
     const scale: u2 = if (kind == .avxval) 2 else 0;
-    const addr = if (idx != NoRef) try self.addInst(node, .{ .tag = .lea, .op1 = base, .op2 = idx, .mckind = .fused, .spec = scale }) else base;
+    const addr = if (idx != NoRef) try self.addInst(node, .{ .tag = .lea, .op1 = base, .op2 = idx, .mckind = .fused, .spec = sphigh(scale, 0) }) else base;
     return self.addInst(node, .{ .tag = .store, .op1 = addr, .op2 = val, .spec = kind.into() });
 }
 

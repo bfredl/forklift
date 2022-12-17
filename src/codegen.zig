@@ -107,29 +107,42 @@ pub fn makejmp(self: *FLIR, cfo: *CFO, cond: ?CFO.Cond, ni: u16, si: u1, labels:
     }
 }
 
-fn get_eaddr(self: *FLIR, i: Inst) !EAddr {
+// lol no co-recursive inferred error sets
+const EERROR = error{ WHAAAAA, @"TODO: unfused lea", VOLKTANZ };
+fn get_eaddr(self: *FLIR, i: Inst) EERROR!EAddr {
     if (i.tag == .alloc) {
         return CFO.a(.rbp).o(slotoff(i.op1));
     } else if (i.tag == .lea) {
-        const base = self.iref(i.op1).?;
-        const idx = self.iref(i.op2).?;
-
-        const basereg = base.ipreg() orelse return error.WHAAAAA;
-        var eaddr = CFO.a(basereg);
-        if (idx.ipreg()) |reg| {
-            eaddr.index = reg;
-            eaddr.scale = @intCast(u2, i.spec);
-        } else if (idx.tag == .constant) {
-            eaddr = eaddr.o(idx.op1);
-        } else {
-            return error.VOLKTANZ;
-        }
-        return eaddr;
+        return get_eaddr_load_or_lea(self, i);
     } else {
         // TODO: spill spall supllit?
         const base = i.ipreg() orelse return error.WHAAAAA;
         return CFO.a(base);
     }
+}
+
+// i must either be a load or lea instruction.
+fn get_eaddr_load_or_lea(self: *FLIR, i: Inst) !EAddr {
+    const base = self.iref(i.op1).?.*;
+
+    // TODO: if base is an un-fused .lea we should use its target
+    // ipreg instead.
+    var eaddr = try get_eaddr(self, base);
+
+    const idx = self.iref(i.op2) orelse return eaddr;
+    if (idx.ipreg()) |reg| {
+        if (eaddr.index != null) {
+            return error.@"TODO: unfused lea";
+        }
+        eaddr.index = reg;
+        // FUUUUU
+        eaddr.scale = @intCast(u2, i.high_spec());
+    } else if (idx.tag == .constant) {
+        eaddr = eaddr.o(idx.op1);
+    } else {
+        return error.VOLKTANZ;
+    }
+    return eaddr;
 }
 
 pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
@@ -224,20 +237,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
 
                     // TODO: the form of a load instruction should be the same as a .lea istruction
                     // share more code!
-                    var eaddr = try get_eaddr(self, self.iref(i.op1).?.*);
-
-                    const idx = self.iref(i.op2).?;
-                    if (idx.ipreg()) |reg| {
-                        eaddr.index = reg;
-                        // TODO: fyyy, make scale part of instruction (usused spec bytes?)
-                        // or require a .lea if there is a scale?
-                        eaddr.scale = (if (i.spec_type() == .avxval) 2 else 0);
-                    } else if (idx.tag == .constant) {
-                        eaddr = eaddr.o(idx.op1);
-                    } else {
-                        return error.VOLKTANZ;
-                    }
-
+                    var eaddr = try get_eaddr_load_or_lea(self, i.*);
                     const spec_type = i.mem_type();
                     switch (spec_type) {
                         .intptr => |size| {

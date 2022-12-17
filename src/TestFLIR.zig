@@ -265,7 +265,7 @@ test "vopper" {
 }
 
 test "store byte" {
-    // TODO: lol obviously support this without %z arg as well
+    // TODO: lol obviously support this without %y arg as well
     var cfo = try parse_test(
         \\func storer
         \\  %x = arg
