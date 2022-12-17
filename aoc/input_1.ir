@@ -2,9 +2,12 @@ func returner
   var %sum
   var %item
   var %ipos
+  var %max
   %x = arg
   %len = arg
   %ipos := 0
+  %max := 0
+:maxloop
   %sum := 0
 :sumloop
   %item := 0
@@ -12,7 +15,7 @@ func returner
 :check
   %prebyte = load byte [%x %ipos]
   %pretoken = sub %prebyte 48
-  ja %pretoken 9 :retvrn
+  ja %pretoken 9 :enda_sum
 :parseloop
   %byte = load byte [%x %ipos]
   %token = sub %byte 48
@@ -27,6 +30,11 @@ func returner
   %sum := add %sum %item
   %ipos := add %ipos 1
   jmp :sumloop
+:enda_sum
+  jge %max %sum :maxloop
+:newmax
+  %max := add %sum 0
+  jmp :maxloop
 :retvrn
-  ret %sum
+  ret %max
 end

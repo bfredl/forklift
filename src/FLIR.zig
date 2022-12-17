@@ -35,6 +35,12 @@ vregs: ArrayList(u16),
 // 8-byte slots in stack frame
 nslots: u8 = 0,
 
+nsave: u8 = 0,
+
+// canonical order of callee saved registers. nsave>0 means
+// the first nsave items needs to be saved and restored
+pub const callee_saved: [5]IPReg = .{ .rbx, .r12, .r13, .r14, .r15 };
+
 // filler value for unintialized refs. not a sentinel for
 // actually invalid refs!
 pub const DEAD: u16 = 0xFEFF;
@@ -754,8 +760,7 @@ pub fn reorder_inst(self: *Self) !void {
 
             if (blk != newblk) {
                 const oldval = if (newblkpos[newblk] != NoRef) newblkpos[newblk] else newblk;
-                // TODO: should be newblkpos[blk] = oldval ????
-                newblkpos[blk] = newblk;
+                newblkpos[blk] = oldval;
                 newblkpos[oldval] = blk;
             }
 
@@ -1035,7 +1040,7 @@ pub fn scan_alloc(self: *Self) !void {
     // TODO: handle auxilary register properly (by explicit load/spill?)
     active_ipreg[IPReg.rax.id()] = NoRef;
 
-    // TODO: allocate callee-saved registers
+    // callee saved registers, can be allocated on demand
     active_ipreg[IPReg.rbx.id()] = NoRef;
     active_ipreg[IPReg.r12.id()] = NoRef;
     active_ipreg[IPReg.r13.id()] = NoRef;
@@ -1080,6 +1085,13 @@ pub fn scan_alloc(self: *Self) !void {
                             regid = @intCast(u4, ri);
                             break;
                         }
+                    }
+                }
+
+                if (regid == null and regkind == .ipreg) {
+                    if (self.nsave < callee_saved.len) {
+                        regid = callee_saved[self.nsave].id();
+                        self.nsave += 1;
                     }
                 }
 

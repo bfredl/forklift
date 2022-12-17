@@ -52,6 +52,6 @@ pub fn main() !void {
     var cfo = try CFO.init(allocator);
     defer cfo.deinit();
 
-    _ = try codegen(&self, &cfo);
+    _ = try codegen(&self, &cfo, false);
     try cfo.dbg_nasm(allocator);
 }

@@ -502,14 +502,14 @@ pub fn jbck(self: *Self, cond: ?Cond, target: u32) !void {
 
 // stack management
 
-fn push(self: *Self, src: IPReg) !void {
+pub fn push(self: *Self, src: IPReg) !void {
     // luring: 64-bit wide is already the default,
     // extension only needed for r8-r15 registers
     try self.rex_wrxb(false, false, false, src.ext());
     try self.wb(0x50 + @as(u8, src.lowId()));
 }
 
-fn pop(self: *Self, dst: IPReg) !void {
+pub fn pop(self: *Self, dst: IPReg) !void {
     try self.rex_wrxb(false, false, false, dst.ext());
     try self.wb(0x58 + @as(u8, dst.lowId()));
 }

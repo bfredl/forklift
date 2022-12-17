@@ -144,7 +144,7 @@ fn get_eaddr_load_or_lea(self: *FLIR, i: Inst) !EAddr {
     return eaddr;
 }
 
-pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
+pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
     var labels = try self.a.alloc(u32, self.dfs.items.len);
     var targets = try self.a.alloc([2]u32, self.dfs.items.len);
     defer self.a.free(labels);
@@ -154,6 +154,9 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
 
     const target = cfo.get_target();
     try cfo.enter();
+    for (FLIR.callee_saved[0..self.nsave]) |reg| {
+        try cfo.push(reg);
+    }
     const stacksize = 8 * @as(i32, self.nslots);
     if (stacksize > 0) {
         const padding = (-stacksize) & 0xF;
@@ -168,7 +171,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
             continue;
         }
         labels[ni] = cfo.get_target();
-        // print("LABEL: {x} {}\n", .{ labels[ni], ni });
+        if (dbg) print("block {}: {x}\n", .{ ni, labels[ni] });
         for (self.preds(uv(ni))) |pred| {
             const pr = &self.n.items[pred];
             const si: u1 = if (pr.s[0] == ni) 0 else 1;
@@ -335,6 +338,11 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
         }
     }
 
+    var isave = self.nsave;
+    while (isave > 0) {
+        isave -= 1;
+        try cfo.pop(FLIR.callee_saved[isave]);
+    }
     try cfo.leave();
     try cfo.ret();
     return target;

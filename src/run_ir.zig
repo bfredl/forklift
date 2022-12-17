@@ -84,7 +84,7 @@ pub fn main() !void {
     // emit trap instruction to invoke debugger
     if (options.dbg_trap) try cfo.trap();
 
-    _ = try @import("./codegen.zig").codegen(&ir, &cfo);
+    _ = try @import("./codegen.zig").codegen(&ir, &cfo, options.dbg_disasm);
     try cfo.finalize();
     if (options.dbg_disasm) try cfo.dbg_nasm(allocator);
 
