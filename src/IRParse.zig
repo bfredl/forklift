@@ -250,21 +250,30 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
             item.* = try self.expr(f);
         }
         return true;
-    } else if (try self.labelname()) |label| {
-        const item = try f.labels.getOrPut(label);
-        if (item.found_existing) {
-            if (!f.ir.empty(item.value_ptr.*, false)) {
-                print("duplicate label :{s}!\n", .{label});
-                return error.ParseError;
+    } else if (self.nonws() == @as(u8, ':')) {
+        self.pos += 1;
+        var nextnode: u16 = next: {
+            if (idlike(self.nonws() orelse return error.ParseError)) {
+                const label = try self.identifier();
+                const item = try f.labels.getOrPut(label);
+                if (item.found_existing) {
+                    if (!f.ir.empty(item.value_ptr.*, false)) {
+                        print("duplicate label :{s}!\n", .{label});
+                        return error.ParseError;
+                    }
+                } else {
+                    item.value_ptr.* = try f.ir.addNode();
+                }
+                break :next item.value_ptr.*;
+            } else {
+                break :next try f.ir.addNode();
             }
-        } else {
-            item.value_ptr.* = try f.ir.addNode();
-        }
+        };
 
         if (f.ir.n.items[f.curnode].s[0] == 0) {
-            f.ir.n.items[f.curnode].s[0] = item.value_ptr.*;
+            f.ir.n.items[f.curnode].s[0] = nextnode;
         }
-        f.curnode = item.value_ptr.*;
+        f.curnode = nextnode;
         return true;
     }
     return error.ParseError;

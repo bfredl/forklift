@@ -19,7 +19,7 @@ test "parse digit" {
         \\  %byte = load byte [%x 0]
         \\  %token = sub %byte 48
         \\  ja %token 9 :enda
-        \\:doit
+        \\:
         \\  %num := %token
         \\:enda
         \\  ret %num
