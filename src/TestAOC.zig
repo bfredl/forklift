@@ -197,3 +197,30 @@ test "scorer" {
     try expect(usize, 20, s_call(func, "B Y,A Z,A Z,B Y,A Z,B X,"));
     try expect(usize, 45, s_call(func, "A X,A Y,A Z,B X,B Y,B Z,C X,C Y,C Z,"));
 }
+
+// aoc 2022 3
+test "scorer" {
+    var cfo = try parse_test(
+        \\func finder
+        \\  var %rowlen
+        \\  var %ipos
+        \\  %x = arg
+        \\  %len = arg
+        \\  %ipos := 0
+        \\  %rowlen := 0
+        \\:loopen
+        \\  %char = load byte [%x %ipos]
+        \\  je %char 10 :foundlen
+        \\:
+        \\  %ipos := add %ipos 1
+        \\  %rowlen := add %rowlen 1
+        \\  jmp :loopen
+        \\:foundlen
+        \\  %halflen = shr %rowlen 1
+        \\  ret %halflen
+        \\end
+    );
+    defer cfo.deinit();
+    const func = cfo.get_ptr(0, SFunc);
+    try expect(usize, 12, s_call(func, "vJrwpWtwJgWrhcsFMMfFFhFp\njqHRN"));
+}
