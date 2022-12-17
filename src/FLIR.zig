@@ -15,6 +15,7 @@ const assert = std.debug.assert;
 const IPReg = CFO.IPReg;
 const VMathOp = CFO.VMathOp;
 const FMode = CFO.FMode;
+const ISize = CFO.ISize;
 const AOp = CFO.AOp;
 const Cond = CFO.Cond;
 
@@ -75,6 +76,50 @@ pub const Block = struct {
     }
 };
 
+// TODO: expand into precise types, like "dword" or "4 packed doubles"
+const ValType = enum(u4) {
+    intptr = 0,
+    avxval,
+
+    pub fn spec(self: @This()) u4 {
+        return @enumToInt(self);
+    }
+};
+
+// union of integer sizes and Fmode
+// not very well thought out but works for now to merge the intptry (eiri) and AVX:y aspects of FLIR
+// currently u4 is enough but expand later?
+pub const SpecType = union(ValType) {
+    intptr: ISize,
+    avxval: FMode,
+    const INT_SPEC_OFF: u8 = 8;
+    pub fn val_type(self: @This()) ValType {
+        return if (@enumToInt(self) >= INT_SPEC_OFF) .intptr else .avxval;
+    }
+    pub fn from(val: u8) SpecType {
+        if (val >= INT_SPEC_OFF) {
+            return .{ .intptr = @intToEnum(ISize, val - INT_SPEC_OFF) };
+        } else {
+            return .{ .avxval = @intToEnum(FMode, val) };
+        }
+    }
+    pub fn into(self: SpecType) u8 {
+        return switch (self) {
+            .intptr => |i| INT_SPEC_OFF + @enumToInt(i),
+            .avxval => |a| @enumToInt(a),
+        };
+    }
+};
+
+// looks cute, might delete later
+pub fn intspec(s: ISize) SpecType {
+    return .{ .intptr = s };
+}
+
+pub fn avxspec(s: FMode) SpecType {
+    return .{ .avxval = s };
+}
+
 test "sizey" {
     // @compileLog(@sizeOf(Inst));
     // @compileLog(@sizeOf(Block));
@@ -99,10 +144,14 @@ pub const Inst = struct {
 
     // TODO: handle spec being split between u4 type and u4 somethingelse?
     pub fn spec_type(self: Inst) ValType {
-        return if (self.spec >= INT_SPEC_OFF) .intptr else .avxval;
+        return if (self.spec >= SpecType.INT_SPEC_OFF) .intptr else .avxval;
     }
 
-    const INT_SPEC_OFF: u8 = 8;
+    // TODO: handle spec being split between u4 type and u4 somethingelse?
+    // for load/store insts that can handle both intptr and avxvalues
+    pub fn mem_type(self: Inst) SpecType {
+        return SpecType.from(self.spec);
+    }
 
     const FMODE_MASK: u8 = (1 << 4) - 1;
     const VOP_MASK: u8 = ~FMODE_MASK;
@@ -241,16 +290,6 @@ pub fn n_op(tag: Tag, rw: bool) u2 {
     };
 }
 
-// TODO: expand into precise types, like "dword" or "4 packed doubles"
-const ValType = enum(u4) {
-    intptr = 0,
-    avxval,
-
-    pub fn spec(self: @This()) u4 {
-        return @enumToInt(self);
-    }
-};
-
 pub fn init(n: u16, allocator: Allocator) !Self {
     return Self{
         .a = allocator,
@@ -381,24 +420,15 @@ pub fn preInst(self: *Self, node: u16, inst: Inst) !u16 {
 
 pub fn const_int(self: *Self, node: u16, val: u16) !u16 {
     // TODO: actually store constants in a buffer, or something
-    return self.addInst(node, .{ .tag = .constant, .op1 = val, .op2 = 0, .spec = intspec(.dword) });
+    return self.addInst(node, .{ .tag = .constant, .op1 = val, .op2 = 0, .spec = intspec(.dword).into() });
 }
 
 pub fn binop(self: *Self, node: u16, tag: Tag, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = tag, .op1 = op1, .op2 = op2 });
 }
 
-fn intspec(size: CFO.ISize) u8 {
-    return Inst.INT_SPEC_OFF + @enumToInt(size);
-}
-
-pub fn load(self: *Self, node: u16, size: CFO.ISize, base: u16, idx: u16) !u16 {
-    return self.addInst(node, .{ .tag = .load, .op1 = base, .op2 = idx, .spec = intspec(size) });
-}
-
-// TODO: better abstraction for types (once we have real types)
-pub fn vload(self: *Self, node: u16, fmode: FMode, base: u16, idx: u16) !u16 {
-    return self.addInst(node, .{ .tag = .load, .op1 = base, .op2 = idx, .spec = @enumToInt(fmode) });
+pub fn load(self: *Self, node: u16, kind: SpecType, base: u16, idx: u16) !u16 {
+    return self.addInst(node, .{ .tag = .load, .op1 = base, .op2 = idx, .spec = kind.into() });
 }
 
 pub fn vmath(self: *Self, node: u16, vop: VMathOp, fmode: FMode, op1: u16, op2: u16) !u16 {
@@ -467,14 +497,14 @@ pub fn prePhi(self: *Self, node: u16, vref: u16) !u16 {
 
 pub fn arg(self: *Self) !u16 {
     if (self.n.items.len == 0) return error.FLIRError;
-    const inst = try self.addInst(0, .{ .tag = .arg, .op1 = self.narg, .op2 = 0, .spec = intspec(.dword) });
+    const inst = try self.addInst(0, .{ .tag = .arg, .op1 = self.narg, .op2 = 0, .spec = intspec(.dword).into() });
     self.narg += 1;
     return inst;
 }
 
 pub fn variable(self: *Self) !u16 {
     if (self.n.items.len == 0) return error.FLIRError;
-    const inst = try self.addInst(0, .{ .tag = .variable, .op1 = self.nvar, .op2 = 0, .spec = intspec(.dword) });
+    const inst = try self.addInst(0, .{ .tag = .variable, .op1 = self.nvar, .op2 = 0, .spec = intspec(.dword).into() });
     self.nvar += 1;
     return inst;
 }
@@ -875,7 +905,7 @@ pub fn alloc(self: *Self, node: u16, size: u8) !u16 {
     const slot = self.nslots + size - 1;
     self.nslots += size;
     // TODO: store actual size in .spec (alloc is always typed as a pointer)
-    return self.addInst(node, .{ .tag = .alloc, .op1 = slot, .op2 = 0, .spec = intspec(.dword), .mckind = .fused });
+    return self.addInst(node, .{ .tag = .alloc, .op1 = slot, .op2 = 0, .spec = intspec(.dword).into(), .mckind = .fused });
 }
 
 // makes space for a slot after instruction "after"

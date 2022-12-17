@@ -219,19 +219,23 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
                         return error.VOLKTANZ;
                     }
 
-                    if (i.spec_type() == .intptr) {
-                        const dst = i.ipreg() orelse .rax;
-                        switch (@intToEnum(CFO.ISize, i.spec)) {
-                            .byte => {
-                                try cfo.movrm_byte(dst, eaddr);
-                            },
-                            .quadword => try cfo.movrm(dst, eaddr),
-                            else => unreachable,
-                        }
-                        try mcmovreg(cfo, i.*, dst); // elided if dst is register
-                    } else {
-                        const dst = i.avxreg() orelse unreachable;
-                        try cfo.vmovurm(i.fmode(), dst, eaddr);
+                    const spec_type = i.mem_type();
+                    switch (spec_type) {
+                        .intptr => |size| {
+                            const dst = i.ipreg() orelse .rax;
+                            switch (size) {
+                                .byte => {
+                                    try cfo.movrm_byte(dst, eaddr);
+                                },
+                                .quadword => try cfo.movrm(dst, eaddr),
+                                else => unreachable,
+                            }
+                            try mcmovreg(cfo, i.*, dst); // elided if dst is register
+                        },
+                        .avxval => |fmode| {
+                            const dst = i.avxreg() orelse unreachable;
+                            try cfo.vmovurm(fmode, dst, eaddr);
+                        },
                     }
                 },
                 .lea => {

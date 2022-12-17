@@ -138,11 +138,11 @@ pub const VCmp = enum(u5) {
     eq_uq,
     nge,
     ngt,
-    @"false",
+    false,
     neq_oq,
     ge,
     gt,
-    @"true",
+    true,
     eq_os,
     lt_oq,
     le_oq,
@@ -209,6 +209,7 @@ const MM = enum(u5) {
     }
 };
 
+// TODO: this is just ISize
 pub const IMode = enum(u2) {
     b,
     w,
