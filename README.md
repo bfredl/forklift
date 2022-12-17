@@ -44,4 +44,4 @@ simple loop transformations.
 - [ ] efficient register allocation with interval spliting
 - [ ] function calls with C ABI
 - [x] x86-64 code generation.
-- [ ] EBPF code generation (currently investigated as a (separate project)[https://github.com/bfredl/eiri])
+- [ ] EBPF code generation (currently investigated as a [separate project](https://github.com/bfredl/eiri))
