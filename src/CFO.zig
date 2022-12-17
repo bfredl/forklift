@@ -653,7 +653,6 @@ pub fn mulr(self: *Self, src: IPReg) !void {
 }
 
 // bitshift instructions
-//
 
 pub fn shr_ri(self: *Self, dst: IPReg, count: u8) !void {
     if (count == 1) {

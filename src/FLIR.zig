@@ -1066,6 +1066,15 @@ pub fn scan_alloc(self: *Self) !void {
             } else if (i.tag == .constant and i.mckind.unallocated()) {
                 // TODO: check as needed
                 i.mckind = .fused;
+            } else if (i.tag == .putphi) {
+                const from = self.iref(i.op1).?;
+                if (from.ipreg()) |reg| {
+                    const to = self.iref(i.op2).?;
+                    if (to.mckind == .unallocated_raw) {
+                        to.mckind = .unallocated_ipreghint;
+                        to.mcidx = reg.id();
+                    }
+                }
             } else if (i.has_res() and i.mckind.unallocated()) {
                 const is_avx = (i.res_type() == ValType.avxval);
                 const regkind: MCKind = if (is_avx) .vfreg else .ipreg;
@@ -1084,8 +1093,14 @@ pub fn scan_alloc(self: *Self) !void {
                         }
                     }
                 }
+                if (regid == null and i.mckind == .unallocated_ipreghint) {
+                    if (i.res_type() != ValType.intptr) unreachable;
+                    if (the_active[i.mcidx] <= ref) {
+                        regid = @intCast(u4, i.mcidx);
+                    }
+                }
 
-                // TODO: reghint
+                // TODO: reghint for avx!
                 if (regid == null) {
                     for (the_active) |l, ri| {
                         if (l <= ref) {

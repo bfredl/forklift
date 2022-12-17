@@ -224,3 +224,53 @@ test "scorer" {
     const func = cfo.get_ptr(0, SFunc);
     try expect(usize, 12, s_call(func, "vJrwpWtwJgWrhcsFMMfFFhFp\njqHRN"));
 }
+
+test "score pairs" {
+    var cfo = try parse_test(
+        \\func finder
+        \\  var %rowlen
+        \\  var %ipos
+        \\  var %xpos
+        \\  var %ypos
+        \\  var %retval
+        \\  %data = arg
+        \\  %len = arg
+        \\  %ipos := 0
+        \\  %rowlen := 0
+        \\:loopen
+        \\  %char = load byte [%data %rowlen]
+        \\  je %char 10 :foundlen
+        \\:
+        \\  %rowlen := add %rowlen 1
+        \\  jmp :loopen
+        \\:foundlen
+        \\  %halflen = shr %rowlen 1
+        \\  %xpos := 0
+        \\:xloop
+        \\  jge %xpos %halflen :feeel
+        \\:
+        \\  %xchar = load byte [%data %xpos]
+        \\  %ypos := %halflen
+        \\:yloop
+        \\  %ychar = load byte [%data %ypos]
+        \\  je %xchar %ychar :good
+        \\:
+        \\  %ypos := add %ypos 1
+        \\  jl %ypos %rowlen :yloop
+        \\:
+        \\  %xpos := add %xpos 1
+        \\  jmp :xloop
+        \\:feeel
+        \\  %retval := 5000
+        \\  jmp :enda
+        \\:good
+        \\  %retval := %xchar
+        \\:enda
+        \\  ret %retval
+        \\end
+    );
+    defer cfo.deinit();
+    const func = cfo.get_ptr(0, SFunc);
+    try expect(usize, 'p', s_call(func, "vJrwpWtwJgWrhcsFMMfFFhFp\njqHRN"));
+    try expect(usize, 5000, s_call(func, "vJrwxWtwJgWrhcsFMMfFFhFp\njqHRN"));
+}
