@@ -435,14 +435,11 @@ pub fn sphigh(high: u4, low: u4) u8 {
     return @as(u8, high) << 4 | low;
 }
 
-pub fn load(self: *Self, node: u16, kind: SpecType, base: u16, idx: u16) !u16 {
-    const scale: u2 = if (kind == .avxval) 2 else 0; // nu börjar det APA sig
+pub fn load(self: *Self, node: u16, kind: SpecType, base: u16, idx: u16, scale: u2) !u16 {
     return self.addInst(node, .{ .tag = .load, .op1 = base, .op2 = idx, .spec = sphigh(scale, kind.into()) });
 }
-pub fn store(self: *Self, node: u16, kind: SpecType, base: u16, idx: u16, val: u16) !u16 {
+pub fn store(self: *Self, node: u16, kind: SpecType, base: u16, idx: u16, scale: u2, val: u16) !u16 {
     // FUBBIT: all possible instances of fusing should be detected in analysis anyway
-    // fyy: make scale explicit. caller should call lea for this!
-    const scale: u2 = if (kind == .avxval) 2 else 0;
     const addr = if (idx != NoRef) try self.addInst(node, .{ .tag = .lea, .op1 = base, .op2 = idx, .mckind = .fused, .spec = sphigh(scale, 0) }) else base;
     return self.addInst(node, .{ .tag = .store, .op1 = addr, .op2 = val, .spec = kind.into() });
 }

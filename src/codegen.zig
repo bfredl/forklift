@@ -135,7 +135,6 @@ fn get_eaddr_load_or_lea(self: *FLIR, i: Inst) !EAddr {
             return error.@"TODO: unfused lea";
         }
         eaddr.index = reg;
-        // FUUUUU
         eaddr.scale = @intCast(u2, i.high_spec());
     } else if (idx.tag == .constant) {
         eaddr = eaddr.o(idx.op1);
@@ -234,9 +233,6 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
                     try movmcs(cfo, self.iref(i.op2).?.*, self.iref(i.op1).?.*, .rax);
                 },
                 .load => {
-
-                    // TODO: the form of a load instruction should be the same as a .lea istruction
-                    // share more code!
                     var eaddr = try get_eaddr_load_or_lea(self, i.*);
                     const spec_type = i.mem_type();
                     switch (spec_type) {

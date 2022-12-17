@@ -213,14 +213,15 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
             const node = try get_label(f, target, true);
             f.ir.n.items[f.curnode].s[1] = node;
             return true;
-        } else if (mem.eql(u8, kw, "store")) { // TODO: NIIN
-            const typ = try require(try self.typename(), "type");
+        } else if (mem.eql(u8, kw, "store")) {
+            const kind = try require(try self.typename(), "type");
             try self.expect_char('[');
             const dest = try require(try self.call_arg(f), "destination");
             const idx = try require(try self.call_arg(f), "idx");
             try self.expect_char(']');
             const value = try require(try self.call_arg(f), "value");
-            _ = try f.ir.store(f.curnode, typ, dest, idx, value);
+            const scale: u2 = if (kind == .avxval) 2 else 0;
+            _ = try f.ir.store(f.curnode, kind, dest, idx, scale, value);
             return true;
         }
     } else if (try self.varname()) |dest| {
@@ -290,22 +291,13 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
         if (mem.eql(u8, kw, "arg")) {
             return f.ir.arg();
         } else if (mem.eql(u8, kw, "load")) {
-            const typ = try require(try self.typename(), "type");
+            const kind = try require(try self.typename(), "type");
             try self.expect_char('[');
             const base = try require(try self.call_arg(f), "base");
             const idx = try require(try self.call_arg(f), "idx");
             try self.expect_char(']');
-            return f.ir.load(f.curnode, typ, base, idx);
-        } else if (mem.eql(u8, kw, "vload")) { // TODO: DELET THIS
-            const name = try require(self.keyword(), "fmode");
-            const fmode = meta.stringToEnum(CFO.FMode, name) orelse {
-                print("eioouuu: '{s}'\n", .{name});
-                return error.ParseError;
-            };
-            // TODO: absract away EAddr properly
-            const base = try require(try self.call_arg(f), "base");
-            const idx = try require(try self.call_arg(f), "idx");
-            return f.ir.load(f.curnode, FLIR.avxspec(fmode), base, idx);
+            const scale: u2 = if (kind == .avxval) 2 else 0; // TODO UUUGH
+            return f.ir.load(f.curnode, kind, base, idx, scale);
         } else if (alumap.get(kw)) |op| {
             const left = try require(try self.call_arg(f), "left");
             const right = try require(try self.call_arg(f), "right");

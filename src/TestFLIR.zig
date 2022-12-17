@@ -247,8 +247,8 @@ test "vopper" {
         \\  %x = arg
         \\  %y = arg
         \\  %z = arg
-        \\  %xa = vload sd %x %z
-        \\  %ya = vload sd %y %z
+        \\  %xa = load sd [%x %z]
+        \\  %ya = load sd [%y %z]
         \\  %za = vop sd add %xa %ya
         \\  store sd [%x %z] %za
         \\  ret 0
