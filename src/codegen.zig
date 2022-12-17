@@ -272,13 +272,24 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
                     if (@as(ValType, spec_type) != val.res_type()) return error.NoYouCantPutThatThere;
                     switch (spec_type) {
                         .intptr => |size| {
-                            const ipreg = val.ipreg() orelse unreachable;
-                            switch (size) {
-                                .byte => {
-                                    try cfo.movmr_byte(eaddr, ipreg);
-                                },
-                                .quadword => try cfo.movmr(eaddr, ipreg),
-                                else => unreachable,
+                            if (val.ipreg()) |ipreg| {
+                                switch (size) {
+                                    .byte => {
+                                        try cfo.movmr_byte(eaddr, ipreg);
+                                    },
+                                    .quadword => try cfo.movmr(eaddr, ipreg),
+                                    else => unreachable,
+                                }
+                            } else {
+                                if (val.tag != .constant) unreachable;
+                                const constval = val.op1;
+                                switch (size) {
+                                    .byte => {
+                                        try cfo.movmi_byte(eaddr, @truncate(u8, constval));
+                                    },
+                                    .quadword => try cfo.movmi(eaddr, constval),
+                                    else => unreachable,
+                                }
                             }
                         },
                         .avxval => |fmode| {

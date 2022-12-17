@@ -616,6 +616,13 @@ pub fn movmi(self: *Self, dst: EAddr, src: i32) !void {
     try self.wd(src);
 }
 
+pub fn movmi_byte(self: *Self, dst: EAddr, src: u8) !void {
+    try self.new_inst(@returnAddress());
+    try self.wb(0xc6); // MOV \rm, imm32
+    try self.modRmEA(0b000, dst);
+    try self.wb(src);
+}
+
 // MUL/DIV instructions
 
 // DST = DST * SRC

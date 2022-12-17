@@ -8,6 +8,8 @@ fn s_call(func: SFunc, str: []const u8) usize {
     return func(str.ptr, str.len);
 }
 
+// aoc 2022 1
+
 test "parse digit" {
     var cfo = try parse_test(
         \\func parser
@@ -149,4 +151,49 @@ test "summer 2" {
     // does not yet work
     if (false) try expect(usize, 60, s_call(func, "56 428"[0..4]));
     if (false) try expect(usize, 412, s_call(func, "4127"[0..3]));
+}
+
+// aoc 2022 2
+test "scorer" {
+    var cfo = try parse_test(
+        \\func scorer
+        \\  var %ipos
+        \\  var %summa
+        \\  %data = arg
+        \\  %len = arg
+        \\  %table = alloc 2
+        \\  store byte [%table 0] 4
+        \\  store byte [%table 1] 8
+        \\  store byte [%table 2] 3
+        \\  store byte [%table 3] 1
+        \\  store byte [%table 4] 5
+        \\  store byte [%table 5] 9
+        \\  store byte [%table 6] 7
+        \\  store byte [%table 7] 2
+        \\  store byte [%table 8] 6
+        \\  %ipos := 0
+        \\  %summa := 0
+        \\:loop
+        \\  jge %ipos %len :enda
+        \\:doit
+        \\  %abyte = load byte [%data %ipos]
+        \\  %apos = sub %abyte 65
+        \\  %ipos := add %ipos 2
+        \\  %xbyte = load byte [%data %ipos]
+        \\  %xpos = sub %xbyte 88
+        \\  %ipos := add %ipos 2
+        \\  %scaled = mul %apos 3
+        \\  %index = add %scaled %xpos
+        \\  %tabval = load byte [%table %index]
+        \\  %summa := add %summa %tabval
+        \\  jmp :loop
+        \\:enda
+        \\  ret %summa
+        \\end
+    );
+    defer cfo.deinit();
+    const func = cfo.get_ptr(0, SFunc);
+    try expect(usize, 15, s_call(func, "A Y\nB X\nC Z\n"));
+    try expect(usize, 20, s_call(func, "B Y,A Z,A Z,B Y,A Z,B X,"));
+    try expect(usize, 45, s_call(func, "A X,A Y,A Z,B X,B Y,B Z,C X,C Y,C Z,"));
 }

@@ -1,16 +1,35 @@
 func scorer
   var %ipos
-  %table = alloc 2
-  store byte [%table 0] 4
+  var %summa
   %data = arg
   %len = arg
+  %table = alloc 2
+  store byte [%table 0] 4
+  store byte [%table 1] 8
+  store byte [%table 2] 3
+  store byte [%table 3] 1
+  store byte [%table 4] 5
+  store byte [%table 5] 9
+  store byte [%table 6] 7
+  store byte [%table 7] 2
+  store byte [%table 8] 6
   %ipos := 0
+  %summa := 0
+:loop
+  jge %ipos %len :enda
+:doit
   %abyte = load byte [%data %ipos]
   %apos = sub %abyte 65
   %ipos := add %ipos 2
-  %xbyte = load byte [%data 2]
+  %xbyte = load byte [%data %ipos]
   %xpos = sub %xbyte 88
-  %tabval = load byte [%table %xpos]
-  ret %xpos
+  %ipos := add %ipos 2
+  %scaled = mul %apos 3
+  %index = add %scaled %xpos
+  %tabval = load byte [%table %index]
+  %summa := add %summa %tabval
+  jmp :loop
+:enda
+  ret %summa
 end
   
