@@ -1,25 +1,47 @@
 # Certified Forklift Operator
 
-A jit compiler backend for the Zig language. Currently only x86-64 is supported, with a focus of float/vector code (using AVX/AVX2 instructions). AArch64 might be considered in the future.
+A jit compiler backend written in the Zig language (for now, following the
+master version of zig). Currently only x86-64 is supported. Float/vector
+operations assume AVX/AVX2 instructions being available. AArch64 might be
+considered in the future.
 
-The codebase consists of two major parts. `src/CFO.zig` implements a JIT assembler where intructions are directly assembled into a memory buffer.
+Two layers are currently being implemented. `src/CFO.zig` is a JIT assembler
+where intructions are directly assembled into a memory buffer. A IR format for
+instructions are also being developed, with some basic analysis steps
+available.
 
-Features:
+Features for the Assembler:
 
 - [x] 64-bit register and memory operations (mov and add-like opcodes)
 - [x] Conditional jumps
 - [x] Full support for effective adresses like `[rax + 8*rcx + imm32]`
-- [ ] byte/word/dword memory operations
+- [ ] byte/word/dword memory operations (partially available)
 - [x] VEX encoded instructions (scalar and vector f32/f64-math)
 - [ ] SSE instructions (when lacking AVX/AVX2 support)
 - [ ] integer AVX2 instructions
 - [x] Unaligned and aligned load/store of XMM/YMM vectors
 - [x] Dump final output using `ndisasm`
-- [x] Tracebacks to generated code (using a custom signal handler or patch to stlib)
+- [x] Tracebacks to generated code (using a custom signal handler or patch to stdlib)
 
-Secondly, `src/FLIR.zig` implements a simple SSA IR on top of the above. What is implemented is a few basic compiler passes, like
+A low-level IR with a textual representation is implemented in `src/FLIR.zig`.
+The current aim is to implement an IR with a low memory footprint suitable for
+jits under performance and memory constraints. Numerical indicies are used
+throughout instead of pointers inside the IR.
+
+FLIR uses SSA-form trough the entire pipeline, though multable temporaries are
+supported in the input format, similar to QBE. These get converted to
+SSA form early in analysis. The values in the IR is considered untyped,
+except for a classification of values that are to be stored in a general
+purpose register or in a XMM/YMM register.
+
+The scope of this layer is to implement basic optimizations such as register
+allocation with efficent interval splitting, copy propagation, and perhaps
+simple loop transformations.
 
 - [x] Conversion from mutable temporaries to proper SSA form
 - [ ] liveliness analysis (partially, doesn't handle nested loops yet)
-- [x] linear scan Register allocation
+- [x] basic (very conservative) linear scan register allocation
+- [ ] efficient register allocation with interval spliting
+- [ ] function calls with C ABI
 - [x] x86-64 code generation.
+- [ ] EBPF code generation (currently investigated as a (separate project)[https://github.com/bfredl/eiri])
