@@ -25,7 +25,7 @@ pub fn analyze_generate(self: *FLIR) !CFO {
 
     var cfo = try CFO.init(test_allocator);
 
-    _ = try @import("./codegen.zig").codegen(self, &cfo);
+    _ = try @import("./codegen.zig").codegen(self, &cfo, false);
     try cfo.finalize();
     return cfo;
 }
@@ -55,11 +55,24 @@ test "returner" {
     try expect(usize, 7, cfo.get_ptr(0, UFunc)());
 }
 
+test "comment" {
+    var cfo = try parse_test(
+        \\func returner
+        \\  ret 7 ; this is a comment
+        \\end
+    );
+    defer cfo.deinit();
+
+    try expect(usize, 7, cfo.get_ptr(0, UFunc)());
+}
+
 test "var returner" {
     var cfo = try parse_test(
         \\func returner
         \\  var %myvar
         \\  %myvar := 57
+        \\
+        \\
         \\  ret %myvar
         \\end
     );

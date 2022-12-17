@@ -29,12 +29,21 @@ fn nonws(self: *Self) ?u8 {
 }
 
 fn lbrk(self: *Self) ParseError!void {
-    const val = self.nonws();
-    if (val) |v| {
-        if (v != '\n') return error.ParseError;
+    var val = self.nonws() orelse return;
+    while (true) {
+        if (val == ';') {
+            while (self.str[self.pos] != '\n') : (self.pos += 1) {
+                if (self.pos >= self.str.len - 1) return;
+            }
+        } else {
+            if (val != '\n') return error.ParseError;
+        }
         self.pos += 1;
         self.lnum += 1;
         self.lpos = self.pos;
+
+        val = self.nonws() orelse return;
+        if (val != '\n' and val != ';') return;
     }
 }
 
