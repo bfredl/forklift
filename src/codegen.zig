@@ -7,6 +7,7 @@ const IPReg = CFO.IPReg;
 const VMathOp = CFO.VMathOp;
 const Inst = FLIR.Inst;
 const uv = FLIR.uv;
+const ValType = FLIR.ValType;
 const EAddr = CFO.EAddr;
 
 fn slotoff(slotid: anytype) i32 {
@@ -106,9 +107,24 @@ pub fn makejmp(self: *FLIR, cfo: *CFO, cond: ?CFO.Cond, ni: u16, si: u1, labels:
     }
 }
 
-fn get_eaddr(i: Inst) !EAddr {
+fn get_eaddr(self: *FLIR, i: Inst) !EAddr {
     if (i.tag == .alloc) {
         return CFO.a(.rbp).o(slotoff(i.op1));
+    } else if (i.tag == .lea) {
+        const base = self.iref(i.op1).?;
+        const idx = self.iref(i.op2).?;
+
+        const basereg = base.ipreg() orelse return error.WHAAAAA;
+        var eaddr = CFO.a(basereg);
+        if (idx.ipreg()) |reg| {
+            eaddr.index = reg;
+            eaddr.scale = @intCast(u2, i.spec);
+        } else if (idx.tag == .constant) {
+            eaddr = eaddr.o(idx.op1);
+        } else {
+            return error.VOLKTANZ;
+        }
+        return eaddr;
     } else {
         // TODO: spill spall supllit?
         const base = i.ipreg() orelse return error.WHAAAAA;
@@ -150,7 +166,6 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
             }
         }
 
-        var ea_fused: EAddr = undefined;
         var fused_inst: ?*Inst = null;
         var cond: ?CFO.Cond = null;
         var it = self.ins_iterator(n.firstblk);
@@ -206,12 +221,16 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
                     try movmcs(cfo, self.iref(i.op2).?.*, self.iref(i.op1).?.*, .rax);
                 },
                 .load => {
-                    var eaddr = try get_eaddr(self.iref(i.op1).?.*);
+
+                    // TODO: the form of a load instruction should be the same as a .lea istruction
+                    // share more code!
+                    var eaddr = try get_eaddr(self, self.iref(i.op1).?.*);
 
                     const idx = self.iref(i.op2).?;
                     if (idx.ipreg()) |reg| {
                         eaddr.index = reg;
                         // TODO: fyyy, make scale part of instruction (usused spec bytes?)
+                        // or require a .lea if there is a scale?
                         eaddr.scale = (if (i.spec_type() == .avxval) 2 else 0);
                     } else if (idx.tag == .constant) {
                         eaddr = eaddr.o(idx.op1);
@@ -240,31 +259,36 @@ pub fn codegen(self: *FLIR, cfo: *CFO) !u32 {
                 },
                 .lea => {
                     // TODO: spill spall supllit?
-                    const base = self.iref(i.op1).?.ipreg() orelse unreachable;
-                    const idx = self.iref(i.op2).?.ipreg() orelse unreachable;
-                    const eaddr = CFO.qi(base, idx);
-                    if (i.mckind == .fused) {
-                        ea_fused = eaddr;
-                        was_fused = true;
-                    } else {
+                    // const eaddr = CFO.qi(base, idx);
+                    if (i.mckind == .fused) {} else {
+                        if (true) unreachable;
+                        const base = self.iref(i.op1).?.ipreg() orelse unreachable;
+                        const idx = self.iref(i.op2).?.ipreg() orelse unreachable;
                         const dst = i.ipreg() orelse .rax;
                         try cfo.lea(dst, CFO.qi(base, idx));
                         try mcmovreg(cfo, i.*, dst); // elided if dst is register
                     }
                 },
                 .store => {
-                    // TODO: fuse lea with store
-                    const addr = self.iref(i.op1).?;
-                    const eaddr = if (addr == fused_inst)
-                        ea_fused
-                    else
-                        CFO.a(self.iref(i.op1).?.ipreg() orelse unreachable);
+                    var eaddr = try get_eaddr(self, self.iref(i.op1).?.*);
                     const val = self.iref(i.op2).?;
-                    if (val.res_type().? == .intptr) {
-                        unreachable;
-                    } else {
-                        const src = val.avxreg() orelse unreachable;
-                        try cfo.vmovumr(i.fmode(), eaddr, src);
+                    const spec_type = i.mem_type();
+                    if (@as(ValType, spec_type) != val.res_type()) return error.NoYouCantPutThatThere;
+                    switch (spec_type) {
+                        .intptr => |size| {
+                            const ipreg = val.ipreg() orelse unreachable;
+                            switch (size) {
+                                .byte => {
+                                    try cfo.movmr_byte(eaddr, ipreg);
+                                },
+                                .quadword => try cfo.movmr(eaddr, ipreg),
+                                else => unreachable,
+                            }
+                        },
+                        .avxval => |fmode| {
+                            const src = val.avxreg() orelse unreachable;
+                            try cfo.vmovumr(fmode, eaddr, src);
+                        },
                     }
                 },
                 .vmath => {

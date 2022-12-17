@@ -76,8 +76,8 @@ pub const Block = struct {
     }
 };
 
-// TODO: expand into precise types, like "dword" or "4 packed doubles"
-const ValType = enum(u4) {
+// TODO: integrate properly with SpecType
+pub const ValType = enum(u4) {
     intptr = 0,
     avxval,
 
@@ -430,6 +430,13 @@ pub fn binop(self: *Self, node: u16, tag: Tag, op1: u16, op2: u16) !u16 {
 pub fn load(self: *Self, node: u16, kind: SpecType, base: u16, idx: u16) !u16 {
     return self.addInst(node, .{ .tag = .load, .op1 = base, .op2 = idx, .spec = kind.into() });
 }
+pub fn store(self: *Self, node: u16, kind: SpecType, base: u16, idx: u16, val: u16) !u16 {
+    // FUBBIT: all possible instances of fusing should be detected in analysis anyway
+    // fyy: make scale explicit. caller should call lea for this!
+    const scale: u2 = if (kind == .avxval) 2 else 0;
+    const addr = if (idx != NoRef) try self.addInst(node, .{ .tag = .lea, .op1 = base, .op2 = idx, .mckind = .fused, .spec = scale }) else base;
+    return self.addInst(node, .{ .tag = .store, .op1 = addr, .op2 = val, .spec = kind.into() });
+}
 
 pub fn vmath(self: *Self, node: u16, vop: VMathOp, fmode: FMode, op1: u16, op2: u16) !u16 {
     // TODO: somewhere, typecheck that FMode matches fmode of args..
@@ -451,12 +458,6 @@ pub fn imul(self: *Self, node: u16, op1: u16, op2: u16) !u16 {
 
 pub fn putvar(self: *Self, node: u16, op1: u16, op2: u16) !void {
     _ = try self.binop(node, .putvar, op1, op2);
-}
-
-pub fn store(self: *Self, node: u16, base: u16, idx: u16, val: u16) !u16 {
-    // FUBBIT: all possible instances of fusing should be detected in analysis anyway
-    const addr = try self.addInst(node, .{ .tag = .lea, .op1 = base, .op2 = idx, .mckind = .fused });
-    return self.addInst(node, .{ .tag = .store, .op1 = addr, .op2 = val, .spec = self.iref(val).?.spec });
 }
 
 pub fn ret(self: *Self, node: u16, val: u16) !void {

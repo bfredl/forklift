@@ -213,24 +213,15 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
             const node = try get_label(f, target, true);
             f.ir.n.items[f.curnode].s[1] = node;
             return true;
-        } else if (mem.eql(u8, kw, "vstore")) { // TODO: NIIN
+        } else if (mem.eql(u8, kw, "store")) { // TODO: NIIN
+            const typ = try require(try self.typename(), "type");
             try self.expect_char('[');
             const dest = try require(try self.call_arg(f), "destination");
             const idx = try require(try self.call_arg(f), "idx");
             try self.expect_char(']');
             const value = try require(try self.call_arg(f), "value");
-            _ = try f.ir.store(f.curnode, dest, idx, value);
+            _ = try f.ir.store(f.curnode, typ, dest, idx, value);
             return true;
-        } else if (mem.eql(u8, kw, "store")) {
-            try self.expect_char('[');
-            const dest = try require(try self.call_arg(f), "destination");
-            try self.expect_char(']');
-            const value = try require(try self.call_arg(f), "value");
-            _ = dest;
-            _ = value;
-            unreachable;
-            //try f.ir.store(f.curnode, dest, value);
-            //return true;
         }
     } else if (try self.varname()) |dest| {
         const next = self.nonws();

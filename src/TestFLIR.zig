@@ -250,7 +250,7 @@ test "vopper" {
         \\  %xa = vload sd %x %z
         \\  %ya = vload sd %y %z
         \\  %za = vop sd add %xa %ya
-        \\  vstore [%x %z] %za
+        \\  store sd [%x %z] %za
         \\  ret 0
         \\end
     );
@@ -262,4 +262,24 @@ test "vopper" {
     const fun = cfo.get_ptr(0, FFunc);
     try expect(usize, 0, fun(&x, &y, 0));
     try expect(f64, 30.75, x);
+}
+
+test "store byte" {
+    // TODO: lol obviously support this without %z arg as well
+    var cfo = try parse_test(
+        \\func storer
+        \\  %x = arg
+        \\  %y = arg
+        \\  %z = arg
+        \\  store byte [%x %y] %z
+        \\  ret 0
+        \\end
+    );
+    defer cfo.deinit();
+
+    const FFunc = *const fn (arg1: [*]u8, arg2: usize, val: usize) callconv(.C) usize;
+    const fun = cfo.get_ptr(0, FFunc);
+    var bytes: [4]u8 = .{ 17, 43, 6, 19 };
+    try expect(usize, 0, fun(&bytes, 1, 4));
+    try expect([4]u8, .{ 17, 4, 6, 19 }, bytes);
 }

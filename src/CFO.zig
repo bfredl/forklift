@@ -55,6 +55,12 @@ pub const IPReg = enum(u4) {
     pub fn ext(self: @This()) bool {
         return @enumToInt(self) >= 0x08;
     }
+
+    // if register would confilct with AH,BH,CH,DH in byte mode
+    // force a REX byte to avoid it.
+    pub fn highlike(self: @This()) bool {
+        return IPReg.rsp.id() <= self.id() and self.id() < IPReg.r8.id();
+    }
 };
 
 pub const AOp = enum(u3) {
@@ -549,6 +555,17 @@ pub fn movrm_byte(self: *Self, dst: IPReg, src: EAddr) !void {
 
 pub fn movmr(self: *Self, dst: EAddr, src: IPReg) !void {
     try self.op_rm(0x89, src, dst); // MOV \rm, reg
+}
+
+// FIXME: all IPReg ops should take size!
+pub fn movmr_byte(self: *Self, dst: EAddr, src: IPReg) !void {
+    const ea = dst;
+    const reg = src;
+    try self.new_inst(@returnAddress());
+    // REX prefix is only needed for r4-r7 to avoid AH/BH/CD/DH
+    try self.rex_wrxb_force(false, reg.ext(), ea.x(), ea.b(), reg.highlike());
+    try self.wb(0x88);
+    try self.modRmEA(reg.lowId(), ea);
 }
 
 pub fn aritrm(self: *Self, op: AOp, dst: IPReg, src: EAddr) !void {
