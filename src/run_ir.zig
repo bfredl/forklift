@@ -64,7 +64,7 @@ pub fn main() !void {
     const inbuf = if (argv.len > nextarg) try readall(allocator, mem.span(argv[nextarg])) else null;
     defer if (inbuf) |b| allocator.free(b);
 
-    var ir = try FLIR.init(16, allocator);
+    var ir = try FLIR.init(32, allocator);
     defer ir.deinit();
     var parser = IRParse.init(buf);
     // try parser.fd_objs.put("count", map_count);

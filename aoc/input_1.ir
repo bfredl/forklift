@@ -9,9 +9,10 @@ func returner
   %max := 0
 :maxloop
   %sum := 0
+  jge %ipos %len :retvrn
 :sumloop
   %item := 0
-  jge %ipos %len :retvrn
+  jge %ipos %len :enda_sum
 :check
   %prebyte = load byte [%x %ipos]
   %pretoken = sub %prebyte 48
@@ -25,14 +26,15 @@ func returner
   %adjust = mul %item %base
   %item := add %adjust %token
   %ipos := add %ipos 1
-  jmp :parseloop
+  jl %ipos %len :parseloop
 :enda
   %sum := add %sum %item
   %ipos := add %ipos 1
   jmp :sumloop
 :enda_sum
+  %ipos := add %ipos 1
   jge %max %sum :maxloop
-:newmax
+:
   %max := add %sum 0
   jmp :maxloop
 :retvrn

@@ -152,6 +152,8 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
     mem.set(u32, labels, 0);
     mem.set([2]u32, targets, .{ 0, 0 });
 
+    cfo.long_jump_mode = true; // TODO: as an option
+
     const target = cfo.get_target();
     try cfo.enter();
     for (FLIR.callee_saved[0..self.nsave]) |reg| {

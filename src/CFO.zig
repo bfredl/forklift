@@ -10,6 +10,7 @@ const ArrayListAligned = std.ArrayListAligned;
 const builtin = @import("builtin");
 const s2 = builtin.zig_backend != .stage1;
 const ArrayList = std.ArrayList;
+const print = std.debug.print;
 
 code: ArrayListAligned(u8, 4096),
 
@@ -17,6 +18,8 @@ code: ArrayListAligned(u8, 4096),
 /// but useful for debugging.
 inst_off: ArrayList(u32),
 inst_dbg: ArrayList(usize),
+
+long_jump_mode: bool = false,
 
 const Self = @This();
 
@@ -454,22 +457,37 @@ pub fn syscall(self: *Self) !void {
 // there..
 pub fn jfwd(self: *Self, cond: ?Cond) !u32 {
     try self.new_inst(@returnAddress());
+    const long = self.long_jump_mode;
     if (cond) |c| {
-        try self.wb(0x70 + c.off());
+        if (long) {
+            try self.wb(0x0f);
+            try self.wb(0x80 + c.off());
+        } else {
+            try self.wb(0x70 + c.off());
+        }
     } else {
-        try self.wb(0xeb);
+        try self.wb(if (long) 0xe9 else 0xeb);
     }
     var pos = @intCast(u32, self.code.items.len);
-    try self.wb(0x00); // placeholder
+    if (long) {
+        try self.wd(0x00); // placeholder
+    } else {
+        try self.wb(0x00); // placeholder
+    }
     return pos;
 }
 
 pub fn set_target(self: *Self, pos: u32) !void {
-    var off = self.get_target() - (pos + 1);
-    if (off > 0x7f) {
-        return error.InvalidNearJump;
+    if (self.long_jump_mode) {
+        var off = self.get_target() - (pos + 4);
+        std.mem.writeIntLittle(u32, self.code.items[pos..][0..4], off);
+    } else {
+        var off = self.get_target() - (pos + 1);
+        if (off > 0x7f) {
+            return error.InvalidNearJump;
+        }
+        self.code.items[pos] = @intCast(u8, off);
     }
-    self.code.items[pos] = @intCast(u8, off);
 }
 
 pub fn set_lea_target(self: *Self, pos: u32) void {
@@ -494,9 +512,14 @@ pub fn jbck(self: *Self, cond: ?Cond, target: u32) !void {
         try self.wb(if (cond) |c| 0x70 + c.off() else 0xEB);
         try self.wbi(off8);
     } else {
-        try self.wb(0x0f);
-        try self.wb(if (cond) |c| 0x80 + c.off() else 0xe9);
-        try self.wd(off - 4); // FETING: offset is larger as the jump instruction is larger
+        if (cond) |c| {
+            try self.wb(0x0f);
+            try self.wb(0x80 + c.off());
+            try self.wd(off - 4); // FETING: offset is larger as the jump instruction is larger
+        } else {
+            try self.wb(0xe9);
+            try self.wd(off - 3); // FETING: offset is larger as the jump instruction is larger
+        }
     }
 }
 
@@ -861,7 +884,7 @@ pub fn dbg_test(self: *Self) !void {
     const dbginfo = try debug.getSelfDebugInfo();
     const tty_config = debug.detectTTYConfig();
     for (self.inst_dbg.items) |x, i| {
-        debug.print("{} {}\n", .{ i, x });
+        print("{} {}\n", .{ i, x });
         try debug.printSourceAtAddress(dbginfo, stderr, x, tty_config);
     }
 }
