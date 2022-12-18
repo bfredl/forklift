@@ -844,6 +844,8 @@ pub fn calc_use(self: *Self) !void {
     // TODO: at this point the number of vregs is known. so a bitset for
     // node X vreg can be allocated here.
 
+    if (self.nvreg > 64) return error.DoTheWork;
+
     var scc_end: ?u16 = null;
     var scc_last: bool = false;
 
@@ -851,10 +853,11 @@ pub fn calc_use(self: *Self) !void {
         const n = &self.n.items[ni];
         var live: u64 = 0;
         for (n.s) |s| {
-            if (s != NoRef) {
+            if (s != 0) {
                 live |= self.n.items[s].live_in;
             }
         }
+        // print("LIVEUT {}: {x} (dvs {})\n", .{ ni, live, @popCount(live) });
 
         var cur_blk: ?u16 = n.lastblk;
         if (scc_end == null) {
@@ -873,7 +876,7 @@ pub fn calc_use(self: *Self) !void {
                     live &= ~(@as(usize, 1) << @intCast(u6, i.vreg));
                 }
 
-                const nops = n_op(i.tag, true);
+                const nops = n_op(i.tag, false);
                 if (nops > 0) {
                     const ref = self.iref(i.op1).?;
                     if (ref.vreg != NoRef) live |= (@as(usize, 1) << @intCast(u6, ref.vreg));
@@ -888,6 +891,7 @@ pub fn calc_use(self: *Self) !void {
         }
 
         n.live_in = live;
+        // print("LIVEIN {}: {x} (dvs {})\n", .{ ni, n.live_in, @popCount(n.live_in) });
 
         if (n.scc == ni) {
             // if scc was not a singleton, we are now at the first node
@@ -907,6 +911,35 @@ pub fn calc_use(self: *Self) !void {
         scc_last = false;
         if (ni == 0) break;
     }
+}
+
+pub fn check_vregs(self: *Self) !void {
+    if (self.n.items[0].live_in != 0) return error.HOPPSANSA;
+    var err = false;
+    for (self.n.items) |*n, ni| {
+        var live_out: u64 = 0;
+        // hack: if n.s[i] == 0 then no bits will be added anyway
+        live_out |= self.n.items[n.s[0]].live_in;
+        live_out |= self.n.items[n.s[1]].live_in;
+
+        const born = live_out & ~n.live_in;
+        if (born != 0) {
+            print("BIRTH {}: {x} which is {}\n", .{ ni, born, @popCount(born) });
+            var ireg: u16 = 0;
+            while (ireg < self.nvreg) : (ireg += 1) {
+                if ((born & (@as(usize, 1) << @intCast(u6, ireg))) != 0) {
+                    const i = self.vregs.items[ireg];
+                    print(" %{}", .{i});
+                    if (self.biref(i).?.n != ni) {
+                        print("!!", .{});
+                        err = true;
+                    }
+                }
+            }
+            print("\n", .{});
+        }
+    }
+    if (err) return error.DoYouEvenLoopAnalysis;
 }
 
 pub fn alloc_arg(self: *Self, inst: *Inst) !void {
@@ -1229,7 +1262,7 @@ pub fn debug_print(self: *Self) void {
             while (ireg < self.nvreg) : (ireg += 1) {
                 const live = (n.live_in & (@as(usize, 1) << @intCast(u6, ireg))) != 0;
                 if (live) {
-                    print(" {}", .{ireg});
+                    print(" %{}", .{self.vregs.items[ireg]});
                 }
             }
         }
@@ -1242,6 +1275,24 @@ pub fn debug_print(self: *Self) void {
         print("\n", .{});
 
         self.print_blk(n.firstblk);
+
+        // only print liveout if we have more than one sucessor, otherwise it is BOOORING
+        if (n.s[1] != 0) {
+            var live_out: u64 = 0;
+            live_out |= self.n.items[n.s[0]].live_in;
+            live_out |= self.n.items[n.s[1]].live_in;
+            if (live_out != 0) {
+                print("LIVE_OUT:", .{});
+                var ireg: u16 = 0;
+                while (ireg < self.nvreg) : (ireg += 1) {
+                    const live = (live_out & (@as(usize, 1) << @intCast(u6, ireg))) != 0;
+                    if (live) {
+                        print(" %{}", .{self.vregs.items[ireg]});
+                    }
+                }
+            }
+            print("\n", .{});
+        }
 
         if (n.s[1] == 0) {
             if (n.s[0] == 0) {
@@ -1372,6 +1423,8 @@ pub fn test_analysis(self: *Self, comptime check: bool) !void {
     try self.reorder_inst();
     if (check) try self.check_cfg_valid();
     try self.calc_use();
+
+    if (check) try self.check_vregs();
 
     // NB: breaks the critical-edge invariant.
     // move after scan_alloc in case it needs it?
