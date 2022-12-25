@@ -37,6 +37,8 @@ nslots: u8 = 0,
 
 nsave: u8 = 0,
 
+ndf: u16 = 0,
+
 // canonical order of callee saved registers. nsave>0 means
 // the first nsave items needs to be saved and restored
 pub const callee_saved: [5]IPReg = .{ .rbx, .r12, .r13, .r14, .r15 };
@@ -66,6 +68,9 @@ pub const Node = struct {
     lowlink: u16 = 0,
     scc: u16 = 0, // XXX: not a topological index, just an identidifer
     live_in: u64 = 0, // TODO: globally allocate a [n_nodes*nvreg] multibitset
+    rpolink: u16 = 0,
+    dfnum2: u16 = 0,
+    loop: u16 = 0,
 };
 
 pub const EMPTY: Inst = .{ .tag = .empty, .op1 = 0, .op2 = 0 };
@@ -596,6 +601,68 @@ pub fn calc_preds(self: *Self) !void {
     }
 }
 
+pub fn calc_rpo(self: *Self) !void {
+    if (false) {
+        for (self.n.items) |*n, ni| {
+            print("{} : ", .{ni});
+            for (n.s) |s| {
+                if (s != 0) {
+                    print("{} ", .{s});
+                }
+            }
+            print("\n", .{});
+        }
+    }
+    _ = try self.rpo_visit(0);
+    return error.wedun;
+}
+
+pub fn rpo_visit(self: *Self, node: u16) !?u16 {
+    const n = &self.n.items[node];
+    if (n.rpolink != 0) {
+        if (n.rpolink == 1) {
+            print("BACKLINK\n", .{});
+            return node;
+        } else {
+            return if (n.loop != 0) n.loop else null;
+        }
+    }
+    n.dfnum2 = self.ndf;
+    self.ndf += 1;
+    // print("df : {}\n", .{node});
+    n.rpolink = 1;
+    var loop: ?u16 = null;
+    for (n.s) |s| {
+        if (s != 0) {
+            const sloop = try self.rpo_visit(s);
+            if (sloop) |l| {
+                if (loop) |l2| {
+                    if (self.n.items[l].dfnum2 > self.n.items[l2].dfnum2) {
+                        print("SKANDAL: {} PARENT OF {} ??\n", .{ l2, l });
+                        self.n.items[l].loop = l2;
+                        loop = l;
+                    } else if (l != l2) {
+                        print("RUMOURS: {} PARENT OF {} ??\n", .{ l, l2 });
+                        self.n.items[l2].loop = l;
+                    }
+                } else {
+                    loop = l;
+                }
+            }
+        }
+    }
+    print("rpo: {} in {?}\n", .{ node, loop });
+    n.rpolink = 2;
+
+    if (node == loop) {
+        print("EMIT LOOP\n", .{});
+        return if (n.loop != 0) n.loop else null;
+    } else {
+        if (loop) |l| n.loop = l;
+        return loop;
+    }
+}
+
 pub fn calc_dfs(self: *Self) !void {
     const n = self.n.items;
     var stack = try ArrayList(u16).initCapacity(self.a, n.len);
@@ -656,10 +723,12 @@ pub fn scc_connect(self: *Self, stack: *ArrayList(u16), v: u16) void {
         while (true) {
             const w = stack.pop();
             self.sccorder.appendAssumeCapacity(w);
+            print("PUTTA: {} i {}\n", .{ w, v });
             // XXX: not topologically sorted, just enables the check: n[i].scc == n[j].scc
             n[w].scc = v;
             if (w == v) break;
         }
+        print("BROTT\n", .{});
     }
 }
 
@@ -1413,8 +1482,11 @@ pub fn test_analysis(self: *Self, comptime check: bool) !void {
     }
     try self.calc_preds();
 
+    try self.calc_rpo();
+
     //try self.calc_dfs();
     try self.calc_scc(); // also provides dfs
+    self.debug_print();
     try self.reorder_nodes();
     if (check) try self.check_cfg_valid();
     try SSA_GVN.ssa_gvn(self);
