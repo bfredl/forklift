@@ -24,7 +24,8 @@ a: Allocator,
 n: ArrayList(Node),
 b: ArrayList(Block),
 dfs: ArrayList(u16),
-sccorder: ArrayList(u16),
+preorder: ArrayList(u16),
+blkorder: ArrayList(u16),
 refs: ArrayList(u16),
 narg: u16 = 0,
 nvar: u16 = 0,
@@ -320,7 +321,8 @@ pub fn init(n: u16, allocator: Allocator) !Self {
         .n = try ArrayList(Node).initCapacity(allocator, n),
         .dfs = ArrayList(u16).init(allocator),
         .vregs = ArrayList(u16).init(allocator),
-        .sccorder = ArrayList(u16).init(allocator),
+        .blkorder = ArrayList(u16).init(allocator),
+        .preorder = ArrayList(u16).init(allocator),
         .refs = try ArrayList(u16).initCapacity(allocator, 4 * n),
         .b = try ArrayList(Block).initCapacity(allocator, 2 * n),
     };
@@ -329,7 +331,8 @@ pub fn init(n: u16, allocator: Allocator) !Self {
 pub fn deinit(self: *Self) void {
     self.n.deinit();
     self.dfs.deinit();
-    self.sccorder.deinit();
+    self.blkorder.deinit();
+    self.preorder.deinit();
     self.refs.deinit();
     self.b.deinit();
     self.vregs.deinit();
@@ -608,19 +611,38 @@ pub fn calc_preds(self: *Self) !void {
 }
 
 pub fn calc_rpo(self: *Self) !void {
-    if (false) {
-        for (self.n.items) |*n, ni| {
-            print("{} : ", .{ni});
-            for (n.s) |s| {
-                if (s != 0) {
-                    print("{} ", .{s});
-                }
-            }
-            print("\n", .{});
-        }
-    }
     _ = try self.rpo_visit(0);
+    const big_n = self.preorder.items.len;
+    try self.blkorder.append(0); // ROOT
+    print("ROOT: 0", .{});
+    if (big_n > 1) {
+        try self.loop_order(uv(big_n - 1));
+    }
+
+    print("PRE: {}, POST: {}\n", .{ self.preorder.items.len, self.blkorder.items.len });
+
     return error.wedun;
+}
+
+// h=preorder[ph] is either 0 (the entire graph) or a loop header
+pub fn loop_order(self: *Self, ph: u16) !void {
+    var i = ph;
+    const h = self.preorder.items[ph];
+    print("ENTER: {}\n", .{h});
+    while (true) {
+        i -= 1;
+        const node = self.preorder.items[i];
+        const n = &self.n.items[node];
+        if (n.loop == h) {
+            print("ITYM : {}\n", .{node});
+            try self.blkorder.append(node);
+            if (n.is_header) {
+                try self.loop_order(i);
+            }
+        }
+        if (i == 0) break;
+    }
+    print("EXIT: {}\n", .{h});
 }
 
 pub fn rpo_visit(self: *Self, node: u16) !?u16 {
@@ -660,9 +682,11 @@ pub fn rpo_visit(self: *Self, node: u16) !?u16 {
         }
     }
     print("rpo: {} in {?}\n", .{ node, loop });
+    try self.preorder.append(node);
     n.rpolink = 2;
 
     if (node == loop) {
+        n.is_header = true;
         const parent = if (n.loop != 0) n.loop else null;
         print("EMIT LOOP: {} in {?}\n", .{ node, parent });
         return parent;
@@ -703,7 +727,7 @@ pub fn calc_scc(self: *Self) !void {
     try self.dfs.ensureTotalCapacity(n.len);
     var stack = try ArrayList(u16).initCapacity(self.a, n.len);
     defer stack.deinit();
-    try self.sccorder.ensureTotalCapacity(n.len);
+    try self.blkorder.ensureTotalCapacity(n.len);
     self.scc_connect(&stack, 0);
 }
 
@@ -731,7 +755,7 @@ pub fn scc_connect(self: *Self, stack: *ArrayList(u16), v: u16) void {
     if (n[v].lowlink == n[v].dfnum) {
         while (true) {
             const w = stack.pop();
-            self.sccorder.appendAssumeCapacity(w);
+            self.blkorder.appendAssumeCapacity(w);
             print("PUTTA: {} i {}\n", .{ w, v });
             // XXX: not topologically sorted, just enables the check: n[i].scc == n[j].scc
             n[w].scc = v;
@@ -753,9 +777,9 @@ pub fn reorder_nodes(self: *Self) !void {
     var last_scc: u16 = NoRef;
     var cur_scc: u16 = NoRef;
 
-    var sci = self.sccorder.items.len - 1;
+    var sci = self.blkorder.items.len - 1;
     while (true) : (sci -= 1) {
-        const old_ni = self.sccorder.items[sci];
+        const old_ni = self.blkorder.items[sci];
         const ni = if (oldlink[old_ni] != NoRef) oldlink[old_ni] else old_ni;
         const n = &self.n.items[ni];
 
