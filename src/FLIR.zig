@@ -632,31 +632,34 @@ pub fn rpo_visit(self: *Self, node: u16) !?u16 {
     // print("df : {}\n", .{node});
     n.rpolink = 1;
     var loop: ?u16 = null;
-    for (n.s) |s| {
-        if (s != 0) {
-            const sloop = try self.rpo_visit(s);
-            if (sloop) |l| {
-                if (loop) |l2| {
-                    if (self.n.items[l].dfnum2 > self.n.items[l2].dfnum2) {
-                        print("SKANDAL: {} PARENT OF {} ??\n", .{ l2, l });
-                        self.n.items[l].loop = l2;
-                        loop = l;
-                    } else if (l != l2) {
-                        print("RUMOURS: {} PARENT OF {} ??\n", .{ l, l2 });
-                        self.n.items[l2].loop = l;
-                    }
-                } else {
-                    loop = l;
+    if (n.s[0] != 0) {
+        loop = try self.rpo_visit(n.s[0]);
+    }
+    if (n.s[1] != 0) {
+        const loop2 = try self.rpo_visit(n.s[1]);
+        if (loop) |l| {
+            if (loop2) |l2| {
+                // TODO: there could be a loop lX so that l < lX < l2
+                if (self.n.items[l2].dfnum2 > self.n.items[l].dfnum2) {
+                    print("SKANDAL: {} PARENT OF {} ??\n", .{ l, l2 });
+                    self.n.items[l2].loop = l;
+                    loop = l2;
+                } else if (l != l2) {
+                    print("RUMOURS: {} PARENT OF {} ??\n", .{ l2, l });
+                    self.n.items[l].loop = l2;
                 }
             }
+        } else {
+            loop = loop2;
         }
     }
     print("rpo: {} in {?}\n", .{ node, loop });
     n.rpolink = 2;
 
     if (node == loop) {
-        print("EMIT LOOP\n", .{});
-        return if (n.loop != 0) n.loop else null;
+        const parent = if (n.loop != 0) n.loop else null;
+        print("EMIT LOOP: {} in {?}\n", .{ node, parent });
+        return parent;
     } else {
         if (loop) |l| n.loop = l;
         return loop;
