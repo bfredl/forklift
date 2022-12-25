@@ -145,8 +145,8 @@ fn get_eaddr_load_or_lea(self: *FLIR, i: Inst) !EAddr {
 }
 
 pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
-    var labels = try self.a.alloc(u32, self.dfs.items.len);
-    var targets = try self.a.alloc([2]u32, self.dfs.items.len);
+    var labels = try self.a.alloc(u32, self.n.items.len);
+    var targets = try self.a.alloc([2]u32, self.n.items.len);
     defer self.a.free(labels);
     defer self.a.free(targets);
     mem.set(u32, labels, 0);

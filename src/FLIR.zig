@@ -23,7 +23,7 @@ a: Allocator,
 // TODO: unmanage all these:
 n: ArrayList(Node),
 b: ArrayList(Block),
-dfs: ArrayList(u16),
+// dfs: ArrayList(u16),
 preorder: ArrayList(u16),
 blkorder: ArrayList(u16),
 refs: ArrayList(u16),
@@ -60,8 +60,8 @@ pub const Node = struct {
     dfnum: u16 = 0,
 
     // scc only
-    scc: u16 = 0, // XXX: not a topological index, just an identidifer
-    lowlink: u16 = 0,
+    // scc: u16 = 0, // XXX: not a topological index, just an identidifer
+    // lowlink: u16 = 0,
 
     // for MiniDOM, not currently used
     // idom: u16 = 0,
@@ -75,7 +75,6 @@ pub const Node = struct {
     live_in: u64 = 0, // TODO: globally allocate a [n_nodes*nvreg] multibitset
 
     rpolink: u16 = 0,
-    dfnum2: u16 = 0,
     loop: u16 = 0,
     is_header: bool = false, // if true, loop refers to parent loop
 };
@@ -319,7 +318,7 @@ pub fn init(n: u16, allocator: Allocator) !Self {
     return Self{
         .a = allocator,
         .n = try ArrayList(Node).initCapacity(allocator, n),
-        .dfs = ArrayList(u16).init(allocator),
+        // .dfs = ArrayList(u16).init(allocator),
         .vregs = ArrayList(u16).init(allocator),
         .blkorder = ArrayList(u16).init(allocator),
         .preorder = ArrayList(u16).init(allocator),
@@ -330,7 +329,7 @@ pub fn init(n: u16, allocator: Allocator) !Self {
 
 pub fn deinit(self: *Self) void {
     self.n.deinit();
-    self.dfs.deinit();
+    // self.dfs.deinit();
     self.blkorder.deinit();
     self.preorder.deinit();
     self.refs.deinit();
@@ -610,31 +609,28 @@ pub fn calc_preds(self: *Self) !void {
     }
 }
 
-pub fn calc_rpo(self: *Self) !void {
+pub fn calc_loop(self: *Self) !void {
     _ = try self.rpo_visit(0);
     const big_n = self.preorder.items.len;
     try self.blkorder.append(0); // ROOT
-    print("ROOT: 0", .{});
     if (big_n > 1) {
         try self.loop_order(uv(big_n - 1));
     }
 
-    print("PRE: {}, POST: {}\n", .{ self.preorder.items.len, self.blkorder.items.len });
-
-    return error.wedun;
+    // print("PRE: {}, POST: {}\n", .{ self.preorder.items.len, self.blkorder.items.len });
 }
 
 // h=preorder[ph] is either 0 (the entire graph) or a loop header
 pub fn loop_order(self: *Self, ph: u16) !void {
     var i = ph;
     const h = self.preorder.items[ph];
-    print("ENTER: {}\n", .{h});
+    // print("ENTER: {}\n", .{h});
     while (true) {
         i -= 1;
         const node = self.preorder.items[i];
         const n = &self.n.items[node];
         if (n.loop == h) {
-            print("ITYM : {}\n", .{node});
+            // print("ITYM : {}\n", .{node});
             try self.blkorder.append(node);
             if (n.is_header) {
                 try self.loop_order(i);
@@ -642,7 +638,7 @@ pub fn loop_order(self: *Self, ph: u16) !void {
         }
         if (i == 0) break;
     }
-    print("EXIT: {}\n", .{h});
+    // print("EXIT: {}\n", .{h});
 }
 
 pub fn rpo_visit(self: *Self, node: u16) !?u16 {
@@ -655,7 +651,7 @@ pub fn rpo_visit(self: *Self, node: u16) !?u16 {
             return if (n.loop != 0) n.loop else null;
         }
     }
-    n.dfnum2 = self.ndf;
+    n.dfnum = self.ndf;
     self.ndf += 1;
     // print("df : {}\n", .{node});
     n.rpolink = 1;
@@ -668,7 +664,7 @@ pub fn rpo_visit(self: *Self, node: u16) !?u16 {
         if (loop) |l| {
             if (loop2) |l2| {
                 // TODO: there could be a loop lX so that l < lX < l2
-                if (self.n.items[l2].dfnum2 > self.n.items[l].dfnum2) {
+                if (self.n.items[l2].dfnum > self.n.items[l].dfnum) {
                     // print("SKANDAL: {} PARENT OF {} ??\n", .{ l, l2 });
                     self.n.items[l2].loop = l;
                     loop = l2;
@@ -681,14 +677,14 @@ pub fn rpo_visit(self: *Self, node: u16) !?u16 {
             loop = loop2;
         }
     }
-    print("rpo: {} in {?}\n", .{ node, loop });
+    // print("rpo: {} in {?}\n", .{ node, loop });
     try self.preorder.append(node);
     n.rpolink = 2;
 
     if (node == loop) {
         n.is_header = true;
         const parent = if (n.loop != 0) n.loop else null;
-        print("EMIT LOOP: {} in {?}\n", .{ node, parent });
+        // print("EMIT LOOP: {} in {?}\n", .{ node, parent });
         return parent;
     } else {
         if (loop) |l| n.loop = l;
@@ -774,12 +770,10 @@ pub fn reorder_nodes(self: *Self) !void {
     mem.set(u16, oldlink, NoRef);
     var newpos: u16 = 0;
 
-    var last_scc: u16 = NoRef;
-    var cur_scc: u16 = NoRef;
+    // var last_scc: u16 = NoRef;
+    // var cur_scc: u16 = NoRef;
 
-    var sci = self.blkorder.items.len - 1;
-    while (true) : (sci -= 1) {
-        const old_ni = self.blkorder.items[sci];
+    for (self.blkorder.items) |old_ni| {
         const ni = if (oldlink[old_ni] != NoRef) oldlink[old_ni] else old_ni;
         const n = &self.n.items[ni];
 
@@ -792,18 +786,16 @@ pub fn reorder_nodes(self: *Self) !void {
             oldlink[oldval] = ni;
         }
 
-        if (n.scc != last_scc) {
-            last_scc = n.scc;
-            cur_scc = newpos;
-        }
-        n.scc = cur_scc;
+        // if (n.scc != last_scc) {
+        //     last_scc = n.scc;
+        //     cur_scc = newpos;
+        // }
+        // n.scc = cur_scc;
 
         if (ni != newpos) {
             mem.swap(Node, n, &self.n.items[newpos]);
         }
         newpos += 1;
-
-        if (sci == 0) break;
     }
 
     assert(newpos <= self.n.items.len);
@@ -821,6 +813,7 @@ pub fn reorder_nodes(self: *Self) !void {
         for (self.preds(uv(ni))) |*pi| {
             pi.* = newlink[pi.*];
         }
+        n.loop = newlink[n.loop];
 
         var cur_blk: ?u16 = n.firstblk;
         while (cur_blk) |blk| {
@@ -995,7 +988,7 @@ pub fn calc_use(self: *Self) !void {
         n.live_in = live;
         // print("LIVEIN {}: {x} (dvs {})\n", .{ ni, n.live_in, @popCount(n.live_in) });
 
-        if (n.scc == ni) {
+        if (false) {
             // if scc was not a singleton, we are now at the first node
             // at a SCC which might be a loop. For values live
             // at the entry, extend the liveness interval to the end
@@ -1026,19 +1019,19 @@ pub fn check_vregs(self: *Self) !void {
 
         const born = live_out & ~n.live_in;
         if (born != 0) {
-            print("BIRTH {}: {x} which is {}\n", .{ ni, born, @popCount(born) });
+            // print("BIRTH {}: {x} which is {}\n", .{ ni, born, @popCount(born) });
             var ireg: u16 = 0;
             while (ireg < self.nvreg) : (ireg += 1) {
                 if ((born & (@as(usize, 1) << @intCast(u6, ireg))) != 0) {
                     const i = self.vregs.items[ireg];
-                    print(" %{}", .{i});
+                    // print(" %{}", .{i});
                     if (self.biref(i).?.n != ni) {
-                        print("!!", .{});
+                        // print("!!", .{});
                         err = true;
                     }
                 }
             }
-            print("\n", .{});
+            // print("\n", .{});
         }
     }
     if (err) return error.DoYouEvenLoopAnalysis;
@@ -1357,7 +1350,8 @@ pub fn conflict(self: *Self, before: *Inst, after: *Inst) bool {
 pub fn debug_print(self: *Self) void {
     print("\n", .{});
     for (self.n.items) |*n, i| {
-        print("node {} (npred {}, scc {}):", .{ i, n.npred, n.scc });
+        print("node {} (npred {}, loop {}):", .{ i, n.npred, n.loop });
+        if (n.is_header) print(" HEADER", .{});
         if (n.live_in != 0) {
             print(" LIVEIN", .{});
             var ireg: u16 = 0;
@@ -1515,12 +1509,12 @@ pub fn test_analysis(self: *Self, comptime check: bool) !void {
     }
     try self.calc_preds();
 
-    try self.calc_rpo();
-
     //try self.calc_dfs();
-    try self.calc_scc(); // also provides dfs
-    self.debug_print();
+    // try self.calc_scc(); // also provides dfs
+    try self.calc_loop(); // also fills node.dfnum
+
     try self.reorder_nodes();
+    // self.debug_print();
     if (check) try self.check_cfg_valid();
     try SSA_GVN.ssa_gvn(self);
     if (check) try self.check_cfg_valid();
