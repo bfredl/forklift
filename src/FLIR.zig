@@ -57,20 +57,26 @@ pub fn uv(s: usize) u16 {
 pub const Node = struct {
     s: [2]u16 = .{ 0, 0 }, // sucessors
     dfnum: u16 = 0,
-    idom: u16 = 0,
+
+    // scc only
+    scc: u16 = 0, // XXX: not a topological index, just an identidifer
+    lowlink: u16 = 0,
+
+    // for MiniDOM, not currently used
+    // idom: u16 = 0,
+    //
     predref: u16 = 0,
     npred: u16 = 0,
     // NB: might be NoRef if the node was deleted,
     // a reachable node must have at least one block even if empty!
     firstblk: u16,
     lastblk: u16,
-    dfs_parent: u16 = 0, // TODO: unused
-    lowlink: u16 = 0,
-    scc: u16 = 0, // XXX: not a topological index, just an identidifer
     live_in: u64 = 0, // TODO: globally allocate a [n_nodes*nvreg] multibitset
+
     rpolink: u16 = 0,
     dfnum2: u16 = 0,
     loop: u16 = 0,
+    is_header: bool = false, // if true, loop refers to parent loop
 };
 
 pub const EMPTY: Inst = .{ .tag = .empty, .op1 = 0, .op2 = 0 };
@@ -621,7 +627,7 @@ pub fn rpo_visit(self: *Self, node: u16) !?u16 {
     const n = &self.n.items[node];
     if (n.rpolink != 0) {
         if (n.rpolink == 1) {
-            print("BACKLINK\n", .{});
+            // print("BACKLINK\n", .{});
             return node;
         } else {
             return if (n.loop != 0) n.loop else null;
@@ -641,11 +647,11 @@ pub fn rpo_visit(self: *Self, node: u16) !?u16 {
             if (loop2) |l2| {
                 // TODO: there could be a loop lX so that l < lX < l2
                 if (self.n.items[l2].dfnum2 > self.n.items[l].dfnum2) {
-                    print("SKANDAL: {} PARENT OF {} ??\n", .{ l, l2 });
+                    // print("SKANDAL: {} PARENT OF {} ??\n", .{ l, l2 });
                     self.n.items[l2].loop = l;
                     loop = l2;
                 } else if (l != l2) {
-                    print("RUMOURS: {} PARENT OF {} ??\n", .{ l2, l });
+                    // print("RUMOURS: {} PARENT OF {} ??\n", .{ l2, l });
                     self.n.items[l].loop = l2;
                 }
             }
@@ -685,7 +691,7 @@ pub fn calc_dfs(self: *Self) !void {
         for (n[v].s) |si| {
             // origin cannot be revisited anyway
             if (si > 0 and n[si].dfnum == 0) {
-                n[si].dfs_parent = v;
+                // n[si].dfs_parent = v;
                 stack.appendAssumeCapacity(si);
             }
         }
@@ -713,7 +719,7 @@ pub fn scc_connect(self: *Self, stack: *ArrayList(u16), v: u16) void {
         // origin cannot be revisited anyway
         if (w > 0) {
             if (n[w].dfnum == 0) {
-                n[w].dfs_parent = v;
+                // n[w].dfs_parent = v;
                 self.scc_connect(stack, w);
                 n[v].lowlink = math.min(n[v].lowlink, n[w].lowlink);
             } else if (n[w].dfnum < n[v].dfnum and n[w].scc == 0) { // or whatever
