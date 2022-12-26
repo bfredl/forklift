@@ -59,10 +59,6 @@ pub const Node = struct {
     s: [2]u16 = .{ 0, 0 }, // sucessors
     dfnum: u16 = 0,
 
-    // scc only
-    // scc: u16 = 0, // XXX: not a topological index, just an identidifer
-    // lowlink: u16 = 0,
-
     // for MiniDOM, not currently used
     // idom: u16 = 0,
     //
@@ -616,21 +612,17 @@ pub fn calc_loop(self: *Self) !void {
     if (big_n > 1) {
         try self.loop_order(uv(big_n - 1));
     }
-
-    // print("PRE: {}, POST: {}\n", .{ self.preorder.items.len, self.blkorder.items.len });
 }
 
 // h=preorder[ph] is either 0 (the entire graph) or a loop header
 pub fn loop_order(self: *Self, ph: u16) !void {
     var i = ph;
     const h = self.preorder.items[ph];
-    // print("ENTER: {}\n", .{h});
     while (true) {
         i -= 1;
         const node = self.preorder.items[i];
         const n = &self.n.items[node];
         if (n.loop == h) {
-            // print("ITYM : {}\n", .{node});
             try self.blkorder.append(node);
             if (n.is_header) {
                 try self.loop_order(i);
@@ -638,14 +630,12 @@ pub fn loop_order(self: *Self, ph: u16) !void {
         }
         if (i == 0) break;
     }
-    // print("EXIT: {}\n", .{h});
 }
 
 pub fn rpo_visit(self: *Self, node: u16) !?u16 {
     const n = &self.n.items[node];
     if (n.rpolink != 0) {
         if (n.rpolink == 1) {
-            // print("BACKLINK\n", .{});
             return node;
         } else {
             return if (n.loop != 0) n.loop else null;
@@ -653,7 +643,6 @@ pub fn rpo_visit(self: *Self, node: u16) !?u16 {
     }
     n.dfnum = self.ndf;
     self.ndf += 1;
-    // print("df : {}\n", .{node});
     n.rpolink = 1;
     var loop: ?u16 = null;
     if (n.s[0] != 0) {
@@ -665,11 +654,9 @@ pub fn rpo_visit(self: *Self, node: u16) !?u16 {
             if (loop2) |l2| {
                 // TODO: there could be a loop lX so that l < lX < l2
                 if (self.n.items[l2].dfnum > self.n.items[l].dfnum) {
-                    // print("SKANDAL: {} PARENT OF {} ??\n", .{ l, l2 });
                     self.n.items[l2].loop = l;
                     loop = l2;
                 } else if (l != l2) {
-                    // print("RUMOURS: {} PARENT OF {} ??\n", .{ l2, l });
                     self.n.items[l].loop = l2;
                 }
             }
@@ -677,87 +664,16 @@ pub fn rpo_visit(self: *Self, node: u16) !?u16 {
             loop = loop2;
         }
     }
-    // print("rpo: {} in {?}\n", .{ node, loop });
     try self.preorder.append(node);
     n.rpolink = 2;
 
     if (node == loop) {
         n.is_header = true;
         const parent = if (n.loop != 0) n.loop else null;
-        // print("EMIT LOOP: {} in {?}\n", .{ node, parent });
         return parent;
     } else {
         if (loop) |l| n.loop = l;
         return loop;
-    }
-}
-
-pub fn calc_dfs(self: *Self) !void {
-    const n = self.n.items;
-    var stack = try ArrayList(u16).initCapacity(self.a, n.len);
-    try self.dfs.ensureTotalCapacity(n.len);
-    defer stack.deinit();
-    stack.appendAssumeCapacity(0);
-    while (stack.items.len > 0) {
-        const v = stack.pop();
-        if (n[v].dfnum > 0) {
-            // already visited
-            continue;
-        }
-        if (false) print("dfs[{}] = {};\n", .{ self.dfs.items.len, v });
-        n[v].dfnum = uv(self.dfs.items.len);
-        self.dfs.appendAssumeCapacity(v);
-
-        for (n[v].s) |si| {
-            // origin cannot be revisited anyway
-            if (si > 0 and n[si].dfnum == 0) {
-                // n[si].dfs_parent = v;
-                stack.appendAssumeCapacity(si);
-            }
-        }
-    }
-}
-
-pub fn calc_scc(self: *Self) !void {
-    const n = self.n.items;
-    try self.dfs.ensureTotalCapacity(n.len);
-    var stack = try ArrayList(u16).initCapacity(self.a, n.len);
-    defer stack.deinit();
-    try self.blkorder.ensureTotalCapacity(n.len);
-    self.scc_connect(&stack, 0);
-}
-
-pub fn scc_connect(self: *Self, stack: *ArrayList(u16), v: u16) void {
-    const n = self.n.items;
-    n[v].dfnum = uv(self.dfs.items.len);
-    self.dfs.appendAssumeCapacity(v);
-
-    stack.appendAssumeCapacity(v);
-    n[v].lowlink = n[v].dfnum;
-
-    for (n[v].s) |w| {
-        // origin cannot be revisited anyway
-        if (w > 0) {
-            if (n[w].dfnum == 0) {
-                // n[w].dfs_parent = v;
-                self.scc_connect(stack, w);
-                n[v].lowlink = math.min(n[v].lowlink, n[w].lowlink);
-            } else if (n[w].dfnum < n[v].dfnum and n[w].scc == 0) { // or whatever
-                n[v].lowlink = math.min(n[v].lowlink, n[w].dfnum);
-            }
-        }
-    }
-
-    if (n[v].lowlink == n[v].dfnum) {
-        while (true) {
-            const w = stack.pop();
-            self.blkorder.appendAssumeCapacity(w);
-            print("PUTTA: {} i {}\n", .{ w, v });
-            // XXX: not topologically sorted, just enables the check: n[i].scc == n[j].scc
-            n[w].scc = v;
-            if (w == v) break;
-        }
-        print("BROTT\n", .{});
     }
 }
 
@@ -769,9 +685,6 @@ pub fn reorder_nodes(self: *Self) !void {
     defer self.a.free(oldlink);
     mem.set(u16, oldlink, NoRef);
     var newpos: u16 = 0;
-
-    // var last_scc: u16 = NoRef;
-    // var cur_scc: u16 = NoRef;
 
     for (self.blkorder.items) |old_ni| {
         const ni = if (oldlink[old_ni] != NoRef) oldlink[old_ni] else old_ni;
@@ -785,12 +698,6 @@ pub fn reorder_nodes(self: *Self) !void {
 
             oldlink[oldval] = ni;
         }
-
-        // if (n.scc != last_scc) {
-        //     last_scc = n.scc;
-        //     cur_scc = newpos;
-        // }
-        // n.scc = cur_scc;
 
         if (ni != newpos) {
             mem.swap(Node, n, &self.n.items[newpos]);
@@ -835,7 +742,6 @@ pub fn reorder_inst(self: *Self) !void {
     defer self.a.free(newblkpos);
     var newpos: u16 = 0;
 
-    // already in scc order
     for (self.n.items) |*n| {
         var cur_blk: ?u16 = n.firstblk;
         var blklink: ?u16 = null;
@@ -912,7 +818,8 @@ pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
 }
 
 // TODO: not idempotent! does not reset n_use=0 first.
-// NB: requires reorder_nodes() [scc] and reorder_inst()
+// NB: requires reorder_nodes() and reorder_inst()
+// TODO: get rid of reorder_inst!
 pub fn calc_use(self: *Self) !void {
     // TODO: NOT LIKE THIS
     try self.vregs.ensureTotalCapacity(64);
@@ -941,9 +848,6 @@ pub fn calc_use(self: *Self) !void {
 
     if (self.nvreg > 64) return error.DoTheWork;
 
-    var scc_end: ?u16 = null;
-    var scc_last: bool = false;
-
     while (true) : (ni -= 1) {
         const n = &self.n.items[ni];
         var live: u64 = 0;
@@ -955,11 +859,6 @@ pub fn calc_use(self: *Self) !void {
         // print("LIVEUT {}: {x} (dvs {})\n", .{ ni, live, @popCount(live) });
 
         var cur_blk: ?u16 = n.lastblk;
-        if (scc_end == null) {
-            // end exclusive
-            scc_end = toref(cur_blk.?, BLK_SIZE - 1);
-            scc_last = true;
-        }
         while (cur_blk) |blk| {
             var b = &self.b.items[blk];
             var idx: usize = BLK_SIZE;
@@ -988,22 +887,22 @@ pub fn calc_use(self: *Self) !void {
         n.live_in = live;
         // print("LIVEIN {}: {x} (dvs {})\n", .{ ni, n.live_in, @popCount(n.live_in) });
 
-        if (false) {
-            // if scc was not a singleton, we are now at the first node
-            // at a SCC which might be a loop. For values live
-            // at the entry, extend the liveness interval to the end
-            if (!scc_last) {
-                var ireg: u16 = 0;
-                while (ireg < self.nvreg) : (ireg += 1) {
-                    if ((live & (@as(usize, 1) << @intCast(u6, ireg))) != 0) {
-                        const i = self.iref(self.vregs.items[ireg]).?;
-                        i.last_use = math.max(i.last_use, scc_end.?);
+        if (n.is_header) {
+            // TODO: make me a loop membership bitset globally
+            if (self.n.items.len > 64) unreachable;
+            var loop_set: u64 = @as(u64, 1) << @intCast(u6, ni);
+            var ch_i = ni + 1;
+            while (ch_i < self.n.items.len) : (ch_i += 1) {
+                const ch_n = &self.n.items[ch_i];
+                const ch_loop: u64 = @as(u64, 1) << @intCast(u6, ch_i);
+                if (((@as(u64, 1) << @intCast(u6, ch_n.loop)) & loop_set) != 0) {
+                    if (ch_n.is_header) {
+                        loop_set |= ch_loop;
                     }
+                    ch_n.live_in |= n.live_in;
                 }
             }
-            scc_end = null;
         }
-        scc_last = false;
         if (ni == 0) break;
     }
 }
@@ -1509,12 +1408,11 @@ pub fn test_analysis(self: *Self, comptime check: bool) !void {
     }
     try self.calc_preds();
 
-    //try self.calc_dfs();
-    // try self.calc_scc(); // also provides dfs
+    // modified reverse post-order where all loops
+    // are emmited contigously
     try self.calc_loop(); // also fills node.dfnum
 
     try self.reorder_nodes();
-    // self.debug_print();
     if (check) try self.check_cfg_valid();
     try SSA_GVN.ssa_gvn(self);
     if (check) try self.check_cfg_valid();
