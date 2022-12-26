@@ -7,6 +7,17 @@ const print = std.debug.print;
 const CFO = @import("./CFO.zig");
 const SSA_GVN = @import("./SSA_GVN.zig");
 
+// this currently causes a curious bug as of zig nightly 26dec2022.
+// self.rpo_visit() cannot be found from within this file.
+//pub usingnamespace @import("./verify_ir.zig");
+const vir = @import("./verify_ir.zig");
+pub fn debug_print(self: *Self) void {
+    vir.debug_print(self);
+}
+pub fn check_ir_valid(self: *Self) !void {
+    try vir.check_ir_valid(self);
+}
+
 const builtin = @import("builtin");
 // const stage2 = builtin.zig_backend != .stage1;
 const ArrayList = std.ArrayList;
@@ -210,6 +221,39 @@ pub const Inst = struct {
         return inst.res_type() != null;
     }
 
+    // number of op:s which are inst references.
+    // otherwise they can store whatever data
+    pub fn n_op(inst: Inst, rw: bool) u2 {
+        return switch (inst.tag) {
+            .empty => 0,
+            .arg => 0,
+            .variable => 0,
+            // really only one, but we will get rid of this lie
+            // before getting into any serious analysis.
+            .putvar => 2,
+            .phi => 0,
+            // works on stage1:
+            // .putphi => @as(u2, if (rw) 2 else 1),
+            // works on stage2:
+            // .putphi => if (rw) 2 else 1,
+            // works on both: (clown_emoji)
+            .putphi => if (rw) @as(u2, 2) else @as(u2, 1), // TODO: booooooo
+            .constant => 0,
+            .renum => 1,
+            .load => 2, // base, idx
+            .lea => 2, // base, idx. elided when only used for a store!
+            .store => 2, // addr, val
+            .iop => 2,
+            .icmp => 2,
+            .imul => 2,
+            .shr => 2,
+            .vmath => 2,
+            .ret => 1,
+            .callarg => 1,
+            .call => 0, // could be for funptr/dynamic syscall?
+            .alloc => 0,
+        };
+    }
     pub fn ipreg(i: Inst) ?IPReg {
         return if (i.mckind == .ipreg) @intToEnum(IPReg, i.mcidx) else null;
     }
@@ -266,7 +310,7 @@ pub const MCKind = enum(u8) {
     // example "lea" and then "store", or "load" and then iop/vmath
     fused,
 
-    fn unallocated(self: @This()) bool {
+    pub fn unallocated(self: @This()) bool {
         return switch (self) {
             .unallocated_raw => true,
             .unallocated_ipreghint => true,
@@ -275,40 +319,6 @@ pub const MCKind = enum(u8) {
         };
     }
 };
-
-// number of op:s which are inst references.
-// otherwise they can store whatever data
-pub fn n_op(tag: Tag, rw: bool) u2 {
-    return switch (tag) {
-        .empty => 0,
-        .arg => 0,
-        .variable => 0,
-        // really only one, but we will get rid of this lie
-        // before getting into any serious analysis.
-        .putvar => 2,
-        .phi => 0,
-        // works on stage1:
-        // .putphi => @as(u2, if (rw) 2 else 1),
-        // works on stage2:
-        // .putphi => if (rw) 2 else 1,
-        // works on both: (clown_emoji)
-        .putphi => if (rw) @as(u2, 2) else @as(u2, 1), // TODO: booooooo
-        .constant => 0,
-        .renum => 1,
-        .load => 2, // base, idx
-        .lea => 2, // base, idx. elided when only used for a store!
-        .store => 2, // addr, val
-        .iop => 2,
-        .icmp => 2,
-        .imul => 2,
-        .shr => 2,
-        .vmath => 2,
-        .ret => 1,
-        .callarg => 1,
-        .call => 0, // could be for funptr/dynamic syscall?
-        .alloc => 0,
-    };
-}
 
 pub fn init(n: u16, allocator: Allocator) !Self {
     return Self{
@@ -795,7 +805,7 @@ pub fn reorder_inst(self: *Self) !void {
         }
         var it = self.ins_iterator(n.firstblk);
         while (it.next()) |item| {
-            const nops = n_op(item.i.tag, true);
+            const nops = item.i.n_op(true);
             if (nops > 0) {
                 item.i.op1 = newlink[item.i.op1];
                 if (nops > 1) {
@@ -834,7 +844,7 @@ pub fn calc_use(self: *Self) !void {
             var b = &self.b.items[blk];
             for (b.i) |*i, idx| {
                 const ref = toref(blk, uv(idx));
-                const nops = n_op(i.tag, false);
+                const nops = i.n_op(false);
                 if (nops > 0) {
                     self.adduse(uv(ni), ref, i.op1);
                     if (nops > 1) {
@@ -874,7 +884,7 @@ pub fn calc_use(self: *Self) !void {
                     live &= ~(@as(usize, 1) << @intCast(u6, i.vreg));
                 }
 
-                const nops = n_op(i.tag, false);
+                const nops = i.n_op(false);
                 if (nops > 0) {
                     const ref = self.iref(i.op1).?;
                     if (ref.vreg != NoRef) live |= (@as(usize, 1) << @intCast(u6, ref.vreg));
@@ -1022,7 +1032,7 @@ pub fn maybe_split(self: *Self, after: u16) !u16 {
 pub fn renumber_sloow(self: *Self, from: u16, to: u16) void {
     for (self.b.items) |*blk| {
         for (blk.i) |*i| {
-            const nop = n_op(i.tag, false);
+            const nop = i.n_op(false);
             if (nop > 0) {
                 if (i.op1 == from) i.op1 = to;
                 if (nop > 1) {
@@ -1051,7 +1061,7 @@ pub fn trivial_alloc(self: *Self) !void {
                     try self.alloc_arg(i);
                 } else if (i.has_res() and i.mckind.unallocated()) {
                     const regkind: MCKind = if (i.res_type() == ValType.avxval) .vfreg else .ipreg;
-                    const op1 = if (n_op(i.tag, false) > 0) self.iref(i.op1) else null;
+                    const op1 = if (i.n_op(false) > 0) self.iref(i.op1) else null;
                     if (op1) |o| {
                         if (o.mckind == regkind and o.vreg == NoRef and o.last_use == ref) {
                             i.mckind = regkind;
@@ -1224,101 +1234,11 @@ pub fn resolve_phi(self: *Self) !void {
     }
 }
 
-pub fn check_phi(self: *Self, worklist: *ArrayList(u16), pred: u16, succ: u16) !void {
-    const pn = self.n.items[pred];
-    var iter = self.ins_iterator(pn.firstblk);
-    var saw_putphi = false;
-
-    while (iter.next()) |it| {
-        if (it.i.tag == .putphi) {
-            saw_putphi = true;
-            // it.op1 == NoRef is techy allowed ( %thephi := undefined )
-            if (it.i.op2 == NoRef) return error.InvalidCFG;
-            try worklist.append(it.i.op2); // TODO: check duplicate
-        } else {
-            // error: regular instruction after putphi
-            if (saw_putphi) return error.InvalidCFG;
-        }
-    }
-
-    var left: u16 = uv(worklist.items.len);
-
-    var siter = self.ins_iterator(self.n.items[succ].firstblk);
-    while (siter.next()) |it| {
-        if (it.i.tag == .phi) {
-            const idx = mem.indexOfScalar(u16, worklist.items, it.ref) orelse return error.InvalidCFG;
-            left -= 1;
-            worklist.items[idx] = NoRef;
-        } else {
-            // TODO: check for phi in the wild if we memoize this before going thu preds
-            break;
-        }
-    }
-    if (left > 0) return error.InvalidCFG;
-    worklist.items.len = 0; // ALL RESET
-    // RETURN
-}
-
 pub fn conflict(self: *Self, before: *Inst, after: *Inst) bool {
     const written = self.iref(before.op2) orelse return false;
     const read = self.iref(after.op1) orelse return false;
     if (written.mckind == read.mckind and written.mcidx == read.mcidx) return true;
     return false;
-}
-
-pub fn debug_print(self: *Self) void {
-    print("\n", .{});
-    for (self.n.items) |*n, i| {
-        print("node {} (npred {}, loop {}):", .{ i, n.npred, n.loop });
-        if (n.is_header) print(" HEADER", .{});
-        if (n.live_in != 0) {
-            print(" LIVEIN", .{});
-            var ireg: u16 = 0;
-            while (ireg < self.nvreg) : (ireg += 1) {
-                const live = (n.live_in & (@as(usize, 1) << @intCast(u6, ireg))) != 0;
-                if (live) {
-                    print(" %{}", .{self.vregs.items[ireg]});
-                }
-            }
-        }
-
-        if (n.firstblk == NoRef) {
-            print(" VERY DEAD\n", .{});
-            continue;
-        }
-
-        print("\n", .{});
-
-        self.print_blk(n.firstblk);
-
-        // only print liveout if we have more than one sucessor, otherwise it is BOOORING
-        if (n.s[1] != 0) {
-            var live_out: u64 = 0;
-            live_out |= self.n.items[n.s[0]].live_in;
-            live_out |= self.n.items[n.s[1]].live_in;
-            if (live_out != 0) {
-                print("LIVE_OUT:", .{});
-                var ireg: u16 = 0;
-                while (ireg < self.nvreg) : (ireg += 1) {
-                    const live = (live_out & (@as(usize, 1) << @intCast(u6, ireg))) != 0;
-                    if (live) {
-                        print(" %{}", .{self.vregs.items[ireg]});
-                    }
-                }
-            }
-            print("\n", .{});
-        }
-
-        if (n.s[1] == 0) {
-            if (n.s[0] == 0) {
-                print("  diverge\n", .{});
-            } else if (n.s[0] != i + 1) {
-                print("  jump {}\n", .{n.s[0]});
-            }
-        } else {
-            print("  split: {any}\n", .{n.s});
-        }
-    }
 }
 
 const InsIterator = struct {
@@ -1347,81 +1267,9 @@ pub fn ins_iterator(self: *Self, first_blk: u16) InsIterator {
     return .{ .self = self, .cur_blk = first_blk, .idx = 0 };
 }
 
-fn print_blk(self: *Self, firstblk: u16) void {
-    var it = self.ins_iterator(firstblk);
-    while (it.next()) |item| {
-        const i = item.i.*;
-        const chr: u8 = if (i.has_res()) '=' else ' ';
-        print("  %{} {c} {s}", .{ item.ref, chr, @tagName(i.tag) });
-
-        if (i.tag == .variable) {
-            print(" {s}", .{@tagName(i.spec_type())});
-        }
-
-        if (i.tag == .vmath) {
-            print(".{s}", .{@tagName(i.vop())});
-        } else if (i.tag == .iop) {
-            print(".{s}", .{@tagName(@intToEnum(AOp, i.spec))});
-        } else if (i.tag == .icmp) {
-            print(".{s}", .{@tagName(@intToEnum(Cond, i.spec))});
-        } else if (i.tag == .constant) {
-            print(" c[{}]", .{i.op1});
-        } else if (i.tag == .putphi) {
-            print(" %{} <-", .{i.op2});
-        }
-        const nop = n_op(i.tag, false);
-        if (nop > 0) {
-            print(" %{}", .{i.op1});
-            if (nop > 1) {
-                print(", %{}", .{i.op2});
-            }
-        }
-        print_mcval(i);
-        if (i.last_use != NoRef) {
-            // this is a compiler bug ("*" emitted for NoRef)
-            //print(" <{}{s}>", .{ i.n_use, @as([]const u8, if (i.vreg != NoRef) "*" else "") });
-            // this is getting ridiculous
-            if (i.vreg != NoRef) {
-                print(" |{}=>%{}|", .{ i.vreg, i.last_use });
-            } else {
-                print(" <%{}>", .{i.last_use});
-            }
-            // print(" <{}{s}>", .{ i.last_use, marker });
-            //print(" <{}:{}>", .{ i.n_use, i.vreg });
-        }
-        if (i.tag == .putphi) {
-            if (self.iref(i.op2).?.ipreg()) |reg| {
-                const regsrc = self.iref(i.op1).?.ipreg();
-                print(" [{s} <- {s}] ", .{ @tagName(reg), if (regsrc) |r| @tagName(r) else "XX" });
-            }
-        }
-        print("\n", .{});
-    }
-}
-
-fn print_mcval(i: Inst) void {
-    if (i.tag != .phi and i.tag != .arg and !i.mckind.unallocated() and i.mckind != .fused) {
-        print(" =>", .{});
-    }
-    switch (i.mckind) {
-        .frameslot => print(" [rbp-8*{}]", .{i.mcidx}),
-        .ipreg => print(" ${s}", .{@tagName(@intToEnum(IPReg, i.mcidx))}),
-        .vfreg => print(" $ymm{}", .{i.mcidx}),
-        else => {
-            if (i.tag == .load or i.tag == .phi or i.tag == .arg) {
-                if (i.res_type()) |t| {
-                    print(" {s}", .{@tagName(t)});
-                }
-            }
-        },
-    }
-}
-
-const test_allocator = std.testing.allocator;
-
 pub fn test_analysis(self: *Self, comptime check: bool) !void {
     if (check) {
-        self.check_cfg_valid() catch |err| {
+        self.check_ir_valid() catch |err| {
             self.debug_print();
             return err;
         };
@@ -1433,12 +1281,12 @@ pub fn test_analysis(self: *Self, comptime check: bool) !void {
     try self.calc_loop(); // also fills node.dfnum
 
     try self.reorder_nodes();
-    if (check) try self.check_cfg_valid();
+    if (check) try self.check_ir_valid();
     try SSA_GVN.ssa_gvn(self);
-    if (check) try self.check_cfg_valid();
+    if (check) try self.check_ir_valid();
 
     try self.reorder_inst();
-    if (check) try self.check_cfg_valid();
+    if (check) try self.check_ir_valid();
     try self.calc_use();
 
     if (check) try self.check_vregs();
@@ -1446,7 +1294,7 @@ pub fn test_analysis(self: *Self, comptime check: bool) !void {
     // NB: breaks the critical-edge invariant.
     // move after scan_alloc in case it needs it?
     try self.remove_empty();
-    if (check) try self.check_cfg_valid();
+    if (check) try self.check_ir_valid();
 }
 
 pub fn trivial_succ(self: *Self, ni: u16) ?u16 {
@@ -1485,49 +1333,6 @@ pub fn empty(self: *Self, ni: u16, allow_succ: bool) bool {
     } else {
         // we assume reorder_inst will kasta empty blocks, true??
         return false;
-    }
-}
-pub fn get_jmp_or_last(self: *Self, n: *Node) !?Tag {
-    var last_inst: ?Tag = null;
-    var iter = self.ins_iterator(n.firstblk);
-    while (iter.next()) |it| {
-        if (last_inst) |l| if (l == .icmp or l == .ret) return error.InvalidCFG;
-        last_inst = it.i.tag;
-    }
-    return last_inst;
-}
-
-/// does not use or verify node.npred
-pub fn check_cfg_valid(self: *Self) !void {
-    const reached = try self.a.alloc(bool, self.n.items.len);
-    defer self.a.free(reached);
-    mem.set(bool, reached, false);
-
-    var worklist = ArrayList(u16).init(self.a);
-    defer worklist.deinit();
-    for (self.n.items) |*n, ni| {
-        for (n.s) |s| {
-            if (s > self.n.items.len) return error.InvalidCFG;
-            reached[s] = true;
-        }
-        // TODO: explicit condition for this
-        if (self.refs.items.len > 0) {
-            for (self.preds(@intCast(u16, ni))) |pred| {
-                const pn = self.n.items[pred];
-                if (pn.s[0] != ni and pn.s[1] != ni) {
-                    return error.InvalidCFG;
-                }
-                try self.check_phi(&worklist, pred, uv(ni));
-            }
-        }
-    }
-    for (self.n.items) |*n, ni| {
-        const last = try self.get_jmp_or_last(n);
-        if ((last == Tag.icmp) != (n.s[1] != 0)) return error.InvalidCFG;
-        if (last == Tag.ret and n.s[0] != 0) return error.InvalidCFG;
-        if (n.s[0] == 0 and (last != Tag.ret and reached[ni])) return error.InvalidCFG;
-        // TODO: also !reached and n.s[0] != 0 (not verified by remove_empty)
-        if (!reached[ni] and (last != null)) return error.InvalidCFG;
     }
 }
 

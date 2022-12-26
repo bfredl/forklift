@@ -77,7 +77,7 @@ pub fn main() !void {
     try ir.test_analysis(true);
     try ir.scan_alloc();
     if (options.dbg_analysed_ir) ir.debug_print();
-    try ir.check_cfg_valid();
+    try ir.check_ir_valid();
 
     var cfo = try CFO.init(allocator);
 

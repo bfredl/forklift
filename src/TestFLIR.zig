@@ -22,7 +22,7 @@ pub fn parse(ir: []const u8) !FLIR {
 pub fn analyze_generate(self: *FLIR) !CFO {
     try self.test_analysis(true);
     try self.scan_alloc();
-    try self.check_cfg_valid();
+    try self.check_ir_valid();
 
     var cfo = try CFO.init(test_allocator);
 
@@ -194,7 +194,7 @@ test "diamond cfg" {
 
     try self.test_analysis(true);
     try self.scan_alloc();
-    try self.check_cfg_valid();
+    try self.check_ir_valid();
 }
 
 test "maybe_split" {
