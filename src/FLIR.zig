@@ -8,11 +8,9 @@ const CFO = @import("./CFO.zig");
 const SSA_GVN = @import("./SSA_GVN.zig");
 
 // this currently causes a curious bug as of zig nightly 26dec2022.
-// self.rpo_visit() cannot be found from within this file.
+// recursive method calls like self.rpo_visit() within itself do not work!
 pub usingnamespace @import("./verify_ir.zig");
 
-const builtin = @import("builtin");
-// const stage2 = builtin.zig_backend != .stage1;
 const ArrayList = std.ArrayList;
 const assert = std.debug.assert;
 
@@ -20,8 +18,6 @@ const IPReg = CFO.IPReg;
 const VMathOp = CFO.VMathOp;
 const FMode = CFO.FMode;
 const ISize = CFO.ISize;
-const AOp = CFO.AOp;
-const Cond = CFO.Cond;
 
 a: Allocator,
 // TODO: unmanage all these:
@@ -39,9 +35,7 @@ vregs: ArrayList(u16),
 
 // 8-byte slots in stack frame
 nslots: u8 = 0,
-
 nsave: u8 = 0,
-
 ndf: u16 = 0,
 
 // canonical order of callee saved registers. nsave>0 means
@@ -459,11 +453,11 @@ pub fn vmath(self: *Self, node: u16, vop: VMathOp, fmode: FMode, op1: u16, op2: 
     return self.addInst(node, .{ .tag = .vmath, .spec = vspec(vop, fmode), .op1 = op1, .op2 = op2 });
 }
 
-pub fn iop(self: *Self, node: u16, vop: AOp, op1: u16, op2: u16) !u16 {
+pub fn iop(self: *Self, node: u16, vop: CFO.AOp, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .iop, .spec = vop.opx(), .op1 = op1, .op2 = op2 });
 }
 
-pub fn icmp(self: *Self, node: u16, cond: Cond, op1: u16, op2: u16) !u16 {
+pub fn icmp(self: *Self, node: u16, cond: CFO.Cond, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .icmp, .spec = cond.off(), .op1 = op1, .op2 = op2 });
 }
 
