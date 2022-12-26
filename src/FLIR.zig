@@ -70,9 +70,6 @@ pub const Node = struct {
     s: [2]u16 = .{ 0, 0 }, // sucessors
     dfnum: u16 = 0,
 
-    // for MiniDOM, not currently used
-    // idom: u16 = 0,
-    //
     predref: u16 = 0,
     npred: u16 = 0,
     // NB: might be NoRef if the node was deleted,
@@ -81,8 +78,8 @@ pub const Node = struct {
     lastblk: u16,
     live_in: u64 = 0, // TODO: globally allocate a [n_nodes*nvreg] multibitset
 
-    rpolink: u16 = 0,
     loop: u16 = 0,
+    rpolink: u8 = 0,
     is_header: bool = false, // if true, loop refers to parent loop
 };
 
@@ -230,14 +227,9 @@ pub const Inst = struct {
             .variable => 0,
             // really only one, but we will get rid of this lie
             // before getting into any serious analysis.
-            .putvar => 2,
+            .putvar => 2, // TODO: if (rw) 2 else 1, FAST ÅT ANDRA HÅLLET
             .phi => 0,
-            // works on stage1:
-            // .putphi => @as(u2, if (rw) 2 else 1),
-            // works on stage2:
-            // .putphi => if (rw) 2 else 1,
-            // works on both: (clown_emoji)
-            .putphi => if (rw) @as(u2, 2) else @as(u2, 1), // TODO: booooooo
+            .putphi => if (rw) 2 else 1,
             .constant => 0,
             .renum => 1,
             .load => 2, // base, idx
@@ -267,12 +259,9 @@ pub const Tag = enum(u8) {
     alloc,
     arg,
     variable,
-    putvar, // non-phi assignment
+    putvar, // non-phi assignment op1 := op2
     phi,
-    /// assign to phi of (only) successor
-    /// note: despite swearing in the intel church.
-    /// op1 is source and op2 is dest, to simplify stuff
-    /// i e n_op(putphi) == 1 for the most part
+    /// put op1 into phi op2 of (only) successor
     putphi,
     renum,
     constant,
