@@ -12,7 +12,9 @@ const s2 = builtin.zig_backend != .stage1;
 const ArrayList = std.ArrayList;
 const print = std.debug.print;
 
-code: ArrayListAligned(u8, 4096),
+const page_size = std.mem.page_size;
+
+code: ArrayListAligned(u8, page_size),
 
 /// offset of each encoded instruction. Might not be needed
 /// but useful for debugging.
@@ -246,7 +248,7 @@ pub const VMathOp = enum(u3) {
 pub fn init(allocator: Allocator) !Self {
     // TODO: allocate consequtive mprotectable pages
     return Self{
-        .code = try ArrayListAligned(u8, 4096).initCapacity(page_allocator, 4096),
+        .code = try ArrayListAligned(u8, page_size).initCapacity(page_allocator, page_size),
         .inst_off = ArrayList(u32).init(allocator),
         .inst_dbg = ArrayList(usize).init(allocator),
     };
@@ -548,6 +550,13 @@ inline fn op_rr(self: *Self, opcode: u8, dst: IPReg, src: IPReg) !void {
 
 pub fn mov(self: *Self, dst: IPReg, src: IPReg) !void {
     try self.op_rr(0x8b, dst, src);
+}
+
+pub fn zero(self: *Self, dst: IPReg) !void {
+    try self.new_inst(@returnAddress());
+    try self.rex_wrxb(false, dst.ext(), false, dst.ext());
+    try self.wb(0x33); // xor reg, \rm
+    try self.modRm(0b11, dst.lowId(), dst.lowId());
 }
 
 pub fn arit(self: *Self, op: AOp, dst: IPReg, src: IPReg) !void {

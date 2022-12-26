@@ -27,7 +27,7 @@ fn regmovmc(cfo: *CFO, dst: IPReg, src: Inst) !void {
                 try cfo.movri(dst, src.op1);
             } else {
                 // THANKS INTEL
-                try cfo.arit(.xor, dst, dst);
+                try cfo.zero(dst);
             }
         },
         else => return error.AAA_AA_A,
@@ -66,11 +66,12 @@ fn mcmovi(cfo: *CFO, i: Inst) !void {
         .frameslot => try cfo.movmi(CFO.a(.rbp).o(-8 * @as(i32, i.mcidx)), i.op1),
         .ipreg => {
             const reg = @intToEnum(IPReg, i.mcidx);
+            // TODO: cfo.movriz to check this condition ?
             if (i.op1 != 0) {
                 try cfo.movri(reg, i.op1);
             } else {
                 // THANKS INTEL
-                try cfo.arit(.xor, reg, reg);
+                try cfo.zero(reg);
             }
         },
         .fused => {}, // let user lookup value
@@ -328,7 +329,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                         try cfo.movri(.rax, i.op1);
                     } else {
                         // THANKS INTEL
-                        try cfo.arit(.xor, .rax, .rax);
+                        try cfo.zero(.rax);
                     }
                     try cfo.syscall();
                 },
