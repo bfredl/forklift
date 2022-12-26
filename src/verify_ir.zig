@@ -75,7 +75,7 @@ pub fn check_ir_valid(self: *FLIR) !void {
                 if (pn.s[0] != ni and pn.s[1] != ni) {
                     return error.InvalidCFG;
                 }
-                if (self.phi_valid) try self.check_phi(&worklist, pred, uv(ni));
+                try self.check_phi(&worklist, pred, uv(ni));
             }
         }
     }

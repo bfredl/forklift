@@ -98,7 +98,7 @@ fn movmcs(cfo: *CFO, dst: Inst, src: Inst, scratch: IPReg) !void {
 }
 
 pub fn makejmp(self: *FLIR, cfo: *CFO, cond: ?CFO.Cond, ni: u16, si: u1, labels: []u32, targets: [][2]u32) !void {
-    const succ = self.n.items[ni].s[si];
+    const succ = self.find_nonempty(self.n.items[ni].s[si]);
     // NOTE: we assume blk 0 always has the prologue (push rbp; mov rbp, rsp)
     // at least, so that even if blk 0 is empty, blk 1 has target larger than 0x00
     if (labels[succ] != 0) {
@@ -145,6 +145,21 @@ fn get_eaddr_load_or_lea(self: *FLIR, i: Inst) !EAddr {
     return eaddr;
 }
 
+pub fn set_pred(self: *FLIR, cfo: *CFO, targets: [][2]u32, ni: u16) !void {
+    for (self.preds(ni)) |pred| {
+        const pr = &self.n.items[pred];
+        if (pr.is_empty) {
+            try set_pred(self, cfo, targets, pred);
+        } else {
+            const si: u1 = if (pr.s[0] == ni) 0 else 1;
+            if (targets[pred][si] != 0) {
+                try cfo.set_target(targets[pred][si]);
+                targets[pred][si] = 0;
+            }
+        }
+    }
+}
+
 pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
     var labels = try self.a.alloc(u32, self.n.items.len);
     var targets = try self.a.alloc([2]u32, self.n.items.len);
@@ -168,21 +183,16 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
     }
 
     for (self.n.items) |*n, ni| {
-        if (n.dfnum == 0 and ni > 0) {
+        if ((n.dfnum == 0 or n.is_empty) and ni > 0) {
             // non-entry block not reached by df search is dead.
             // TODO: these should already been cleaned up at this point
             continue;
         }
         labels[ni] = cfo.get_target();
         if (dbg) print("block {}: {x}\n", .{ ni, labels[ni] });
-        for (self.preds(uv(ni))) |pred| {
-            const pr = &self.n.items[pred];
-            const si: u1 = if (pr.s[0] == ni) 0 else 1;
-            if (targets[pred][si] != 0) {
-                try cfo.set_target(targets[pred][si]);
-                targets[pred][si] = 0;
-            }
-        }
+
+        // set jump targets of past blocks which jump forward here
+        try set_pred(self, cfo, targets, uv(ni));
 
         var fused_inst: ?*Inst = null;
         var cond: ?CFO.Cond = null;

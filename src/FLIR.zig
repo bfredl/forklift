@@ -38,8 +38,6 @@ nslots: u8 = 0,
 nsave: u8 = 0,
 ndf: u16 = 0,
 
-phi_valid: bool = false,
-
 // canonical order of callee saved registers. nsave>0 means
 // the first nsave items needs to be saved and restored
 pub const callee_saved: [5]IPReg = .{ .rbx, .r12, .r13, .r14, .r15 };
@@ -70,6 +68,10 @@ pub const Node = struct {
     loop: u16 = 0,
     rpolink: u8 = 0,
     is_header: bool = false, // if true, loop refers to parent loop
+
+    // if true, block will not contain any instructions and will not be emitted
+    // codegen should chase through n.s[0] until an non-empty block is found
+    is_empty: bool = false,
 };
 
 pub const EMPTY: Inst = .{ .tag = .empty, .op1 = 0, .op2 = 0 };
@@ -1264,7 +1266,6 @@ pub fn test_analysis(self: *Self, comptime check: bool) !void {
     try self.reorder_nodes();
     if (check) try self.check_ir_valid();
     try SSA_GVN.ssa_gvn(self);
-    self.phi_valid = true;
     if (check) try self.check_ir_valid();
 
     try self.reorder_inst();
@@ -1276,34 +1277,24 @@ pub fn test_analysis(self: *Self, comptime check: bool) !void {
     try self.scan_alloc();
     if (check) try self.check_ir_valid();
 
-    // NB: breaks the critical-edge invariant.
-    // but codegen shouldn't need it
-    try self.remove_empty();
-    self.phi_valid = false; // TODO: label individual phi instructions instead?
-    if (check) try self.check_ir_valid();
+    try self.mark_empty();
 }
 
-pub fn trivial_succ(self: *Self, ni: u16) ?u16 {
-    const node = &self.n.items[ni];
-    if (!self.empty(ni, true)) return null;
-    return node.s[0];
+pub fn find_nonempty(self: *Self, ni_0: u16) u16 {
+    var ni = ni_0;
+    while (true) {
+        const node = self.n.items[ni];
+        if (!node.is_empty) break;
+        ni = node.s[0];
+        assert(ni > 0);
+    }
+    return ni;
 }
 
-pub fn remove_empty(self: *Self) !void {
+pub fn mark_empty(self: *Self) !void {
     for (self.n.items) |*n, ni| {
-        for (n.s) |*s| {
-            if (s.* == 0) continue;
-            // TODO: could potentially skip through multiple
-            // empty blocks!
-            const fallthrough = self.trivial_succ(s.*);
-            if (fallthrough) |f| {
-                const b = &self.n.items[s.*];
-                b.npred = 0;
-                for (self.preds(f)) |*pi| {
-                    if (pi.* == s.*) pi.* = uv(ni);
-                }
-                s.* = f;
-            }
+        if (self.empty(uv(ni), true)) {
+            n.is_empty = true;
         }
     }
 }
@@ -1321,6 +1312,8 @@ pub fn trivial_ins(self: *Self, i: *Inst) bool {
 }
 
 pub fn empty(self: *Self, ni: u16, allow_succ: bool) bool {
+    // entry point is implicitly non-empty (might contain prologue code)
+    if (ni == 0) return false;
     const node = &self.n.items[ni];
     if (!allow_succ and node.s[0] != 0) return false;
     var it = self.ins_iterator(node.firstblk);
