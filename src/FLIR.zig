@@ -585,18 +585,22 @@ fn addpred(self: *Self, s: u16, i: u16) !void {
 }
 
 pub fn calc_preds(self: *Self) !void {
-    const n = self.n.items;
     // TODO: policy for rebuilding refs from scratch?
     if (self.refs.items.len > 0) unreachable;
-    for (n) |v| {
+    for (self.n.items) |v| {
         if (v.s[0] > 0) {
-            n[v.s[0]].npred += 1;
+            self.n.items[v.s[0]].npred += 1;
         }
         if (v.s[1] > 0 and v.s[1] != v.s[0]) {
-            n[v.s[1]].npred += 1;
+            self.n.items[v.s[1]].npred += 1;
         }
     }
-    for (n) |v, i| {
+
+    var i: usize = 0;
+    const fixlen = self.n.items.len;
+    while (i < fixlen) : (i += 1) {
+        // by value. predlink might reallocate self.n in place!
+        const v = self.n.items[i];
         const shared = v.s[1] > 0 and v.s[1] == v.s[0];
         if (shared) return error.NotSureAboutThis;
         const split = v.s[1] > 0;

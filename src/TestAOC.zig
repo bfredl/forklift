@@ -153,6 +153,64 @@ test "summer 2" {
     if (false) try expect(usize, 412, s_call(func, "4127"[0..3]));
 }
 
+test "summer/maxxer 3" {
+    // %ipos >= $len check is useless, but harmless
+    var cfo = try parse_test(
+        \\func returner
+        \\  var %sum
+        \\  var %item
+        \\  var %ipos
+        \\  var %max
+        \\  %x = arg
+        \\  %len = arg
+        \\  %ipos := 0
+        \\  %max := 0
+        \\:maxloop
+        \\  %sum := 0
+        \\  jge %ipos %len :retvrn
+        \\:sumloop
+        \\  %item := 0
+        \\  jge %ipos %len :enda_sum
+        \\:check
+        \\  %prebyte = load byte [%x %ipos]
+        \\  %pretoken = sub %prebyte 48
+        \\  ja %pretoken 9 :enda_sum
+        \\:parseloop
+        \\  %byte = load byte [%x %ipos]
+        \\  %token = sub %byte 48
+        \\  ja %token 9 :enda
+        \\:doit
+        \\  %base = 10
+        \\  %adjust = mul %item %base
+        \\  %item := add %adjust %token
+        \\  %ipos := add %ipos 1
+        \\  jl %ipos %len :parseloop
+        \\:enda
+        \\  %sum := add %sum %item
+        \\  %ipos := add %ipos 1
+        \\  jmp :sumloop
+        \\:enda_sum
+        \\  %ipos := add %ipos 1
+        \\  jge %max %sum :maxloop
+        \\:
+        \\  %max := add %sum 0
+        \\  jmp :maxloop
+        \\:retvrn
+        \\  ret %max
+        \\end
+    );
+    defer cfo.deinit();
+
+    const func = cfo.get_ptr(0, SFunc);
+    try expect(usize, 1996, s_call(func, "56 428  1996"));
+    try expect(usize, 4127, s_call(func, "4127"));
+    try expect(usize, 56, s_call(func, "56 428"[0..2]));
+    try expect(usize, 56, s_call(func, "56 428"[0..3]));
+    try expect(usize, 60, s_call(func, "56 428"[0..4]));
+    try expect(usize, 412, s_call(func, "4127"[0..3]));
+    try expect(usize, 150, s_call(func, "12 13 20\n\n40 50 60\n\n20 7 8"));
+}
+
 // aoc 2022 2
 test "scorer" {
     var cfo = try parse_test(
