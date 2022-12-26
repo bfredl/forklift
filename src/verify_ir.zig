@@ -75,7 +75,7 @@ pub fn check_ir_valid(self: *FLIR) !void {
                 if (pn.s[0] != ni and pn.s[1] != ni) {
                     return error.InvalidCFG;
                 }
-                try check_phi(self, &worklist, pred, uv(ni));
+                try self.check_phi(&worklist, pred, uv(ni));
             }
         }
     }
@@ -114,7 +114,7 @@ pub fn debug_print(self: *FLIR) void {
 
         print("\n", .{});
 
-        print_blk(self, n.firstblk);
+        self.print_blk(n.firstblk);
 
         // only print liveout if we have more than one sucessor, otherwise it is BOOORING
         if (n.s[1] != 0) {
@@ -146,7 +146,7 @@ pub fn debug_print(self: *FLIR) void {
     }
 }
 
-fn print_blk(self: *FLIR, firstblk: u16) void {
+pub fn print_blk(self: *FLIR, firstblk: u16) void {
     var it = self.ins_iterator(firstblk);
     while (it.next()) |item| {
         const i = item.i.*;

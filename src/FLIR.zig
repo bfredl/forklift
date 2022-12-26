@@ -9,14 +9,7 @@ const SSA_GVN = @import("./SSA_GVN.zig");
 
 // this currently causes a curious bug as of zig nightly 26dec2022.
 // self.rpo_visit() cannot be found from within this file.
-//pub usingnamespace @import("./verify_ir.zig");
-const vir = @import("./verify_ir.zig");
-pub fn debug_print(self: *Self) void {
-    vir.debug_print(self);
-}
-pub fn check_ir_valid(self: *Self) !void {
-    try vir.check_ir_valid(self);
-}
+pub usingnamespace @import("./verify_ir.zig");
 
 const builtin = @import("builtin");
 // const stage2 = builtin.zig_backend != .stage1;
@@ -628,7 +621,8 @@ pub fn loop_order(self: *Self, ph: u16) !void {
         if (n.loop == h) {
             try self.blkorder.append(node);
             if (n.is_header) {
-                try self.loop_order(i);
+                // try self.loop_order(i);
+                try loop_order(self, i);
             }
         }
         if (i == 0) break;
@@ -649,10 +643,12 @@ pub fn rpo_visit(self: *Self, node: u16) !?u16 {
     n.rpolink = 1;
     var loop: ?u16 = null;
     if (n.s[0] != 0) {
-        loop = try self.rpo_visit(n.s[0]);
+        // loop = try self.rpo_visit(n.s[0]);
+        loop = try rpo_visit(self, n.s[0]);
     }
     if (n.s[1] != 0) {
-        const loop2 = try self.rpo_visit(n.s[1]);
+        // const loop2 = try self.rpo_visit(n.s[1]);
+        const loop2 = try rpo_visit(self, n.s[1]);
         if (loop) |l| {
             if (loop2) |l2| {
                 // TODO: there could be a loop lX so that l < lX < l2
