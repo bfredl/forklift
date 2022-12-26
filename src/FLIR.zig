@@ -38,6 +38,8 @@ nslots: u8 = 0,
 nsave: u8 = 0,
 ndf: u16 = 0,
 
+phi_valid: bool = false,
+
 // canonical order of callee saved registers. nsave>0 means
 // the first nsave items needs to be saved and restored
 pub const callee_saved: [5]IPReg = .{ .rbx, .r12, .r13, .r14, .r15 };
@@ -1262,6 +1264,7 @@ pub fn test_analysis(self: *Self, comptime check: bool) !void {
     try self.reorder_nodes();
     if (check) try self.check_ir_valid();
     try SSA_GVN.ssa_gvn(self);
+    self.phi_valid = true;
     if (check) try self.check_ir_valid();
 
     try self.reorder_inst();
@@ -1270,9 +1273,13 @@ pub fn test_analysis(self: *Self, comptime check: bool) !void {
 
     if (check) try self.check_vregs();
 
+    try self.scan_alloc();
+    if (check) try self.check_ir_valid();
+
     // NB: breaks the critical-edge invariant.
-    // move after scan_alloc in case it needs it?
+    // but codegen shouldn't need it
     try self.remove_empty();
+    self.phi_valid = false; // TODO: label individual phi instructions instead?
     if (check) try self.check_ir_valid();
 }
 
@@ -1292,27 +1299,36 @@ pub fn remove_empty(self: *Self) !void {
             if (fallthrough) |f| {
                 const b = &self.n.items[s.*];
                 b.npred = 0;
+                for (self.preds(f)) |*pi| {
+                    if (pi.* == s.*) pi.* = uv(ni);
+                }
                 s.* = f;
-                try self.addpred(f, @intCast(u16, ni));
             }
         }
+    }
+}
+
+pub fn trivial_ins(self: *Self, i: *Inst) bool {
+    switch (i.tag) {
+        .empty => return true,
+        .putphi => {
+            const src = self.iref(i.op1).?;
+            const dst = self.iref(i.op2).?;
+            return (src.mckind == dst.mckind and src.mcidx == dst.mcidx);
+        },
+        else => return false,
     }
 }
 
 pub fn empty(self: *Self, ni: u16, allow_succ: bool) bool {
     const node = &self.n.items[ni];
     if (!allow_succ and node.s[0] != 0) return false;
-    if (node.firstblk == node.lastblk) {
-        const blk = self.b.items[node.firstblk];
-        for (blk.i) |i| {
-            if (i.tag != .empty) return false;
-        }
-        assert(node.s[1] == 0);
-        return true;
-    } else {
-        // we assume reorder_inst will kasta empty blocks, true??
-        return false;
+    var it = self.ins_iterator(node.firstblk);
+    while (it.next()) |item| {
+        if (!self.trivial_ins(item.i)) return false;
     }
+    assert(node.s[1] == 0);
+    return true;
 }
 
 // force tests to run:
