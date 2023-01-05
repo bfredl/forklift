@@ -28,7 +28,7 @@ The current aim is to implement an IR with a low memory footprint suitable for
 jits under performance and memory constraints. Numerical indicies are used
 throughout instead of pointers inside the IR.
 
-FLIR uses SSA-form trough the entire pipeline, though multable temporaries are
+FLIR uses SSA-form through the entire pipeline, though multable temporaries are
 supported in the input format, similar to QBE. These get converted to
 SSA form early in analysis. The values in the IR is considered untyped,
 except for a classification of values that are to be stored in a general
@@ -39,7 +39,7 @@ allocation with efficent interval splitting, copy propagation, and perhaps
 simple loop transformations.
 
 - [x] Conversion from mutable temporaries to proper SSA form
-- [ ] liveliness analysis (partially, doesn't handle nested loops yet)
+- [x] liveliness analysis
 - [x] basic (very conservative) linear scan register allocation
 - [ ] efficient register allocation with interval spliting
 - [ ] function calls with C ABI
