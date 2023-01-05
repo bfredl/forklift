@@ -170,23 +170,16 @@ pub fn print_blk(self: *FLIR, firstblk: u16) void {
         }
         const nop = i.n_op(false);
         if (nop > 0) {
-            print(" %{}", .{i.op1});
+            const k1: u8 = if (i.f.kill_op1) '!' else ' ';
+            print(" {c}%{}", .{ k1, i.op1 });
             if (nop > 1) {
-                print(", %{}", .{i.op2});
+                const k2: u8 = if (i.f.kill_op2) '!' else ' ';
+                print(",{c}%{}", .{ k2, i.op2 });
             }
         }
         print_mcval(i);
-        if (i.last_use != NoRef) {
-            // this is a compiler bug ("*" emitted for NoRef)
-            //print(" <{}{s}>", .{ i.n_use, @as([]const u8, if (i.vreg != NoRef) "*" else "") });
-            // this is getting ridiculous
-            if (i.vreg != NoRef) {
-                print(" |{}=>%{}|", .{ i.vreg, i.last_use });
-            } else {
-                print(" <%{}>", .{i.last_use});
-            }
-            // print(" <{}{s}>", .{ i.last_use, marker });
-            //print(" <{}:{}>", .{ i.n_use, i.vreg });
+        if (i.vreg != NoRef) {
+            print(" *", .{});
         }
         if (i.tag == .putphi) {
             if (self.iref(i.op2).?.ipreg()) |reg| {

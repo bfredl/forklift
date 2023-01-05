@@ -143,12 +143,18 @@ pub const Inst = struct {
     spec: u8 = 0,
     op1: u16,
     op2: u16,
-    // reindex: u16 = 0,
     mckind: MCKind = .unallocated_raw,
     mcidx: u8 = undefined,
-    // n_use: u16 = 0,
+    // TODO: delet this:
     last_use: u16 = NoRef,
     vreg: u16 = NoRef,
+    f: packed struct {
+        // note: if the reference is a vreg, it might
+        // be alive in an other branch processed later
+        kill_op1: bool = false,
+        kill_op2: bool = false,
+        killed: bool = false, // only to keep track while calculating the above
+    } = .{},
 
     fn free(self: @This()) bool {
         return self.tag == .empty;
@@ -909,6 +915,50 @@ pub fn calc_use(self: *Self) !void {
             }
         }
         if (ni == 0) break;
+    }
+
+    for (self.n.items) |*n| {
+        var live_out: u64 = 0;
+        for (n.s) |s| {
+            live_out |= self.n.items[s].live_in;
+        }
+        var killed = n.live_in & ~live_out;
+
+        var cur_blk: ?u16 = n.lastblk;
+        while (cur_blk) |blk| {
+            var b = &self.b.items[blk];
+
+            var idx: usize = BLK_SIZE;
+            while (idx > 0) {
+                idx -= 1;
+                const i = &b.i[idx];
+                for (i.ops(false)) |op, i_op| {
+                    var kill: bool = false;
+                    if (self.iref(op)) |ref| {
+                        if (ref.vreg != NoRef) {
+                            const bit = (@as(u64, 1) << @intCast(u6, ref.vreg));
+                            if ((killed & bit) != 0) {
+                                killed = killed & ~bit;
+                                kill = true;
+                            }
+                        } else {
+                            if (!ref.f.killed) {
+                                ref.f.killed = true;
+                                kill = true;
+                            }
+                        }
+                    }
+                    if (kill) {
+                        if (i_op == 1) {
+                            i.f.kill_op2 = true;
+                        } else {
+                            i.f.kill_op1 = true;
+                        }
+                    }
+                }
+            }
+            cur_blk = if (blk != n.firstblk) blk - 1 else null;
+        }
     }
 }
 
