@@ -237,6 +237,12 @@ pub const Inst = struct {
             .alloc => 0,
         };
     }
+
+    pub fn ops(i: *Inst, rw: bool) []u16 {
+        assert(@ptrToInt(&i.op2) - @ptrToInt(&i.op1) == @sizeOf(u16));
+        return @ptrCast([*]u16, &i.op1)[0..i.n_op(rw)];
+    }
+
     pub fn ipreg(i: Inst) ?IPReg {
         return if (i.mckind == .ipreg) @intToEnum(IPReg, i.mcidx) else null;
     }
@@ -820,22 +826,13 @@ pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
 pub fn calc_use(self: *Self) !void {
     // TODO: NOT LIKE THIS
     try self.vregs.ensureTotalCapacity(64);
-
     for (self.n.items) |*n, ni| {
-        var cur_blk: ?u16 = n.firstblk;
-        while (cur_blk) |blk| {
-            var b = &self.b.items[blk];
-            for (b.i) |*i, idx| {
-                const ref = toref(blk, uv(idx));
-                const nops = i.n_op(false);
-                if (nops > 0) {
-                    self.adduse(uv(ni), ref, i.op1);
-                    if (nops > 1) {
-                        self.adduse(uv(ni), ref, i.op2);
-                    }
-                }
+        var it = self.ins_iterator(n.firstblk);
+        while (it.next()) |item| {
+            const i = item.i;
+            for (i.ops(false)) |op| {
+                self.adduse(uv(ni), item.ref, op);
             }
-            cur_blk = b.next();
         }
     }
 
@@ -867,14 +864,9 @@ pub fn calc_use(self: *Self) !void {
                     live &= ~(@as(usize, 1) << @intCast(u6, i.vreg));
                 }
 
-                const nops = i.n_op(false);
-                if (nops > 0) {
-                    const ref = self.iref(i.op1).?;
+                for (i.ops(false)) |op| {
+                    const ref = self.iref(op).?;
                     if (ref.vreg != NoRef) live |= (@as(usize, 1) << @intCast(u6, ref.vreg));
-                    if (nops > 1) {
-                        const ref2 = self.iref(i.op2).?;
-                        if (ref2.vreg != NoRef) live |= (@as(usize, 1) << @intCast(u6, ref2.vreg));
-                    }
                 }
             }
 
