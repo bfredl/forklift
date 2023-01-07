@@ -259,6 +259,21 @@ pub fn print_interval(self: *FLIR, ref: u16) void {
                 print("-", .{});
             }
         }
+        print("│", .{});
     }
     print("\n", .{});
+}
+
+pub fn print_intervals(self: *FLIR) void {
+    for (self.n.items) |n| {
+        var it = self.ins_iterator(n.firstblk);
+        while (it.next()) |item| {
+            const i = item.i;
+            const vreg: bool = (i.vreg != NoRef);
+            if (vreg or i.f.killed) {
+                print("{s}: %{:3} ", .{ if (vreg) "VREG" else "TEMP", item.ref });
+                self.print_interval(item.ref);
+            }
+        }
+    }
 }
