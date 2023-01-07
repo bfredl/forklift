@@ -153,7 +153,7 @@ pub const Inst = struct {
         // be alive in an other branch processed later
         kill_op1: bool = false,
         kill_op2: bool = false,
-        killed: bool = false, // only to keep track while calculating the above
+        killed: bool = false, // if false after calc_use, a non-vreg is never used
     } = .{},
 
     fn free(self: @This()) bool {

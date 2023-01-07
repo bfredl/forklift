@@ -77,6 +77,11 @@ pub fn main() !void {
     try ir.test_analysis(true);
     if (options.dbg_analysed_ir) ir.debug_print();
 
+    for (ir.vregs.items) |v| {
+        print("VREG: %{:3} ", .{v});
+        ir.print_interval(v);
+    }
+
     var cfo = try CFO.init(allocator);
 
     // emit trap instruction to invoke debugger

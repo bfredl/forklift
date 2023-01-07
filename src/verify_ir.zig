@@ -237,3 +237,28 @@ fn print_mcval(i: FLIR.Inst) void {
         },
     }
 }
+
+pub fn print_interval(self: *FLIR, ref: u16) void {
+    const b = self.biref(ref).?;
+    const vreg = b.i.vreg;
+    const vreg_flag = if (vreg != NoRef) @as(u64, 1) << @intCast(u6, vreg) else null;
+    for (self.n.items) |n| {
+        var live: bool = if (vreg_flag) |f| (f & n.live_in) != 0 else false;
+        var it = self.ins_iterator(n.firstblk);
+        while (it.next()) |item| {
+            const iu = item.i;
+            if (item.ref == ref) {
+                print("D", .{});
+                live = true;
+            } else if ((iu.f.kill_op1 and iu.op1 == ref) or (iu.f.kill_op2 and iu.op2 == ref)) {
+                live = false;
+                print("K", .{});
+            } else if (live) {
+                print("x", .{});
+            } else {
+                print("-", .{});
+            }
+        }
+    }
+    print("\n", .{});
+}
