@@ -89,6 +89,35 @@ pub fn check_ir_valid(self: *FLIR) !void {
     }
 }
 
+pub fn check_vregs(self: *FLIR) !void {
+    if (self.n.items[0].live_in != 0) return error.HOPPSANSA;
+    var err = false;
+    for (self.n.items) |*n, ni| {
+        var live_out: u64 = 0;
+        // hack: if n.s[i] == 0 then no bits will be added anyway
+        live_out |= self.n.items[n.s[0]].live_in;
+        live_out |= self.n.items[n.s[1]].live_in;
+
+        const born = live_out & ~n.live_in;
+        if (born != 0) {
+            // print("BIRTH {}: {x} which is {}\n", .{ ni, born, @popCount(born) });
+            var ireg: u16 = 0;
+            while (ireg < self.nvreg) : (ireg += 1) {
+                if ((born & (@as(usize, 1) << @intCast(u6, ireg))) != 0) {
+                    const i = self.vregs.items[ireg];
+                    // print(" %{}", .{i});
+                    if (self.biref(i).?.n != ni) {
+                        // print("!!", .{});
+                        err = true;
+                    }
+                }
+            }
+            // print("\n", .{});
+        }
+    }
+    if (err) return error.DoYouEvenLoopAnalysis;
+}
+
 // debug print functions
 
 pub fn debug_print(self: *FLIR) void {
