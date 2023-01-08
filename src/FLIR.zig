@@ -68,6 +68,7 @@ pub const Node = struct {
     loop: u16 = 0,
     rpolink: u8 = 0,
     is_header: bool = false, // if true, loop refers to parent loop
+    loop_end: u16 = NoRef, // if is_header, first node after the loop
 
     // if true, block will not contain any instructions and will not be emitted
     // codegen should chase through n.s[0] until an non-empty block is found
@@ -624,6 +625,7 @@ pub fn calc_loop(self: *Self) !void {
 pub fn loop_order(self: *Self, ph: u16) !void {
     var i = ph;
     const h = self.preorder.items[ph];
+    var last_item = self.blkorder.items.len;
     while (true) {
         i -= 1;
         const node = self.preorder.items[i];
@@ -634,9 +636,11 @@ pub fn loop_order(self: *Self, ph: u16) !void {
                 // try self.loop_order(i);
                 try loop_order(self, i);
             }
+            last_item = self.blkorder.items.len;
         }
         if (i == 0) break;
     }
+    self.n.items[h].loop_end = uv(last_item);
 }
 
 pub fn rpo_visit(self: *Self, node: u16) !?u16 {

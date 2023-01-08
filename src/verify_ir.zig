@@ -242,6 +242,7 @@ pub fn print_interval(self: *FLIR, ref: u16) void {
     const b = self.biref(ref).?;
     const vreg = b.i.vreg;
     const vreg_flag = if (vreg != NoRef) @as(u64, 1) << @intCast(u6, vreg) else null;
+    print("\x1b[4m", .{});
     for (self.n.items) |n| {
         var live: bool = if (vreg_flag) |f| (f & n.live_in) != 0 else false;
         var it = self.ins_iterator(n.firstblk);
@@ -256,21 +257,53 @@ pub fn print_interval(self: *FLIR, ref: u16) void {
             } else if (live) {
                 print("x", .{});
             } else {
-                print("-", .{});
+                print(" ", .{});
             }
         }
         print("│", .{});
     }
-    print("\n", .{});
+    print("\x1b[0m\n", .{});
+}
+
+pub fn print_loop(self: *FLIR, head: u16) void {
+    var enda: u16 = 0;
+    print("\x1b[4m", .{});
+    for (self.n.items) |n, ni| {
+        var it = self.ins_iterator(n.firstblk);
+        if (ni == head) {
+            enda = n.loop_end;
+        }
+        while (it.next()) |_| {
+            if (ni == head) {
+                print("h", .{});
+            } else if (ni < enda) {
+                print("-", .{});
+            } else {
+                print(" ", .{});
+            }
+        }
+        if (ni + 1 < enda) {
+            print("-", .{}); // ┼
+        } else {
+            print("│", .{});
+        }
+    }
+    print("\x1b[0m\n", .{});
 }
 
 pub fn print_intervals(self: *FLIR) void {
-    for (self.n.items) |n| {
+    for (self.n.items) |n, ni| {
+        if (n.is_header) {
+            print("           ", .{});
+            print_loop(self, uv(ni));
+        }
         var it = self.ins_iterator(n.firstblk);
         while (it.next()) |item| {
             const i = item.i;
             const vreg: bool = (i.vreg != NoRef);
-            if (vreg or i.f.killed) {
+            const show_temp = i.f.killed and true;
+            if (vreg or show_temp) {
+                if (!vreg) print("\x1b[38;5;244m", .{});
                 print("{s}: %{:3} ", .{ if (vreg) "VREG" else "TEMP", item.ref });
                 self.print_interval(item.ref);
             }
