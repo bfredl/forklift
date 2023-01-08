@@ -238,6 +238,13 @@ fn print_mcval(i: FLIR.Inst) void {
     }
 }
 
+pub fn uses(i: *FLIR.Inst, r: u16) bool {
+    const n_op = i.n_op(false);
+    if (n_op >= 1 and i.op1 == r) return true;
+    if (n_op >= 2 and i.op2 == r) return true;
+    return false;
+}
+
 pub fn print_interval(self: *FLIR, ref: u16) void {
     const b = self.biref(ref).?;
     const vreg = b.i.vreg;
@@ -254,8 +261,12 @@ pub fn print_interval(self: *FLIR, ref: u16) void {
             } else if ((iu.f.kill_op1 and iu.op1 == ref) or (iu.f.kill_op2 and iu.op2 == ref)) {
                 live = false;
                 print("K", .{});
+            } else if (uses(iu, ref)) {
+                print("U", .{});
+            } else if (iu.tag == .putphi and iu.op2 == ref) {
+                print("p", .{});
             } else if (live) {
-                print("x", .{});
+                print("-", .{});
             } else {
                 print(" ", .{});
             }
@@ -275,7 +286,7 @@ pub fn print_loop(self: *FLIR, head: u16) void {
         }
         while (it.next()) |_| {
             if (ni == head) {
-                print("h", .{});
+                print("H", .{});
             } else if (ni < enda) {
                 print("-", .{});
             } else {
