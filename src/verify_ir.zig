@@ -250,8 +250,11 @@ pub fn print_interval(self: *FLIR, ref: u16) void {
     const vreg = b.i.vreg;
     const vreg_flag = if (vreg != NoRef) @as(u64, 1) << @intCast(u6, vreg) else null;
     print("\x1b[4m", .{});
-    for (self.n.items) |n| {
+    for (self.n.items) |n, ni| {
         var live: bool = if (vreg_flag) |f| (f & n.live_in) != 0 else false;
+        if (b.i.tag == .phi and b.n == ni) {
+            live = true;
+        }
         var it = self.ins_iterator(n.firstblk);
         while (it.next()) |item| {
             const iu = item.i;
@@ -265,6 +268,8 @@ pub fn print_interval(self: *FLIR, ref: u16) void {
                 print("U", .{});
             } else if (iu.tag == .putphi and iu.op2 == ref) {
                 print("p", .{});
+                // TODO: really live at the first putphi in the block but anyway
+                live = true;
             } else if (live) {
                 print("-", .{});
             } else {
@@ -312,9 +317,10 @@ pub fn print_intervals(self: *FLIR) void {
         while (it.next()) |item| {
             const i = item.i;
             const vreg: bool = (i.vreg != NoRef);
+            const is_phi = i.tag == .phi;
             const show_temp = i.f.killed and true;
             if (vreg or show_temp) {
-                if (!vreg) print("\x1b[38;5;244m", .{});
+                if (!vreg and !is_phi) print("\x1b[38;5;244m", .{});
                 print("{s}: %{:3} ", .{ if (vreg) "VREG" else "TEMP", item.ref });
                 self.print_interval(item.ref);
             }
