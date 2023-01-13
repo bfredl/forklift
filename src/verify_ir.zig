@@ -259,7 +259,11 @@ pub fn print_interval(self: *FLIR, ref: u16) void {
         while (it.next()) |item| {
             const iu = item.i;
             if (item.ref == ref) {
-                print("D", .{});
+                if (iu.tag == .phi) {
+                    print("ϕ", .{});
+                } else {
+                    print("S", .{});
+                }
                 live = true;
             } else if ((iu.f.kill_op1 and iu.op1 == ref) or (iu.f.kill_op2 and iu.op2 == ref)) {
                 live = false;
