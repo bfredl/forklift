@@ -1193,6 +1193,22 @@ pub fn scan_alloc(self: *Self) !void {
     try self.resolve_phi();
 }
 
+// we consider there to be 3 kinds of intervals:
+// vreg intervalls:
+//   1. born at definition point
+//   2a. at the beginning of each node: activated or deactivated as per live_in
+//   2b. deactivated at a kill flag
+// temporary intervalls:
+//   1. born at definition (a flag indicates that the result is ever used
+//   2. deactivated at a kill flag in the same block (must exist if-and-only-if born flag was set)
+// fixed intervalls: ABI and instruction constraints mandating specific register
+//   -- TODO: not implemented in first iteration
+pub fn scan_alloc2(self: *Self) !void {
+    // var active_avx: [16]u16 = ([1]u16{0}) ** 16;
+    // var active_ipreg: [16]u16 = ([1]u16{0}) ** 16;
+    _ = self;
+}
+
 pub fn resolve_phi(self: *Self) !void {
     for (self.n.items) |*n| {
         // putphi are at the end blocks before a join node, and
