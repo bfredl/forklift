@@ -1204,45 +1204,55 @@ pub fn scan_alloc(self: *Self) !void {
 // fixed intervalls: ABI and instruction constraints mandating specific register
 //   -- TODO: not implemented in first iteration
 pub fn scan_alloc2(self: *Self) !void {
-    const vregs = self.a.alloc(struct { mcidx: u8, mckind: MCKind, active: bool }, self.nvreg);
-    // var active_avx: [16]u16 = ([1]u16{0}) ** 16;
-    // var active_ipreg: [16]u16 = ([1]u16{0}) ** 16;
-
-
     for (self.n.items) |*n| {
         var it = self.ins_iterator(n.firstblk);
-        // registers not taken by temporaries;
-        var free_regs_ip : [16]bool = 16 ** .{true};
-        var free_regs_avx : [16]bool = 16 ** .{true};
+        // registers currently free.
+        var free_regs_ip: [16]bool = 16 ** .{true};
+        var free_regs_avx: [16]bool = 16 ** .{true};
 
-        for (vregs) |*vr, vi| {
-            const flag = @as(u64,1) << vi;
+        // any vreg which is "live in" should already be allocated. mark these as non-free
+        for (self.vregs) |vref, vi| {
+            const vr = self.iref(vref).?;
+            const flag = @as(u64, 1) << vi;
             if ((flag & n.live_in) != 0) {
                 if (vr.mckind == .ipreg) free_regs_ip[vr.mcidx] = false;
                 if (vr.mckind == .avxreg) free_regs_avx[vr.mcidx] = false;
             }
         }
 
-
         while (it.next()) |item| {
             const i = item.i;
-            const ref = item.ref;
-            const is_avx = (i.res_type() == ValType.avxval);
+            // const ref = item.ref;
+
+            if (i.f.kill_op1) {
+                const op = self.iref(i.op1).?;
+                if (op.mckind == .ipreg) free_regs_ip[op.mcidx] = true;
+                if (op.mckind == .avxval) free_regs_avx[op.mcidx] = true;
+            }
+            if (i.f.kill_op2) {
+                const op = self.iref(i.op2).?;
+                if (op.mckind == .ipreg) free_regs_ip[op.mcidx] = true;
+                if (op.mckind == .avxval) free_regs_avx[op.mcidx] = true;
+            }
+
             // TODO: do kills above. reghint for killed values
+
+            const is_avx = (i.res_type() == ValType.avxval);
 
             if (!(i.has_res() and i.mckind.unallocated())) {
                 // TODO: handle vregs with a pre-allocated register
                 continue;
             }
 
-            var usable_regs : [16]bool = undefined;
+            var usable_regs: [16]bool = undefined;
             var free_regs = if (is_avx) &free_regs_avx else &free_regs_ip;
-            var reg_kind : MCKind = if (is_avx) .avxreg else .ipreg;
+            var reg_kind: MCKind = if (is_avx) .avxreg else .ipreg;
 
             mem.copy(bool, &usable_regs, &free_regs);
             if (i.vreg != NoRef) {
-                for (vregs) |*vr| {
-                    if (vregs.mckind != reg_kind) continue;
+                for (self.vregs) |vref| {
+                    const vr = self.iref(vref).?;
+                    if (vr.mckind != reg_kind) continue;
                     // TODO: this should exclude current node, as |vr| might have been locally killed
                     // also already in free_regs[], to save some work.
                     const live_in_overlaps = undefined;
@@ -1252,7 +1262,7 @@ pub fn scan_alloc2(self: *Self) !void {
                 }
             }
 
-            var free_reg : ?u8 = null;
+            var free_reg: ?u8 = null;
             // TODO: in the og wimmer paper they do sorting of the "longest" free interval. how do we
             // do this if we delet reorder_inst as planned?
             for (usable_regs) |usable, reg| {
@@ -1267,14 +1277,9 @@ pub fn scan_alloc2(self: *Self) !void {
             free_regs[chosen] = false;
             i.mckind = reg_kind;
             i.mcidx = chosen;
-            if (i.vreg != NoRef) {
-                vregs[i.vreg].mckind = reg_kind;
-                i.mcidx = chosen;
-            }
         }
     }
 }
-
 
 pub fn resolve_phi(self: *Self) !void {
     for (self.n.items) |*n| {
