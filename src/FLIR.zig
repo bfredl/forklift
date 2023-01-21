@@ -1190,7 +1190,6 @@ pub fn scan_alloc(self: *Self) !void {
             }
         }
     }
-    try self.resolve_phi();
 }
 
 // we consider there to be 3 kinds of intervals:
@@ -1204,38 +1203,58 @@ pub fn scan_alloc(self: *Self) !void {
 // fixed intervalls: ABI and instruction constraints mandating specific register
 //   -- TODO: not implemented in first iteration
 pub fn scan_alloc2(self: *Self) !void {
-    for (self.n.items) |*n| {
+    for (self.n.items) |*n, ni| {
         var it = self.ins_iterator(n.firstblk);
         // registers currently free.
-        var free_regs_ip: [16]bool = 16 ** .{true};
-        var free_regs_avx: [16]bool = 16 ** .{true};
+        var free_regs_ip: [16]bool = .{true} ** 16;
+        var free_regs_avx: [16]bool = .{true} ** 16;
+
+        free_regs_ip[IPReg.rsp.id()] = false;
+        // just say NO to -fomiting the framepointer!
+        free_regs_ip[IPReg.rbp.id()] = false;
+        // TODO: handle auxilary register properly (by explicit load/spill?)
+        free_regs_ip[IPReg.rax.id()] = false;
+
+        // TODO: callee saved registers
+        free_regs_ip[IPReg.rbx.id()] = false;
+        free_regs_ip[IPReg.r12.id()] = false;
+        free_regs_ip[IPReg.r13.id()] = false;
+        free_regs_ip[IPReg.r14.id()] = false;
+        free_regs_ip[IPReg.r15.id()] = false;
 
         // any vreg which is "live in" should already be allocated. mark these as non-free
-        for (self.vregs) |vref, vi| {
+        for (self.vregs.items) |vref, vi| {
             const vr = self.iref(vref).?;
-            const flag = @as(u64, 1) << vi;
+            const flag = @as(u64, 1) << @intCast(u6, vi);
             if ((flag & n.live_in) != 0) {
                 if (vr.mckind == .ipreg) free_regs_ip[vr.mcidx] = false;
-                if (vr.mckind == .avxreg) free_regs_avx[vr.mcidx] = false;
+                if (vr.mckind == .vfreg) free_regs_avx[vr.mcidx] = false;
             }
         }
 
         while (it.next()) |item| {
             const i = item.i;
             // const ref = item.ref;
+            //
+            if (i.tag == .arg) {
+                try self.alloc_arg(i);
+                // TODO: FUBBIK, we need to break this up as thiss will
+                // conflict with nested calls
+                continue;
+            }
 
             if (i.f.kill_op1) {
                 const op = self.iref(i.op1).?;
                 if (op.mckind == .ipreg) free_regs_ip[op.mcidx] = true;
-                if (op.mckind == .avxval) free_regs_avx[op.mcidx] = true;
+                if (op.mckind == .vfreg) free_regs_avx[op.mcidx] = true;
             }
             if (i.f.kill_op2) {
                 const op = self.iref(i.op2).?;
                 if (op.mckind == .ipreg) free_regs_ip[op.mcidx] = true;
-                if (op.mckind == .avxval) free_regs_avx[op.mcidx] = true;
+                if (op.mckind == .vfreg) free_regs_avx[op.mcidx] = true;
             }
 
-            // TODO: do kills above. reghint for killed values
+            // TODO: reghint for killed values (mostly op1, but also op2 if symmetric)
 
             const is_avx = (i.res_type() == ValType.avxval);
 
@@ -1246,18 +1265,27 @@ pub fn scan_alloc2(self: *Self) !void {
 
             var usable_regs: [16]bool = undefined;
             var free_regs = if (is_avx) &free_regs_avx else &free_regs_ip;
-            var reg_kind: MCKind = if (is_avx) .avxreg else .ipreg;
+            var reg_kind: MCKind = if (is_avx) .vfreg else .ipreg;
 
-            mem.copy(bool, &usable_regs, &free_regs);
+            mem.copy(bool, &usable_regs, free_regs);
             if (i.vreg != NoRef) {
-                for (self.vregs) |vref| {
+                const myflag = @as(u64, 1) << @intCast(u6, i.vreg);
+                for (self.vregs.items) |vref, vi| {
                     const vr = self.iref(vref).?;
                     if (vr.mckind != reg_kind) continue;
-                    // TODO: this should exclude current node, as |vr| might have been locally killed
-                    // also already in free_regs[], to save some work.
-                    const live_in_overlaps = undefined;
-                    if (live_in_overlaps(vr, i.vreg)) {
-                        usable_regs[vr.mcidx] = false;
+                    // NOTE: This does purposefully exclude current node. free_regs[]
+                    // will already track vregs active at the current position (precisely)
+                    // NOTE2: this should be made more efficient by transposing the
+                    // [Node X VReg] bitset, so we can just do (me_livein & other_livein) over all nodes
+                    const otherflag = @as(u64, 1) << @intCast(u6, vi);
+                    const flagmask = myflag | otherflag;
+                    var ni2 = ni + 1;
+                    while (ni2 < self.n.items.len) : (ni2 += 1) {
+                        if (self.n.items[ni2].live_in & flagmask == flagmask) {
+                            // mckind checked above
+                            usable_regs[vr.mcidx] = false;
+                            break;
+                        }
                     }
                 }
             }
@@ -1267,12 +1295,12 @@ pub fn scan_alloc2(self: *Self) !void {
             // do this if we delet reorder_inst as planned?
             for (usable_regs) |usable, reg| {
                 if (usable) {
-                    free_reg = reg;
+                    free_reg = @intCast(u8, reg);
                     break;
                 }
             }
 
-            const chosen = free_reg or @panic("implement interval splitting");
+            const chosen = free_reg orelse @panic("implement interval splitting");
 
             free_regs[chosen] = false;
             i.mckind = reg_kind;
@@ -1379,7 +1407,8 @@ pub fn test_analysis(self: *Self, comptime check: bool) !void {
 
     if (check) try self.check_vregs();
 
-    try self.scan_alloc();
+    try self.scan_alloc2();
+    try self.resolve_phi(); // GLYTTIT
     if (check) try self.check_ir_valid();
 
     try self.mark_empty();
