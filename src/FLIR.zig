@@ -1212,22 +1212,41 @@ pub fn scan_alloc2(self: *Self) !void {
     for (self.n.items) |*n| {
         var it = self.ins_iterator(n.firstblk);
         // registers not taken by temporaries;
-        var free_regs : [16]bool = 16 * {true};
+        var free_regs_ip : [16]bool = 16 ** .{true};
+        var free_regs_avx : [16]bool = 16 ** .{true};
+
+        for (vregs) |*vr, vi| {
+            const flag = @as(u64,1) << vi;
+            if ((flag & n.live_in) != 0) {
+                if (vr.mckind == .ipreg) free_regs_ip[vr.mcidx] = false;
+                if (vr.mckind == .avxreg) free_regs_avx[vr.mcidx] = false;
+            }
+        }
+
+
         while (it.next()) |item| {
             const i = item.i;
             const ref = item.ref;
+            const is_avx = (i.res_type() == ValType.avxval);
             // TODO: do kills above. reghint for killed values
 
-            if (!(i.has_res() and i.mckind.unallocated())) continue;
+            if (!(i.has_res() and i.mckind.unallocated())) {
+                // TODO: handle vregs with a pre-allocated register
+                continue;
+            }
 
             var usable_regs : [16]bool = undefined;
+            var free_regs = if (is_avx) &free_regs_avx else &free_regs_ip;
+            var reg_kind : MCKind = if (is_avx) .avxreg else .ipreg;
+
             mem.copy(bool, &usable_regs, &free_regs);
             if (i.vreg != NoRef) {
                 for (vregs) |*vr| {
-                    if (vregs.mckind != allocated_reg_of_same_kind) continue
+                    if (vregs.mckind != reg_kind) continue;
                     // TODO: this should exclude current node, as |vr| might have been locally killed
                     // also already in free_regs[], to save some work.
-                    if (live_in_overlaps(vr, i.vreg) {
+                    const live_in_overlaps = undefined;
+                    if (live_in_overlaps(vr, i.vreg)) {
                         usable_regs[vr.mcidx] = false;
                     }
                 }
@@ -1236,8 +1255,8 @@ pub fn scan_alloc2(self: *Self) !void {
             var free_reg : ?u8 = null;
             // TODO: in the og wimmer paper they do sorting of the "longest" free interval. how do we
             // do this if we delet reorder_inst as planned?
-            for (available_regs) |avail, reg| {
-                if (avail) {
+            for (usable_regs) |usable, reg| {
+                if (usable) {
                     free_reg = reg;
                     break;
                 }
@@ -1246,6 +1265,12 @@ pub fn scan_alloc2(self: *Self) !void {
             const chosen = free_reg or @panic("implement interval splitting");
 
             free_regs[chosen] = false;
+            i.mckind = reg_kind;
+            i.mcidx = chosen;
+            if (i.vreg != NoRef) {
+                vregs[i.vreg].mckind = reg_kind;
+                i.mcidx = chosen;
+            }
         }
     }
 }
