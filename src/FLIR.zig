@@ -1243,6 +1243,17 @@ pub fn scan_alloc2(self: *Self) !void {
                 continue;
             }
 
+            if (i.tag == .putphi) {
+                const from = self.iref(i.op1).?;
+                if (from.ipreg()) |reg| {
+                    const to = self.iref(i.op2).?;
+                    if (to.mckind == .unallocated_raw) {
+                        to.mckind = .unallocated_ipreghint;
+                        to.mcidx = reg.id();
+                    }
+                }
+            }
+
             if (i.f.kill_op1) {
                 const op = self.iref(i.op1).?;
                 if (op.mckind == .ipreg) free_regs_ip[op.mcidx] = true;
@@ -1290,17 +1301,26 @@ pub fn scan_alloc2(self: *Self) !void {
                 }
             }
 
-            var free_reg: ?u8 = null;
-            // TODO: in the og wimmer paper they do sorting of the "longest" free interval. how do we
-            // do this if we delet reorder_inst as planned?
-            for (usable_regs) |usable, reg| {
-                if (usable) {
-                    free_reg = @intCast(u8, reg);
-                    break;
+            var chosen_reg: ?u8 = null;
+            if (i.mckind == .unallocated_ipreghint) {
+                if (i.res_type() != ValType.intptr) unreachable;
+                if (usable_regs[i.mcidx]) {
+                    chosen_reg = i.mcidx;
                 }
             }
 
-            const chosen = free_reg orelse @panic("implement interval splitting");
+            if (chosen_reg == null) {
+                // TODO: in the og wimmer paper they do sorting of the "longest" free interval. how do we
+                // do this if we delet reorder_inst as planned?
+                for (usable_regs) |usable, reg| {
+                    if (usable) {
+                        chosen_reg = @intCast(u8, reg);
+                        break;
+                    }
+                }
+            }
+
+            const chosen = chosen_reg orelse @panic("implement interval splitting");
 
             free_regs[chosen] = false;
             i.mckind = reg_kind;
