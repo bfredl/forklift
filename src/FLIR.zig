@@ -1258,10 +1258,16 @@ pub fn scan_alloc2(self: *Self) !void {
                 }
             }
 
+            const is_avx = (i.res_type() == ValType.avxval);
+
             if (i.f.kill_op1) {
                 const op = self.iref(i.op1).?;
                 if (op.mckind == .ipreg) free_regs_ip[op.mcidx] = true;
                 if (op.mckind == .vfreg) free_regs_avx[op.mcidx] = true;
+                if (i.mckind == .unallocated_raw and op.mckind == .ipreg and !is_avx) {
+                    i.mckind = .unallocated_ipreghint;
+                    i.mcidx = op.mcidx;
+                }
             }
             if (i.f.kill_op2) {
                 const op = self.iref(i.op2).?;
@@ -1270,8 +1276,6 @@ pub fn scan_alloc2(self: *Self) !void {
             }
 
             // TODO: reghint for killed values (mostly op1, but also op2 if symmetric)
-
-            const is_avx = (i.res_type() == ValType.avxval);
 
             if (!(i.has_res() and i.mckind.unallocated())) {
                 // TODO: handle vregs with a pre-allocated register
