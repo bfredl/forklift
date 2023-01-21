@@ -284,7 +284,7 @@ pub const Tag = enum(u8) {
 
 pub const MCKind = enum(u8) {
     // not yet allocated, or Inst that trivially produces no value
-    unallocated_raw,
+    unallocated_raw = 0,
     // general purpose register like rax, r12, etc
     ipreg,
     // SSE/AVX registers, ie xmm0/ymm0-15
@@ -1204,10 +1204,52 @@ pub fn scan_alloc(self: *Self) !void {
 // fixed intervalls: ABI and instruction constraints mandating specific register
 //   -- TODO: not implemented in first iteration
 pub fn scan_alloc2(self: *Self) !void {
+    const vregs = self.a.alloc(struct { mcidx: u8, mckind: MCKind, active: bool }, self.nvreg);
     // var active_avx: [16]u16 = ([1]u16{0}) ** 16;
     // var active_ipreg: [16]u16 = ([1]u16{0}) ** 16;
-    _ = self;
+
+
+    for (self.n.items) |*n| {
+        var it = self.ins_iterator(n.firstblk);
+        // registers not taken by temporaries;
+        var free_regs : [16]bool = 16 * {true};
+        while (it.next()) |item| {
+            const i = item.i;
+            const ref = item.ref;
+            // TODO: do kills above. reghint for killed values
+
+            if (!(i.has_res() and i.mckind.unallocated())) continue;
+
+            var usable_regs : [16]bool = undefined;
+            mem.copy(bool, &usable_regs, &free_regs);
+            if (i.vreg != NoRef) {
+                for (vregs) |*vr| {
+                    if (vregs.mckind != allocated_reg_of_same_kind) continue
+                    // TODO: this should exclude current node, as |vr| might have been locally killed
+                    // also already in free_regs[], to save some work.
+                    if (live_in_overlaps(vr, i.vreg) {
+                        usable_regs[vr.mcidx] = false;
+                    }
+                }
+            }
+
+            var free_reg : ?u8 = null;
+            // TODO: in the og wimmer paper they do sorting of the "longest" free interval. how do we
+            // do this if we delet reorder_inst as planned?
+            for (available_regs) |avail, reg| {
+                if (avail) {
+                    free_reg = reg;
+                    break;
+                }
+            }
+
+            const chosen = free_reg or @panic("implement interval splitting");
+
+            free_regs[chosen] = false;
+        }
+    }
 }
+
 
 pub fn resolve_phi(self: *Self) !void {
     for (self.n.items) |*n| {
