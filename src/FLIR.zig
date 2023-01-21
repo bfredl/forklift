@@ -1241,6 +1241,10 @@ pub fn scan_alloc2(self: *Self) !void {
                 // TODO: FUBBIK, we need to break this up as thiss will
                 // conflict with nested calls
                 continue;
+            } else if (i.tag == .constant and i.mckind.unallocated()) {
+                // TODO: check as needed
+                i.mckind = .fused;
+                continue;
             }
 
             if (i.tag == .putphi) {
