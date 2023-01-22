@@ -78,6 +78,17 @@ pub fn check_ir_valid(self: *FLIR) !void {
                 try self.check_phi(&worklist, pred, uv(ni));
             }
         }
+
+        if (n.firstblk == NoRef) return error.InvalidCFG;
+        var blk = n.firstblk;
+        var prev_blk: u16 = NoRef;
+        while (blk != NoRef) {
+            const b = &self.b.items[blk];
+            if (b.pred != prev_blk) return error.InvalidCFG;
+            prev_blk = blk;
+            blk = b.succ;
+        }
+        if (n.lastblk != prev_blk) return error.InvalidCFG;
     }
     for (self.n.items) |*n, ni| {
         const last = try get_jmp_or_last(self, n);

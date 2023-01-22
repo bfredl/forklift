@@ -29,10 +29,16 @@ b: ArrayList(Block),
 // dfs: ArrayList(u16),
 preorder: ArrayList(u16),
 blkorder: ArrayList(u16),
+// This is only used for preds currently, but use it for more stuff??
 refs: ArrayList(u16),
 narg: u16 = 0,
+
+// variables are references which do not fullfill the SSA-property.
+// we eleminate these early on in the ssa_gvn pass
 nvar: u16 = 0,
+
 // variables 2.0: virtual registero
+// vregs is any result which is live outside of its defining node, that's it.
 nvreg: u16 = 0,
 vregs: ArrayList(u16),
 
@@ -81,10 +87,15 @@ pub const BLK_SHIFT = 2;
 pub const Block = struct {
     node: u16,
     succ: u16 = NoRef,
+    pred: u16 = NoRef,
     i: [BLK_SIZE]Inst = .{EMPTY} ** BLK_SIZE,
 
     pub fn next(self: @This()) ?u16 {
         return if (self.succ != NoRef) self.succ else null;
+    }
+
+    pub fn prev(self: @This()) ?u16 {
+        return if (self.pred != NoRef) self.pred else null;
     }
 };
 
@@ -397,10 +408,11 @@ pub fn addInst(self: *Self, node: u16, inst: Inst) !u16 {
     }
 
     if (lastfree == BLK_SIZE) {
+        const prevblk = blkid;
         blkid = uv(self.b.items.len);
         blk.succ = blkid;
         blk = try self.b.addOne();
-        blk.* = .{ .node = node };
+        blk.* = .{ .node = node, .pred = prevblk };
         n.lastblk = blkid;
         lastfree = 0;
     }
@@ -428,6 +440,7 @@ pub fn preInst(self: *Self, node: u16, inst: Inst) !u16 {
     if (firstfree == -1) {
         const nextblk = blkid;
         blkid = uv(self.b.items.len);
+        blk.pred = blkid;
         blk = try self.b.addOne();
         blk.* = .{ .node = node, .succ = nextblk };
         n.firstblk = blkid;
@@ -541,17 +554,6 @@ pub fn variable(self: *Self) !u16 {
 pub fn preds(self: *Self, i: u16) []u16 {
     const v = self.n.items[i];
     return self.refs.items[v.predref..][0..v.npred];
-}
-
-pub fn p(self: *Self, s1: u16, s2: u16) void {
-    var z1: u16 = s1;
-    var z2: u16 = s2;
-    if (true and s2 != 0) {
-        z1 = s2;
-        z2 = s1;
-    }
-    // TODO: this is INVALID
-    self.n.appendAssumeCapacity(.{ .s = .{ z1, z2 }, .firstblk = NoRef, .lastblk = NoRef });
 }
 
 fn predlink(self: *Self, i: u16, si: u1, split: bool) !void {
@@ -742,76 +744,6 @@ pub fn reorder_nodes(self: *Self) !void {
     }
 }
 
-// assumes already reorder_nodes !
-pub fn reorder_inst(self: *Self) !void {
-    const newlink = try self.a.alloc(u16, self.b.items.len * BLK_SIZE);
-    mem.set(u16, newlink, NoRef);
-    const newblkpos = try self.a.alloc(u16, self.b.items.len);
-    mem.set(u16, newblkpos, NoRef);
-    defer self.a.free(newlink);
-    defer self.a.free(newblkpos);
-    var newpos: u16 = 0;
-
-    for (self.n.items) |*n| {
-        var cur_blk: ?u16 = n.firstblk;
-        var blklink: ?u16 = null;
-
-        while (cur_blk) |old_blk| {
-            // TRICKY: we might have swapped out the block
-            const newblk = newpos >> BLK_SHIFT;
-            const blk = if (newblkpos[old_blk] != NoRef) newblkpos[old_blk] else old_blk;
-
-            var b = &self.b.items[blk];
-            // TODO: RUNDA UPP
-            if (blklink) |link| {
-                self.b.items[link].succ = newblk;
-            } else {
-                n.firstblk = newblk;
-            }
-            blklink = newblk;
-
-            for (b.i) |_, idx| {
-                // TODO: compact away .empty, later when opts is punching holes and stuff
-                newlink[toref(old_blk, uv(idx))] = newpos;
-                newpos += 1;
-            }
-
-            if (blk != newblk) {
-                const oldval = if (newblkpos[newblk] != NoRef) newblkpos[newblk] else newblk;
-                newblkpos[blk] = oldval;
-                newblkpos[oldval] = blk;
-            }
-
-            cur_blk = b.next();
-
-            mem.swap(Block, b, &self.b.items[newblk]);
-            if (cur_blk == null) {
-                n.lastblk = newblk;
-            }
-        }
-    }
-
-    // order irrelevant here, just fixing up broken refs
-    for (self.n.items) |*n, ni| {
-        if (n.dfnum == 0 and ni > 0) {
-            // He's dead, Jim!
-            n.firstblk = NoRef;
-            n.lastblk = NoRef;
-            continue;
-        }
-        var it = self.ins_iterator(n.firstblk);
-        while (it.next()) |item| {
-            const nops = item.i.n_op(true);
-            if (nops > 0) {
-                item.i.op1 = newlink[item.i.op1];
-                if (nops > 1) {
-                    item.i.op2 = newlink[item.i.op2];
-                }
-            }
-        }
-    }
-}
-
 // ni = node id of user
 pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
     _ = user;
@@ -828,8 +760,7 @@ pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
 }
 
 // TODO: not idempotent! does not reset n_use=0 first.
-// NB: requires reorder_nodes() and reorder_inst()
-// TODO: get rid of reorder_inst!
+// NB: requires reorder_nodes()
 pub fn calc_use(self: *Self) !void {
     // TODO: NOT LIKE THIS
     try self.vregs.ensureTotalCapacity(64);
@@ -877,7 +808,7 @@ pub fn calc_use(self: *Self) !void {
                 }
             }
 
-            cur_blk = if (blk != n.firstblk) blk - 1 else null;
+            cur_blk = b.prev();
         }
 
         n.live_in = live;
@@ -944,7 +875,7 @@ pub fn calc_use(self: *Self) !void {
                     }
                 }
             }
-            cur_blk = if (blk != n.firstblk) blk - 1 else null;
+            cur_blk = b.prev();
         }
     }
 }
@@ -996,8 +927,12 @@ pub fn maybe_split(self: *Self, after: u16) !u16 {
     const blkid = uv(self.b.items.len);
     blk.succ = blkid;
     var newblk = try self.b.addOne();
-    newblk.* = .{ .node = blk.node, .succ = old_succ };
-    node.lastblk = blkid;
+    newblk.* = .{ .node = blk.node, .succ = old_succ, .pred = r.block };
+    if (old_succ != NoRef) {
+        self.b.items[old_succ].pred = blkid;
+    } else {
+        node.lastblk = blkid;
+    }
 
     if (r.idx < BLK_SIZE - 1) {
         mem.copy(Inst, newblk.i[r.idx + 1 ..], blk.i[r.idx + 1 ..]);
@@ -1207,7 +1142,7 @@ pub fn scan_alloc(self: *Self) !void {
 
             if (chosen_reg == null) {
                 // TODO: in the og wimmer paper they do sorting of the "longest" free interval. how do we
-                // do this if we delet reorder_inst as planned?
+                // do this if without reorder_inst?
                 if (is_avx) {
                     for (usable_regs) |usable, reg| {
                         if (usable) {
@@ -1337,7 +1272,6 @@ pub fn test_analysis(self: *Self, comptime check: bool) !void {
     try SSA_GVN.ssa_gvn(self);
     if (check) try self.check_ir_valid();
 
-    try self.reorder_inst();
     if (check) try self.check_ir_valid();
     try self.calc_use();
 
