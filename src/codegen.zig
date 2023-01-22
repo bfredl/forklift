@@ -52,7 +52,7 @@ fn regaritmc(cfo: *CFO, op: CFO.AOp, dst: IPReg, i: Inst) !void {
 
 fn mcmovreg(cfo: *CFO, dst: Inst, src: IPReg) !void {
     switch (dst.mckind) {
-        .frameslot => try cfo.movmr(CFO.a(.rbp).o(-8 * @as(i32, dst.mcidx)), .rax),
+        .frameslot => try cfo.movmr(CFO.a(.rbp).o(-8 * @as(i32, dst.mcidx)), src),
         .ipreg => {
             const reg = @intToEnum(IPReg, dst.mcidx);
             if (reg != src) try cfo.mov(reg, src);
@@ -79,21 +79,16 @@ fn mcmovi(cfo: *CFO, i: Inst) !void {
     }
 }
 
-// TODO: obviously better handling of scratch register
-fn movmcs(cfo: *CFO, dst: Inst, src: Inst, scratch: IPReg) !void {
+fn movmcs(cfo: *CFO, dst: Inst, src: Inst) !void {
     if (dst.mckind == src.mckind and dst.mcidx == src.mcidx) {
         return;
     }
     if (dst.mckind == .ipreg) {
         try regmovmc(cfo, @intToEnum(IPReg, dst.mcidx), src);
+    } else if (src.mckind == .ipreg) {
+        try mcmovreg(cfo, dst, @intToEnum(IPReg, src.mcidx));
     } else {
-        const reg = if (src.mckind == .ipreg)
-            @intToEnum(IPReg, src.mcidx)
-        else reg: {
-            try regmovmc(cfo, scratch, src);
-            break :reg scratch;
-        };
-        try mcmovreg(cfo, dst, reg);
+        @panic("unspill/respill");
     }
 }
 
@@ -212,17 +207,16 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                 .iop => {
                     const lhs = self.iref(i.op1).?;
                     const rhs = self.iref(i.op2).?;
-                    const dst = i.ipreg() orelse .rax;
+                    const dst = i.ipreg() orelse @panic("missing spill");
                     // TODO: fugly: remove once we have constraint handling in regalloc
-                    const tmpdst = if (dst == rhs.ipreg() and dst != lhs.ipreg()) .rax else dst;
-                    try regmovmc(cfo, tmpdst, lhs.*);
-                    try regaritmc(cfo, @intToEnum(CFO.AOp, i.spec), tmpdst, rhs.*);
-                    try mcmovreg(cfo, i.*, tmpdst); // elided if dst is a conflict-free register
+                    if (dst == rhs.ipreg() and dst != lhs.ipreg()) @panic("conflict!");
+                    try regmovmc(cfo, dst, lhs.*); // often elided if lhs has the same reg
+                    try regaritmc(cfo, @intToEnum(CFO.AOp, i.spec), dst, rhs.*);
                 },
                 .imul => {
                     const lhs = self.iref(i.op1).?;
                     const rhs = self.iref(i.op2).?;
-                    const dst = i.ipreg() orelse .rax;
+                    const dst = i.ipreg() orelse @panic("missing spill");
                     if (rhs.tag == .constant) {
                         const src = lhs.ipreg() orelse unreachable;
                         try cfo.imulrri(dst, src, @intCast(i8, rhs.op1));
@@ -234,12 +228,11 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                             unreachable;
                         }
                     }
-                    try mcmovreg(cfo, i.*, dst); // elided if dst is ipreg
                 },
                 .shr => {
                     const val = self.iref(i.op1).?;
                     const count = self.iref(i.op2).?;
-                    const dst = i.ipreg() orelse .rax;
+                    const dst = i.ipreg() orelse @panic("missing spill");
                     if (count.tag == .constant) {
                         try regmovmc(cfo, dst, val.*);
                         try cfo.shr_ri(dst, @intCast(u8, count.op1));
@@ -249,22 +242,24 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                 },
                 .constant => try mcmovi(cfo, i.*),
                 .icmp => {
-                    const firstop = self.iref(i.op1).?.ipreg() orelse .rax;
-                    try regmovmc(cfo, firstop, self.iref(i.op1).?.*);
+                    // TODO: we can actually cmp [slot], reg as well as cmp reg, [slot].
+                    // just `cmp [slot1], [slot2]` is a violation
+                    const firstop = self.iref(i.op1).?.ipreg() orelse @panic("missing unspill");
                     try regaritmc(cfo, .cmp, firstop, self.iref(i.op2).?.*);
                     cond = @intToEnum(CFO.Cond, i.spec);
                 },
                 .putphi => {
                     // TODO: actually check for parallell-move conflicts
                     // either here or as an extra deconstruction step
-                    try movmcs(cfo, self.iref(i.op2).?.*, self.iref(i.op1).?.*, .rax);
+                    try movmcs(cfo, self.iref(i.op2).?.*, self.iref(i.op1).?.*);
                 },
                 .load => {
                     var eaddr = try get_eaddr_load_or_lea(self, i.*);
                     const spec_type = i.mem_type();
                     switch (spec_type) {
                         .intptr => |size| {
-                            const dst = i.ipreg() orelse .rax;
+                            // tbh, loading from memory into a spill slot is bit stupid
+                            const dst = i.ipreg() orelse @panic("missing spill");
                             switch (size) {
                                 .byte => {
                                     try cfo.movrm_byte(dst, eaddr);
@@ -272,7 +267,6 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                                 .quadword => try cfo.movrm(dst, eaddr),
                                 else => unreachable,
                             }
-                            try mcmovreg(cfo, i.*, dst); // elided if dst is register
                         },
                         .avxval => |fmode| {
                             const dst = i.avxreg() orelse unreachable;
@@ -287,9 +281,8 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                         if (true) unreachable;
                         const base = self.iref(i.op1).?.ipreg() orelse unreachable;
                         const idx = self.iref(i.op2).?.ipreg() orelse unreachable;
-                        const dst = i.ipreg() orelse .rax;
+                        const dst = i.ipreg() orelse @panic("missing spill");
                         try cfo.lea(dst, CFO.qi(base, idx));
-                        try mcmovreg(cfo, i.*, dst); // elided if dst is register
                     }
                 },
                 .store => {

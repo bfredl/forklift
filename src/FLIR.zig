@@ -1110,11 +1110,10 @@ pub const callee_saved: [5]IPReg = .{ .rbx, .r12, .r13, .r14, .r15 };
 //   -- TODO: not implemented in first iteration
 pub fn scan_alloc(self: *Self) !void {
 
-    // first 8 caller saved and then 5 calle saved regs
+    // first 9 caller saved and then 5 calle saved regs
     // as allocation is greedy (currently) we will only use the latter when the 8 first are all filled
-    // TODO: add rax here after moving load/spill out of codegen
-    const reg_order: [13]IPReg = .{ .rcx, .rdx, .rsi, .rdi, .r8, .r9, .r10, .r11, .rbx, .r12, .r13, .r14, .r15 };
-    const reg_first_save = 8;
+    const reg_order: [14]IPReg = .{ .rax, .rcx, .rdx, .rsi, .rdi, .r8, .r9, .r10, .r11, .rbx, .r12, .r13, .r14, .r15 };
+    const reg_first_save = 9;
     var highest_used: u8 = 0;
 
     for (self.n.items) |*n, ni| {
@@ -1126,8 +1125,6 @@ pub fn scan_alloc(self: *Self) !void {
         free_regs_ip[IPReg.rsp.id()] = false;
         // just say NO to -fomiting the framepointer!
         free_regs_ip[IPReg.rbp.id()] = false;
-        // TODO: handle auxilary register properly (by explicit load/spill?)
-        free_regs_ip[IPReg.rax.id()] = false;
 
         // any vreg which is "live in" should already be allocated. mark these as non-free
         for (self.vregs.items) |vref, vi| {
