@@ -145,8 +145,6 @@ pub const Inst = struct {
     op2: u16,
     mckind: MCKind = .unallocated_raw,
     mcidx: u8 = undefined,
-    // TODO: delet this:
-    last_use: u16 = NoRef,
     vreg: u16 = NoRef,
     f: packed struct {
         // note: if the reference is a vreg, it might
@@ -816,9 +814,9 @@ pub fn reorder_inst(self: *Self) !void {
 
 // ni = node id of user
 pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
+    _ = user;
     const ref = self.biref(used).?;
     //ref.i.n_use += 1;
-    ref.i.last_use = user;
     // it leaks to another block: give it a virtual register number
     if (ref.n != ni) {
         if (ref.i.vreg == NoRef) {
@@ -900,20 +898,6 @@ pub fn calc_use(self: *Self) !void {
                     ch_n.live_in |= n.live_in;
                 } else {
                     break; // assuming the contigous property by now
-                }
-            }
-            // TODO: this is all lies. regalloc will use n.live_in sets directly soon.
-            if (ch_i > ni + 1) {
-                const ch_n = &self.n.items[ch_i];
-                const fake_max_use = toref(ch_n.lastblk, BLK_SIZE - 1);
-                var i_vreg: usize = 0;
-                while (i_vreg < self.nvreg) : (i_vreg += 1) {
-                    const tag_reg = @as(u64, 1) << @intCast(u6, i_vreg);
-                    if (tag_reg > n.live_in) break;
-                    if ((tag_reg & n.live_in) != 0) {
-                        const idef = self.iref(self.vregs.items[i_vreg]).?;
-                        idef.last_use = math.max(idef.last_use, fake_max_use);
-                    }
                 }
             }
         }
