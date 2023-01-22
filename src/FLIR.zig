@@ -7,6 +7,8 @@ const print = std.debug.print;
 const CFO = @import("./CFO.zig");
 const SSA_GVN = @import("./SSA_GVN.zig");
 
+const options = &@import("root").options;
+
 // this currently causes a curious bug as of zig nightly 26dec2022.
 // recursive method calls like self.rpo_visit() within itself do not work!
 pub usingnamespace @import("./verify_ir.zig");
@@ -37,10 +39,6 @@ vregs: ArrayList(u16),
 nslots: u8 = 0,
 nsave: u8 = 0,
 ndf: u16 = 0,
-
-// canonical order of callee saved registers. nsave>0 means
-// the first nsave items needs to be saved and restored
-pub const callee_saved: [5]IPReg = .{ .rbx, .r12, .r13, .r14, .r15 };
 
 // filler value for unintialized refs. not a sentinel for
 // actually invalid refs!
@@ -1192,6 +1190,10 @@ pub fn scan_alloc(self: *Self) !void {
     }
 }
 
+// canonical order of callee saved registers. nsave>0 means
+// the first nsave items needs to be saved and restored
+pub const callee_saved: [5]IPReg = .{ .rbx, .r12, .r13, .r14, .r15 };
+
 // we consider there to be 3 kinds of intervals:
 // vreg intervalls:
 //   1. born at definition point
@@ -1203,6 +1205,14 @@ pub fn scan_alloc(self: *Self) !void {
 // fixed intervalls: ABI and instruction constraints mandating specific register
 //   -- TODO: not implemented in first iteration
 pub fn scan_alloc2(self: *Self) !void {
+
+    // first 8 caller saved and then 5 calle saved regs
+    // as allocation is greedy (currently) we will only use the latter when the 8 first are all filled
+    // TODO: add rax here after moving load/spill out of codegen
+    const reg_order: [13]IPReg = .{ .rcx, .rdx, .rsi, .rdi, .r8, .r9, .r10, .r11, .rbx, .r12, .r13, .r14, .r15 };
+    const reg_first_save = 8;
+    var highest_used: u8 = 0;
+
     for (self.n.items) |*n, ni| {
         var it = self.ins_iterator(n.firstblk);
         // registers currently free.
@@ -1214,13 +1224,6 @@ pub fn scan_alloc2(self: *Self) !void {
         free_regs_ip[IPReg.rbp.id()] = false;
         // TODO: handle auxilary register properly (by explicit load/spill?)
         free_regs_ip[IPReg.rax.id()] = false;
-
-        // TODO: callee saved registers
-        free_regs_ip[IPReg.rbx.id()] = false;
-        free_regs_ip[IPReg.r12.id()] = false;
-        free_regs_ip[IPReg.r13.id()] = false;
-        free_regs_ip[IPReg.r14.id()] = false;
-        free_regs_ip[IPReg.r15.id()] = false;
 
         // any vreg which is "live in" should already be allocated. mark these as non-free
         for (self.vregs.items) |vref, vi| {
@@ -1269,13 +1272,13 @@ pub fn scan_alloc2(self: *Self) !void {
                     i.mcidx = op.mcidx;
                 }
             }
+
+            // TODO: reghint for killed op2? (if symmetric, like add usw)
             if (i.f.kill_op2) {
                 const op = self.iref(i.op2).?;
                 if (op.mckind == .ipreg) free_regs_ip[op.mcidx] = true;
                 if (op.mckind == .vfreg) free_regs_avx[op.mcidx] = true;
             }
-
-            // TODO: reghint for killed values (mostly op1, but also op2 if symmetric)
 
             if (!(i.has_res() and i.mckind.unallocated())) {
                 // TODO: handle vregs with a pre-allocated register
@@ -1320,10 +1323,22 @@ pub fn scan_alloc2(self: *Self) !void {
             if (chosen_reg == null) {
                 // TODO: in the og wimmer paper they do sorting of the "longest" free interval. how do we
                 // do this if we delet reorder_inst as planned?
-                for (usable_regs) |usable, reg| {
-                    if (usable) {
-                        chosen_reg = @intCast(u8, reg);
-                        break;
+                if (is_avx) {
+                    for (usable_regs) |usable, reg| {
+                        if (usable) {
+                            chosen_reg = @intCast(u8, reg);
+                            break;
+                        }
+                    }
+                } else {
+                    for (reg_order) |reg_try, reg_i| {
+                        if (usable_regs[reg_try.id()]) {
+                            chosen_reg = reg_try.id();
+                            if (reg_i > highest_used) {
+                                highest_used = @intCast(u8, reg_i);
+                            }
+                            break;
+                        }
                     }
                 }
             }
@@ -1334,6 +1349,14 @@ pub fn scan_alloc2(self: *Self) !void {
             i.mckind = reg_kind;
             i.mcidx = chosen;
         }
+    }
+
+    if (options.dbg_vregs) {
+        print("used {} general purpose regs\n", .{highest_used + 1});
+    }
+
+    if (highest_used >= reg_first_save) {
+        self.nsave = highest_used - reg_first_save + 1;
     }
 }
 

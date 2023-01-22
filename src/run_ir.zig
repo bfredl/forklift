@@ -26,6 +26,7 @@ pub var options = struct {
     dbg_raw_ir: bool = false,
     dbg_analysed_ir: bool = false,
     dbg_disasm: bool = false,
+    dbg_vregs: bool = false,
     dbg_trap: bool = false,
 }{};
 
@@ -41,6 +42,7 @@ pub fn main() !void {
             switch (a) {
                 'i' => options.dbg_raw_ir = true,
                 'a' => options.dbg_analysed_ir = true,
+                'v' => options.dbg_vregs = true,
                 'd' => options.dbg_disasm = true,
                 't' => options.dbg_trap = true,
                 else => return usage(),
@@ -77,7 +79,7 @@ pub fn main() !void {
     try ir.test_analysis(true);
     if (options.dbg_analysed_ir) ir.debug_print();
 
-    ir.print_intervals();
+    if (options.dbg_vregs) ir.print_intervals();
 
     var cfo = try CFO.init(allocator);
 
