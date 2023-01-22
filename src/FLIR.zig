@@ -6,8 +6,9 @@ const Self = @This();
 const print = std.debug.print;
 const CFO = @import("./CFO.zig");
 const SSA_GVN = @import("./SSA_GVN.zig");
+const builtin = @import("builtin");
 
-const options = &@import("root").options;
+const options = if (!builtin.is_test) &@import("root").options else null;
 
 // this currently causes a curious bug as of zig nightly 26dec2022.
 // recursive method calls like self.rpo_visit() within itself do not work!
@@ -1093,103 +1094,6 @@ pub fn trivial_alloc(self: *Self) !void {
     }
 }
 
-pub fn scan_alloc(self: *Self) !void {
-    var active_avx: [16]u16 = ([1]u16{0}) ** 16;
-    var active_ipreg: [16]u16 = ([1]u16{0}) ** 16;
-    active_ipreg[IPReg.rsp.id()] = NoRef;
-    // just say NO to -fomiting the framepointer!
-    active_ipreg[IPReg.rbp.id()] = NoRef;
-    // TODO: handle auxilary register properly (by explicit load/spill?)
-    active_ipreg[IPReg.rax.id()] = NoRef;
-
-    // callee saved registers, can be allocated on demand
-    active_ipreg[IPReg.rbx.id()] = NoRef;
-    active_ipreg[IPReg.r12.id()] = NoRef;
-    active_ipreg[IPReg.r13.id()] = NoRef;
-    active_ipreg[IPReg.r14.id()] = NoRef;
-    active_ipreg[IPReg.r15.id()] = NoRef;
-
-    for (self.n.items) |*n| {
-        var it = self.ins_iterator(n.firstblk);
-        while (it.next()) |item| {
-            const i = item.i;
-            const ref = item.ref;
-            if (i.tag == .arg) {
-                try self.alloc_arg(i);
-                assert(active_ipreg[i.mcidx] <= ref);
-                active_ipreg[i.mcidx] = i.last_use;
-            } else if (i.tag == .constant and i.mckind.unallocated()) {
-                // TODO: check as needed
-                i.mckind = .fused;
-            } else if (i.tag == .putphi) {
-                const from = self.iref(i.op1).?;
-                if (from.ipreg()) |reg| {
-                    const to = self.iref(i.op2).?;
-                    if (to.mckind == .unallocated_raw) {
-                        to.mckind = .unallocated_ipreghint;
-                        to.mcidx = reg.id();
-                    }
-                }
-            } else if (i.has_res() and i.mckind.unallocated()) {
-                const is_avx = (i.res_type() == ValType.avxval);
-                const regkind: MCKind = if (is_avx) .vfreg else .ipreg;
-                const the_active = if (is_avx) &active_avx else &active_ipreg;
-
-                if (i.tag == .constant and i.spec == 0) {
-                    i.mckind = .fused;
-                    continue;
-                }
-
-                var regid: ?u4 = null;
-                if (i.tag == .iop) {
-                    if (self.iref(i.op1).?.ipreg()) |reg| {
-                        if (the_active[@enumToInt(reg)] <= ref) {
-                            regid = @enumToInt(reg);
-                        }
-                    }
-                }
-                if (regid == null and i.mckind == .unallocated_ipreghint) {
-                    if (i.res_type() != ValType.intptr) unreachable;
-                    if (the_active[i.mcidx] <= ref) {
-                        regid = @intCast(u4, i.mcidx);
-                    }
-                }
-
-                // TODO: reghint for avx!
-                if (regid == null) {
-                    for (the_active) |l, ri| {
-                        if (l <= ref) {
-                            regid = @intCast(u4, ri);
-                            break;
-                        }
-                    }
-                }
-
-                if (regid == null and regkind == .ipreg) {
-                    if (self.nsave < callee_saved.len) {
-                        regid = callee_saved[self.nsave].id();
-                        self.nsave += 1;
-                    }
-                }
-
-                if (regid) |ri| {
-                    i.mckind = regkind;
-                    i.mcidx = ri;
-                    the_active[ri] = i.last_use;
-                } else {
-                    i.mckind = .frameslot;
-                    if (self.nslots == 255) {
-                        return error.UDunGoofed;
-                    }
-                    i.mcidx = self.nslots;
-                    // TODO: lol reuse slots
-                    self.nslots += 1;
-                }
-            }
-        }
-    }
-}
-
 // canonical order of callee saved registers. nsave>0 means
 // the first nsave items needs to be saved and restored
 pub const callee_saved: [5]IPReg = .{ .rbx, .r12, .r13, .r14, .r15 };
@@ -1204,7 +1108,7 @@ pub const callee_saved: [5]IPReg = .{ .rbx, .r12, .r13, .r14, .r15 };
 //   2. deactivated at a kill flag in the same block (must exist if-and-only-if born flag was set)
 // fixed intervalls: ABI and instruction constraints mandating specific register
 //   -- TODO: not implemented in first iteration
-pub fn scan_alloc2(self: *Self) !void {
+pub fn scan_alloc(self: *Self) !void {
 
     // first 8 caller saved and then 5 calle saved regs
     // as allocation is greedy (currently) we will only use the latter when the 8 first are all filled
@@ -1351,7 +1255,7 @@ pub fn scan_alloc2(self: *Self) !void {
         }
     }
 
-    if (options.dbg_vregs) {
+    if (@TypeOf(options) != @TypeOf(null) and options.dbg_vregs) {
         print("used {} general purpose regs\n", .{highest_used + 1});
     }
 
@@ -1458,7 +1362,7 @@ pub fn test_analysis(self: *Self, comptime check: bool) !void {
 
     if (check) try self.check_vregs();
 
-    try self.scan_alloc2();
+    try self.scan_alloc();
     try self.resolve_phi(); // GLYTTIT
     if (check) try self.check_ir_valid();
 
