@@ -40,8 +40,8 @@ simple loop transformations.
 
 - [x] Conversion from mutable temporaries to proper SSA form
 - [x] liveliness analysis
-- [x] basic (very conservative) linear scan register allocation
-- [ ] efficient register allocation with interval spliting
+- [x] precise linear scan register allocation on SSA-form
+- [ ] efficient spilling by interval spliting
 - [ ] function calls with C ABI
 - [x] x86-64 code generation.
 - [ ] EBPF code generation (currently investigated as a [separate project](https://github.com/bfredl/eiri))
