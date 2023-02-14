@@ -96,6 +96,14 @@ pub const ShiftOp = enum {
     pub fn to_pp(self: @This()) PP {
         return @intToEnum(PP, @enumToInt(self) + 1);
     }
+
+    pub fn to_rm(self: @This()) u3 {
+        return switch (self) {
+            .hl => 4,
+            .ar => 7,
+            .hr => 5,
+        };
+    }
 };
 
 pub const Cond = enum(u4) {
@@ -686,14 +694,12 @@ pub fn mulr(self: *Self, src: IPReg) !void {
 
 // bitshift instructions
 
-pub fn shr_ri(self: *Self, dst: IPReg, count: u8) !void {
-    if (count == 1) {
-        try self.rex_wrxb(true, false, false, dst.ext());
-        try self.wb(0xD1); // SHR \rm, 1
-        try self.modRm(0b11, 5, dst.lowId());
-    } else {
-        unreachable;
-    }
+// shift with immediate count. use shorthand version when count==1
+pub fn sh_ri(self: *Self, dst: IPReg, op: ShiftOp, count: u8) !void {
+    try self.rex_wrxb(true, false, false, dst.ext());
+    try self.wb(if (count == 1) 0xD1 else 0xC1); // Sxx \rm, 1
+    try self.modRm(0b11, op.to_rm(), dst.lowId());
+    try if (count != 1) self.wb(count);
 }
 
 // VEX instructions

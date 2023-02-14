@@ -227,10 +227,10 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                                 unreachable;
                             }
                         }
-                    } else if (op == .shr) {
+                    } else if (op.asShift()) |sop| {
                         if (rhs.tag == .constant) {
                             try regmovmc(cfo, dst, lhs.*);
-                            try cfo.shr_ri(dst, @intCast(u8, rhs.op1));
+                            try cfo.sh_ri(dst, sop, @intCast(u8, rhs.op1));
                         } else {
                             unreachable;
                         }

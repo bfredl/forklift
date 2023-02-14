@@ -291,6 +291,8 @@ pub const IntBinOp = enum(u6) {
     @"and", // det finns en and
     xor,
     mul,
+    shl,
+    sar,
     shr,
 
     pub fn asAOP(self: @This()) ?CFO.AOp {
@@ -300,6 +302,15 @@ pub const IntBinOp = enum(u6) {
             .@"or" => .bor,
             .@"and" => .band,
             .xor => .xor,
+            else => null,
+        };
+    }
+
+    pub fn asShift(self: @This()) ?CFO.ShiftOp {
+        return switch (self) {
+            .shl => .hl,
+            .sar => .ar,
+            .shr => .hr,
             else => null,
         };
     }
