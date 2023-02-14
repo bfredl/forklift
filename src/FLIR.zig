@@ -211,8 +211,6 @@ pub const Inst = struct {
             .store => null,
             .iop => .intptr,
             .icmp => null, // technically the FLAG register but anyway
-            .imul => .intptr,
-            .shr => .intptr,
             .vmath => .avxval,
             .ret => null,
             .call => .intptr,
@@ -243,8 +241,6 @@ pub const Inst = struct {
             .store => 2, // addr, val
             .iop => 2,
             .icmp => 2,
-            .imul => 2,
-            .shr => 2,
             .vmath => 2,
             .ret => 1,
             .callarg => 1,
@@ -278,8 +274,6 @@ pub const Tag = enum(u8) {
     renum,
     constant,
     load,
-    imul,
-    shr, // TODO: all shifts to a family
     lea,
     store,
     iop, // imath group?
@@ -288,6 +282,27 @@ pub const Tag = enum(u8) {
     ret,
     call,
     callarg,
+};
+
+pub const IntBinOp = enum(u6) {
+    add,
+    sub,
+    @"or",
+    @"and", // det finns en and
+    xor,
+    mul,
+    shr,
+
+    pub fn asAOP(self: @This()) ?CFO.AOp {
+        return switch (self) {
+            .add => .add,
+            .sub => .sub,
+            .@"or" => .bor,
+            .@"and" => .band,
+            .xor => .xor,
+            else => null,
+        };
+    }
 };
 
 pub const MCKind = enum(u8) {
@@ -480,21 +495,12 @@ pub fn vmath(self: *Self, node: u16, vop: VMathOp, fmode: FMode, op1: u16, op2: 
     return self.addInst(node, .{ .tag = .vmath, .spec = vspec(vop, fmode), .op1 = op1, .op2 = op2 });
 }
 
-pub fn iop(self: *Self, node: u16, vop: CFO.AOp, op1: u16, op2: u16) !u16 {
-    return self.addInst(node, .{ .tag = .iop, .spec = vop.opx(), .op1 = op1, .op2 = op2 });
+pub fn iop(self: *Self, node: u16, op: IntBinOp, op1: u16, op2: u16) !u16 {
+    return self.addInst(node, .{ .tag = .iop, .spec = @enumToInt(op), .op1 = op1, .op2 = op2 });
 }
 
 pub fn icmp(self: *Self, node: u16, cond: CFO.Cond, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .icmp, .spec = cond.off(), .op1 = op1, .op2 = op2 });
-}
-
-// TODO: fold into iop, no need to special case x86 weirdology here
-pub fn imul(self: *Self, node: u16, op1: u16, op2: u16) !u16 {
-    return self.addInst(node, .{ .tag = .imul, .op1 = op1, .op2 = op2 });
-}
-
-pub fn shr(self: *Self, node: u16, op1: u16, op2: u16) !u16 {
-    return self.addInst(node, .{ .tag = .shr, .op1 = op1, .op2 = op2 });
 }
 
 pub fn putvar(self: *Self, node: u16, op1: u16, op2: u16) !void {

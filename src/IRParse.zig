@@ -184,14 +184,6 @@ const jmpmap = std.ComptimeStringMap(Cond, .{
     .{ "jna", .na },
 });
 
-const alumap = std.ComptimeStringMap(CFO.AOp, .{
-    .{ "add", .add },
-    .{ "sub", .sub },
-    .{ "and", .band },
-    .{ "or", .bor },
-    .{ "xor", .xor },
-});
-
 pub fn stmt(self: *Self, f: *Func) ParseError!bool {
     if (self.keyword()) |kw| {
         if (mem.eql(u8, kw, "end")) {
@@ -316,18 +308,10 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
             try self.expect_char(']');
             const scale: u2 = if (kind == .avxval) 2 else 0; // TODO UUUGH
             return f.ir.load(f.curnode, kind, base, idx, scale);
-        } else if (alumap.get(kw)) |op| {
+        } else if (meta.stringToEnum(FLIR.IntBinOp, kw)) |op| {
             const left = try require(try self.call_arg(f), "left");
             const right = try require(try self.call_arg(f), "right");
             return f.ir.iop(f.curnode, op, left, right);
-        } else if (mem.eql(u8, kw, "mul")) {
-            const left = try require(try self.call_arg(f), "left");
-            const right = try require(try self.call_arg(f), "right");
-            return f.ir.imul(f.curnode, left, right);
-        } else if (mem.eql(u8, kw, "shr")) {
-            const left = try require(try self.call_arg(f), "left");
-            const right = try require(try self.call_arg(f), "right");
-            return f.ir.shr(f.curnode, left, right);
         } else if (mem.eql(u8, kw, "vop")) {
             // TODO: make this optional, if both op1/op2 share a fmode
             const modename = try require(self.keyword(), "fmode");
@@ -364,6 +348,7 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
             const size = self.num() orelse 1;
             return f.ir.alloc(f.curnode, @intCast(u8, size));
         }
+        print("NIN: {s}\n", .{kw});
     }
     return error.ParseError;
 }

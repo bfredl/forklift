@@ -208,36 +208,32 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     const lhs = self.iref(i.op1).?;
                     const rhs = self.iref(i.op2).?;
                     const dst = i.ipreg() orelse @panic("missing spill");
-                    // TODO: fugly: remove once we have constraint handling in regalloc
-                    if (dst == rhs.ipreg() and dst != lhs.ipreg()) @panic("conflict!");
-                    try regmovmc(cfo, dst, lhs.*); // often elided if lhs has the same reg
-                    try regaritmc(cfo, @intToEnum(CFO.AOp, i.spec), dst, rhs.*);
-                },
-                .imul => {
-                    const lhs = self.iref(i.op1).?;
-                    const rhs = self.iref(i.op2).?;
-                    const dst = i.ipreg() orelse @panic("missing spill");
-                    if (rhs.tag == .constant) {
-                        const src = lhs.ipreg() orelse unreachable;
-                        try cfo.imulrri(dst, src, @intCast(i8, rhs.op1));
-                    } else {
-                        if (rhs.ipreg()) |rhsreg| {
+                    const op = @intToEnum(FLIR.IntBinOp, i.spec);
+
+                    if (op.asAOP()) |aop| {
+                        // TODO: fugly: remove once we have constraint handling in regalloc
+                        if (dst == rhs.ipreg() and dst != lhs.ipreg()) @panic("conflict!");
+                        try regmovmc(cfo, dst, lhs.*); // often elided if lhs has the same reg
+                        try regaritmc(cfo, aop, dst, rhs.*);
+                    } else if (op == .mul) {
+                        if (rhs.tag == .constant) {
+                            const src = lhs.ipreg() orelse unreachable;
+                            try cfo.imulrri(dst, src, @intCast(i8, rhs.op1));
+                        } else {
+                            if (rhs.ipreg()) |rhsreg| {
+                                try regmovmc(cfo, dst, lhs.*);
+                                try cfo.imulrr(dst, rhsreg);
+                            } else {
+                                unreachable;
+                            }
+                        }
+                    } else if (op == .shr) {
+                        if (rhs.tag == .constant) {
                             try regmovmc(cfo, dst, lhs.*);
-                            try cfo.imulrr(dst, rhsreg);
+                            try cfo.shr_ri(dst, @intCast(u8, rhs.op1));
                         } else {
                             unreachable;
                         }
-                    }
-                },
-                .shr => {
-                    const val = self.iref(i.op1).?;
-                    const count = self.iref(i.op2).?;
-                    const dst = i.ipreg() orelse @panic("missing spill");
-                    if (count.tag == .constant) {
-                        try regmovmc(cfo, dst, val.*);
-                        try cfo.shr_ri(dst, @intCast(u8, count.op1));
-                    } else {
-                        unreachable;
                     }
                 },
                 .constant => try mcmovi(cfo, i.*),
