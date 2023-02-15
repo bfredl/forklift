@@ -232,7 +232,12 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                             try regmovmc(cfo, dst, lhs.*);
                             try cfo.sh_ri(dst, sop, @intCast(u8, rhs.op1));
                         } else {
-                            unreachable;
+                            const src1 = lhs.ipreg() orelse {
+                                try regmovmc(cfo, dst, lhs.*);
+                                break dst;
+                            };
+                            const src2 = rhs.ipreg() orelse @panic("what now");
+                            try cfo.sx(sop, dst, src1, src2);
                         }
                     }
                 },

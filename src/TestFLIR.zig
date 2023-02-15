@@ -339,3 +339,20 @@ test "shift hr" {
     try expect(isize, 9, fun(75));
     try expect(isize, 0x1fffffffffffffff, fun(-3));
 }
+
+test "shift variable" {
+    var cfo = try parse_test(
+        \\func shifter
+        \\  %x = arg
+        \\  %y = arg
+        \\  %z = shl %x %y
+        \\  ret %z
+        \\end
+    );
+    defer cfo.deinit();
+
+    const fun = cfo.get_ptr(0, BFunc);
+    try expect(usize, 6, fun(6, 0));
+    try expect(usize, 10, fun(5, 1));
+    try expect(usize, 24, fun(6, 2));
+}
