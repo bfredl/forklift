@@ -191,7 +191,9 @@ pub fn print_blk(self: *FLIR, firstblk: u16) void {
     while (it.next()) |item| {
         const i = item.i.*;
         const chr: u8 = if (i.has_res()) '=' else ' ';
-        print("  %{} {c} {s}", .{ item.ref, chr, @tagName(i.tag) });
+        var name = @tagName(i.tag);
+        if (i.tag == .ibinop) name = "i";
+        print("  %{} {c} {s}", .{ item.ref, chr, name });
 
         if (i.tag == .variable) {
             print(" {s}", .{@tagName(i.spec_type())});
@@ -199,8 +201,8 @@ pub fn print_blk(self: *FLIR, firstblk: u16) void {
 
         if (i.tag == .vmath) {
             print(".{s}", .{@tagName(i.vop())});
-        } else if (i.tag == .iop) {
-            print(".{s}", .{@tagName(@intToEnum(CFO.AOp, i.spec))});
+        } else if (i.tag == .ibinop) {
+            print(".{s}", .{@tagName(@intToEnum(FLIR.IntBinOp, i.spec))});
         } else if (i.tag == .icmp) {
             print(".{s}", .{@tagName(@intToEnum(CFO.Cond, i.spec))});
         } else if (i.tag == .putphi) {
@@ -208,9 +210,9 @@ pub fn print_blk(self: *FLIR, firstblk: u16) void {
         }
         const nop = i.n_op(false);
         if (nop > 0) {
-            print_op(self, ' ', i.f.kill_op1, i.op1);
+            print_op(self, " ", i.f.kill_op1, i.op1);
             if (nop > 1) {
-                print_op(self, ',', i.f.kill_op2, i.op2);
+                print_op(self, ", ", i.f.kill_op2, i.op2);
             }
         }
         print_mcval(i);
@@ -218,24 +220,28 @@ pub fn print_blk(self: *FLIR, firstblk: u16) void {
             print(" *", .{});
         }
         if (i.tag == .putphi) {
-            if (self.iref(i.op2).?.ipreg()) |reg| {
-                const regsrc = self.iref(i.op1).?.ipreg();
-                print(" [{s} <- {s}] ", .{ @tagName(reg), if (regsrc) |r| @tagName(r) else "XX" });
+            if (self.ipreg(i.op2)) |reg| {
+                const regsrc = self.ipreg(i.op1);
+                if (regsrc == null or regsrc == reg) {
+                    print(" [{s}] ", .{@tagName(reg)});
+                } else {
+                    print(" [{s} <- {s}] ", .{ @tagName(reg), @tagName(regsrc.?) });
+                }
             }
         }
         print("\n", .{});
     }
 }
 
-fn print_op(self: *FLIR, pre: u8, kill: bool, ref: u16) void {
-    const k: u8 = if (kill) '!' else ' ';
-    print("{c}{c}", .{ pre, k });
+fn print_op(self: *FLIR, pre: []const u8, kill: bool, ref: u16) void {
+    print("{s}", .{pre});
     if (ref == NoRef) {
-        print("%None", .{});
+        print(" %None", .{});
     } else if (self.constval(ref)) |c| {
         print("const {}", .{c});
     } else {
-        print("%{}", .{ref});
+        const k = if (kill) "!" else "";
+        print("{s}%{}", .{ k, ref });
     }
 }
 

@@ -213,7 +213,7 @@ pub const Inst = struct {
             .load => inst.spec_type(),
             .lea => .intptr, // Lea? Who's Lea??
             .store => null,
-            .iop => .intptr,
+            .ibinop => .intptr,
             .icmp => null, // technically the FLAG register but anyway
             .vmath => .avxval,
             .ret => null,
@@ -242,7 +242,7 @@ pub const Inst = struct {
             .load => 2, // base, idx
             .lea => 2, // base, idx. elided when only used for a store!
             .store => 2, // addr, val
-            .iop => 2,
+            .ibinop => 2,
             .icmp => 2,
             .vmath => 2,
             .ret => 1,
@@ -298,7 +298,6 @@ pub fn ipval(self: *Self, ref: u16) ?IPMCVal {
 pub fn ipreg(self: *Self, ref: u16) ?IPReg {
     return (self.iref(ref) orelse return null).ipreg();
 }
-
 pub fn avxreg(self: *Self, ref: u16) ?u4 {
     return (self.iref(ref) orelse return null).avxreg();
 }
@@ -316,7 +315,7 @@ pub const Tag = enum(u8) {
     load,
     lea,
     store,
-    iop, // imath group?
+    ibinop,
     icmp,
     vmath,
     ret,
@@ -383,7 +382,7 @@ pub const MCKind = enum(u8) {
     // unused value, perhaps should have been deleted before alloc
     dead,
     // not stored as such, will be emitted togheter with the next inst
-    // example "lea" and then "store", or "load" and then iop/vmath
+    // example "lea" and then "store", or "load" and then ibinop/vmath
     fused,
 
     pub fn unallocated(self: @This()) bool {
@@ -567,8 +566,8 @@ pub fn vmath(self: *Self, node: u16, vop: VMathOp, fmode: FMode, op1: u16, op2: 
     return self.addInst(node, .{ .tag = .vmath, .spec = vspec(vop, fmode), .op1 = op1, .op2 = op2 });
 }
 
-pub fn iop(self: *Self, node: u16, op: IntBinOp, op1: u16, op2: u16) !u16 {
-    return self.addInst(node, .{ .tag = .iop, .spec = @enumToInt(op), .op1 = op1, .op2 = op2 });
+pub fn ibinop(self: *Self, node: u16, op: IntBinOp, op1: u16, op2: u16) !u16 {
+    return self.addInst(node, .{ .tag = .ibinop, .spec = @enumToInt(op), .op1 = op1, .op2 = op2 });
 }
 
 pub fn icmp(self: *Self, node: u16, cond: CFO.Cond, op1: u16, op2: u16) !u16 {

@@ -173,12 +173,12 @@ test "diamond cfg" {
 
     const left = try self.addNode();
     self.n.items[start].s[0] = left;
-    const addl = try self.iop(left, .add, v, arg2);
+    const addl = try self.ibinop(left, .add, v, arg2);
     try self.putvar(left, v, addl);
 
     const right = try self.addNode();
     self.n.items[start].s[1] = right;
-    const addr = try self.iop(right, .add, v, arg1);
+    const addr = try self.ibinop(right, .add, v, arg1);
     try self.putvar(right, v, addr);
 
     const end = try self.addNode();
@@ -186,7 +186,7 @@ test "diamond cfg" {
     self.n.items[right].s[0] = end;
 
     const const_77 = try self.const_int(77);
-    const adde = try self.iop(end, .add, v, const_77);
+    const adde = try self.ibinop(end, .add, v, const_77);
     try self.putvar(end, v, adde);
 
     try self.ret(end, v);

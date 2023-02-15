@@ -19,3 +19,13 @@
   (only worth it if the struct/algo becomes simpler than
 
 Long term: integrate codebase completely with EIRI (submodules bad! monorepos good!)
+
+pub const CallKind = enum(u8) {
+    /// op1 is function pointer, use a constant
+    fun,
+    /// platform dependent. syscall index in op1
+    /// directly encodes the linux syscall number of the target
+    /// on EPBF this will be "helper" number?
+    syscall,
+};
+

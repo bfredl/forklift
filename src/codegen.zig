@@ -176,7 +176,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                 // lea relative RBP when used
                 .alloc => {},
                 .ret => try regmovmc(cfo, .rax, self.ipval(i.op1).?),
-                .iop => {
+                .ibinop => {
                     const lhs = self.ipval(i.op1) orelse return error.FLIRError;
                     const rhs = self.ipval(i.op2) orelse return error.FLIRError;
                     const dst = i.ipreg() orelse @panic("missing spill");
