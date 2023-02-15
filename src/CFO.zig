@@ -562,7 +562,7 @@ pub fn mov(self: *Self, dst: IPReg, src: IPReg) !void {
 
 pub fn zero(self: *Self, dst: IPReg) !void {
     try self.new_inst(@returnAddress());
-    try self.rex_wrxb(false, dst.ext(), false, dst.ext());
+    try self.rex_wrxb(dst.ext(), dst.ext(), false, dst.ext());
     try self.wb(0x33); // xor reg, \rm
     try self.modRm(0b11, dst.lowId(), dst.lowId());
 }

@@ -61,6 +61,7 @@ fn fill_blk(self: Self, n: u16, first_blk: u16) !void {
                     ival.op2 = try self.read_ref(n, ival.op2);
                 }
             }
+            // read_ref might invalidate pointers
             self.f.iref(item.ref).?.* = ival;
         }
     }
@@ -71,7 +72,7 @@ fn vdi(self: Self, node: u16, v: u16) *u16 {
 }
 
 fn read_ref(self: Self, node: u16, ref: u16) !u16 {
-    const i = self.f.iref(ref) orelse return FLIR.NoRef;
+    const i = self.f.iref(ref) orelse return ref;
     if (i.tag == .variable) {
         return try self.read_var(node, ref, i.*);
     } else {

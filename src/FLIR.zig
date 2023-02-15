@@ -29,6 +29,8 @@ b: ArrayList(Block),
 // dfs: ArrayList(u16),
 preorder: ArrayList(u16),
 blkorder: ArrayList(u16),
+// This only handles int and float64 constants,
+// we need something else for "address into string table"
 // This is only used for preds currently, but use it for more stuff??
 refs: ArrayList(u16),
 narg: u16 = 0,
@@ -820,8 +822,9 @@ pub fn calc_use(self: *Self) !void {
                 }
 
                 for (i.ops(false)) |op| {
-                    const ref = self.iref(op).?;
-                    if (ref.vreg != NoRef) live |= (@as(usize, 1) << @intCast(u6, ref.vreg));
+                    if (self.iref(op)) |ref| {
+                        if (ref.vreg != NoRef) live |= (@as(usize, 1) << @intCast(u6, ref.vreg));
+                    }
                 }
             }
 
@@ -1088,8 +1091,9 @@ pub fn scan_alloc(self: *Self) !void {
             }
 
             if (i.tag == .putphi) {
-                const from = self.iref(i.op1).?;
-                if (from.ipreg()) |reg| {
+                // TODO: self.iref_reg() or something
+                const from = if (self.iref(i.op1)) |f| f.ipreg() else null;
+                if (from) |reg| {
                     const to = self.iref(i.op2).?;
                     if (to.mckind == .unallocated_raw) {
                         to.mckind = .unallocated_ipreghint;
@@ -1101,20 +1105,22 @@ pub fn scan_alloc(self: *Self) !void {
             const is_avx = (i.res_type() == ValType.avxval);
 
             if (i.f.kill_op1) {
-                const op = self.iref(i.op1).?;
-                if (op.mckind == .ipreg) free_regs_ip[op.mcidx] = true;
-                if (op.mckind == .vfreg) free_regs_avx[op.mcidx] = true;
-                if (i.mckind == .unallocated_raw and op.mckind == .ipreg and !is_avx) {
-                    i.mckind = .unallocated_ipreghint;
-                    i.mcidx = op.mcidx;
+                if (self.iref(i.op1)) |op| {
+                    if (op.mckind == .ipreg) free_regs_ip[op.mcidx] = true;
+                    if (op.mckind == .vfreg) free_regs_avx[op.mcidx] = true;
+                    if (i.mckind == .unallocated_raw and op.mckind == .ipreg and !is_avx) {
+                        i.mckind = .unallocated_ipreghint;
+                        i.mcidx = op.mcidx;
+                    }
                 }
             }
 
             // TODO: reghint for killed op2? (if symmetric, like add usw)
             if (i.f.kill_op2) {
-                const op = self.iref(i.op2).?;
-                if (op.mckind == .ipreg) free_regs_ip[op.mcidx] = true;
-                if (op.mckind == .vfreg) free_regs_avx[op.mcidx] = true;
+                if (self.iref(i.op2)) |op| {
+                    if (op.mckind == .ipreg) free_regs_ip[op.mcidx] = true;
+                    if (op.mckind == .vfreg) free_regs_avx[op.mcidx] = true;
+                }
             }
 
             if (!(i.has_res() and i.mckind.unallocated())) {
@@ -1324,7 +1330,8 @@ pub fn trivial_ins(self: *Self, i: *Inst) bool {
     switch (i.tag) {
         .empty => return true,
         .putphi => {
-            const src = self.iref(i.op1).?;
+            // TODO: src being Undef is trivial, strictly speaking
+            const src = self.iref(i.op1) orelse return false;
             const dst = self.iref(i.op2).?;
             return (src.mckind == dst.mckind and src.mcidx == dst.mcidx);
         },
