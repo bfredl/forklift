@@ -26,11 +26,11 @@ a: Allocator,
 // TODO: unmanage all these:
 n: ArrayList(Node),
 b: ArrayList(Block),
-// dfs: ArrayList(u16),
 preorder: ArrayList(u16),
 blkorder: ArrayList(u16),
 // This only handles int and float64 constants,
 // we need something else for "address into string table"
+constvals: ArrayList(u64), // TODO: make constants typed?
 // This is only used for preds currently, but use it for more stuff??
 refs: ArrayList(u16),
 narg: u16 = 0,
@@ -55,6 +55,9 @@ pub const DEAD: u16 = 0xFEFF;
 // For blocks: we cannot have more than 2^14 blocks anyway
 // for vars: don't allocate last block!
 pub const NoRef: u16 = 0xFFFF;
+// 511 constants should be enough for everyone
+// could be smarter, like dedicated Block type for constants!
+pub const ConstOff: u16 = 0xFF00;
 
 pub fn uv(s: usize) u16 {
     return @intCast(u16, s);
@@ -205,7 +208,6 @@ pub const Inst = struct {
             .putvar => null,
             .phi => inst.spec_type(),
             .putphi => null, // stated in the phi instruction
-            .constant => inst.spec_type(),
             .alloc => .intptr, // the type of .alloc is a pointer to it
             .renum => null, // should be removed at this point
             .load => inst.spec_type(),
@@ -236,7 +238,6 @@ pub const Inst = struct {
             .putvar => 2, // TODO: if (rw) 2 else 1, FAST ÅT ANDRA HÅLLET
             .phi => 0,
             .putphi => if (rw) 2 else 1,
-            .constant => 0,
             .renum => 1,
             .load => 2, // base, idx
             .lea => 2, // base, idx. elided when only used for a store!
@@ -264,6 +265,44 @@ pub const Inst = struct {
         return if (i.mckind == .vfreg) @intCast(u4, i.mcidx) else null;
     }
 };
+
+pub const IPMCVal = union(enum) {
+    ipreg: IPReg,
+    constval: u64, // bitcast to i64 for signed
+    frameslot: u8,
+
+    // TODO: this is not a builtin? (or maybe meta)
+    pub fn as_ipreg(self: @This()) ?IPReg {
+        return switch (self) {
+            .ipreg => |reg| reg,
+            else => null,
+        };
+    }
+};
+
+pub fn constval(self: *Self, ref: u16) ?u64 {
+    if (ref == NoRef) return null;
+    if (ref >= ConstOff) {
+        return self.constvals.items[ref - ConstOff];
+    }
+    return null;
+}
+
+pub fn ipval(self: *Self, ref: u16) ?IPMCVal {
+    if (self.constval(ref)) |c| return .{ .constval = c };
+    const i = self.iref(ref) orelse return null;
+    if (i.ipreg()) |reg| return .{ .ipreg = reg };
+    if (i.mckind == .frameslot) return .{ .frameslot = i.mcidx };
+    return null;
+}
+pub fn ipreg(self: *Self, ref: u16) ?IPReg {
+    return (self.iref(ref) orelse return null).ipreg();
+}
+
+pub fn avxreg(self: *Self, ref: u16) ?u4 {
+    return (self.iref(ref) orelse return null).avxreg();
+}
+
 pub const Tag = enum(u8) {
     empty = 0, // empty slot. must not be refered to!
     alloc,
@@ -274,7 +313,6 @@ pub const Tag = enum(u8) {
     /// put op1 into phi op2 of (only) successor
     putphi,
     renum,
-    constant,
     load,
     lea,
     store,
@@ -318,6 +356,15 @@ pub const IntBinOp = enum(u6) {
     }
 };
 
+pub const CallKind = enum(u8) {
+    /// op1 is function pointer, use a constant
+    fun,
+    /// platform dependent. syscall index in op1
+    /// directly encodes the linux syscall number of the target
+    /// on EPBF this will be "helper" number?
+    syscall,
+};
+
 pub const MCKind = enum(u8) {
     // not yet allocated, or Inst that trivially produces no value
     unallocated_raw = 0,
@@ -350,24 +397,27 @@ pub const MCKind = enum(u8) {
 };
 
 pub fn init(n: u16, allocator: Allocator) !Self {
+    var constvals = try ArrayList(u64).initCapacity(allocator, 8);
+    constvals.appendAssumeCapacity(0);
+    constvals.appendAssumeCapacity(1);
     return Self{
         .a = allocator,
         .n = try ArrayList(Node).initCapacity(allocator, n),
-        // .dfs = ArrayList(u16).init(allocator),
         .vregs = ArrayList(u16).init(allocator),
         .blkorder = ArrayList(u16).init(allocator),
         .preorder = ArrayList(u16).init(allocator),
         .refs = try ArrayList(u16).initCapacity(allocator, 4 * n),
+        .constvals = constvals,
         .b = try ArrayList(Block).initCapacity(allocator, 2 * n),
     };
 }
 
 pub fn deinit(self: *Self) void {
     self.n.deinit();
-    // self.dfs.deinit();
     self.blkorder.deinit();
     self.preorder.deinit();
     self.refs.deinit();
+    self.constvals.deinit();
     self.b.deinit();
     self.vregs.deinit();
 }
@@ -388,7 +438,7 @@ fn fromref(ref: u16) struct { block: u16, idx: u16 } {
 
 const BIREF = struct { n: u16, i: *Inst };
 pub fn biref(self: *Self, ref: u16) ?BIREF {
-    if (ref == NoRef) {
+    if (ref >= ConstOff) {
         return null;
     }
     const r = fromref(ref);
@@ -481,9 +531,18 @@ pub fn preInst(self: *Self, node: u16, inst: Inst) !u16 {
     return toref(blkid, free);
 }
 
-pub fn const_int(self: *Self, node: u16, val: u16) !u16 {
-    // TODO: actually store constants in a buffer, or something
-    return self.addInst(node, .{ .tag = .constant, .op1 = val, .op2 = 0, .spec = intspec(.dword).into() });
+pub fn const_uint(self: *Self, val: u64) !u16 {
+    for (self.constvals.items) |v, i| {
+        if (v == val) return uv(ConstOff + i);
+    }
+    if (self.constvals.items.len == 511) return error.FLIRError;
+    const ref = ConstOff + self.constvals.items.len;
+    try self.constvals.append(val);
+    return uv(ref);
+}
+
+pub fn const_int(self: *Self, val: i32) !u16 {
+    return const_uint(self, @bitCast(u32, val));
 }
 
 pub fn binop(self: *Self, node: u16, tag: Tag, op1: u16, op2: u16) !u16 {
@@ -766,7 +825,7 @@ pub fn reorder_nodes(self: *Self) !void {
 // ni = node id of user
 pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
     _ = user;
-    const ref = self.biref(used).?;
+    const ref = self.biref(used) orelse return;
     //ref.i.n_use += 1;
     // it leaks to another block: give it a virtual register number
     if (ref.n != ni) {
@@ -1083,10 +1142,6 @@ pub fn scan_alloc(self: *Self) !void {
                 try self.alloc_arg(i);
                 // TODO: FUBBIK, we need to break this up as thiss will
                 // conflict with nested calls
-                continue;
-            } else if (i.tag == .constant and i.mckind.unallocated()) {
-                // TODO: check as needed
-                i.mckind = .fused;
                 continue;
             }
 

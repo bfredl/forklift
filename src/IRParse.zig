@@ -273,7 +273,7 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
 
 pub fn call_arg(self: *Self, f: *Func) ParseError!?u16 {
     if (self.num()) |numval| {
-        return try f.ir.const_int(f.curnode, @intCast(u16, numval));
+        return try f.ir.const_int(@intCast(i32, numval));
     } else if (try self.varname()) |src| {
         return f.refs.get(src) orelse {
             print("undefined ref %{s}!\n", .{src});

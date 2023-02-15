@@ -166,8 +166,8 @@ test "diamond cfg" {
     const arg2 = try self.arg();
     const v = try self.variable();
 
-    // const const_0 = try self.const_int(start, 0);
-    const const_42 = try self.const_int(start, 42);
+    // const const_0 = try self.const_int(0);
+    const const_42 = try self.const_int(42);
     try self.putvar(start, v, const_42);
     _ = try self.icmp(start, .l, arg1, v);
 
@@ -185,7 +185,7 @@ test "diamond cfg" {
     self.n.items[left].s[0] = end;
     self.n.items[right].s[0] = end;
 
-    const const_77 = try self.const_int(end, 77);
+    const const_77 = try self.const_int(77);
     const adde = try self.iop(end, .add, v, const_77);
     try self.putvar(end, v, adde);
 

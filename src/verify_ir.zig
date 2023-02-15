@@ -203,18 +203,14 @@ pub fn print_blk(self: *FLIR, firstblk: u16) void {
             print(".{s}", .{@tagName(@intToEnum(CFO.AOp, i.spec))});
         } else if (i.tag == .icmp) {
             print(".{s}", .{@tagName(@intToEnum(CFO.Cond, i.spec))});
-        } else if (i.tag == .constant) {
-            print(" c[{}]", .{i.op1});
         } else if (i.tag == .putphi) {
             print(" %{} <-", .{i.op2});
         }
         const nop = i.n_op(false);
         if (nop > 0) {
-            const k1: u8 = if (i.f.kill_op1) '!' else ' ';
-            print(" {c}%{}", .{ k1, i.op1 });
+            print_op(self, ' ', i.f.kill_op1, i.op1);
             if (nop > 1) {
-                const k2: u8 = if (i.f.kill_op2) '!' else ' ';
-                print(",{c}%{}", .{ k2, i.op2 });
+                print_op(self, ',', i.f.kill_op2, i.op2);
             }
         }
         print_mcval(i);
@@ -228,6 +224,18 @@ pub fn print_blk(self: *FLIR, firstblk: u16) void {
             }
         }
         print("\n", .{});
+    }
+}
+
+fn print_op(self: *FLIR, pre: u8, kill: bool, ref: u16) void {
+    const k: u8 = if (kill) '!' else ' ';
+    print("{c}{c}", .{ pre, k });
+    if (ref == NoRef) {
+        print("%None", .{});
+    } else if (self.constval(ref)) |c| {
+        print("const {}", .{c});
+    } else {
+        print("%{}", .{ref});
     }
 }
 

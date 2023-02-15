@@ -6,6 +6,7 @@ const CFO = @import("./CFO.zig");
 const IPReg = CFO.IPReg;
 const VMathOp = CFO.VMathOp;
 const Inst = FLIR.Inst;
+const IPMCVal = FLIR.IPMCVal;
 const uv = FLIR.uv;
 const ValType = FLIR.ValType;
 const EAddr = CFO.EAddr;
@@ -75,11 +76,12 @@ pub fn makejmp(self: *FLIR, cfo: *CFO, cond: ?CFO.Cond, ni: u16, si: u1, labels:
 
 // lol no co-recursive inferred error sets
 const EERROR = error{ WHAAAAA, @"TODO: unfused lea", VOLKTANZ };
-fn get_eaddr(self: *FLIR, i: Inst) EERROR!EAddr {
+fn get_eaddr(self: *FLIR, ref: u16) EERROR!EAddr {
+    const i = self.iref(ref).?;
     if (i.tag == .alloc) {
         return CFO.a(.rbp).o(slotoff(i.op1));
     } else if (i.tag == .lea) {
-        return get_eaddr_load_or_lea(self, i);
+        return get_eaddr_load_or_lea(self, i.*);
     } else {
         // TODO: spill spall supllit?
         const base = i.ipreg() orelse return error.WHAAAAA;
@@ -89,14 +91,13 @@ fn get_eaddr(self: *FLIR, i: Inst) EERROR!EAddr {
 
 // i must either be a load or lea instruction.
 fn get_eaddr_load_or_lea(self: *FLIR, i: Inst) !EAddr {
-    const base = self.iref(i.op1).?.*;
 
     // TODO: if base is an un-fused .lea we should use its target
     // ipreg instead.
-    var eaddr = try get_eaddr(self, base);
+    var eaddr = try get_eaddr(self, i.op1);
 
     if (i.op2 == FLIR.NoRef) return eaddr;
-    const idx = ipval(self, i.op2) orelse return error.WHAAAAA;
+    const idx = self.ipval(i.op2) orelse return error.WHAAAAA;
     switch (idx) {
         .ipreg => |reg| {
             if (eaddr.index != null) {
@@ -126,28 +127,6 @@ pub fn set_pred(self: *FLIR, cfo: *CFO, targets: [][2]u32, ni: u16) !void {
             }
         }
     }
-}
-
-const IPMCVal = union(enum) {
-    ipreg: IPReg,
-    constval: u64, // bitcast to i64 for signed
-    frameslot: u8,
-
-    // TODO: this is not a builtin? (or maybe meta)
-    fn as_ipreg(self: @This()) ?IPReg {
-        return switch (self) {
-            .ipreg => |reg| reg,
-            else => null,
-        };
-    }
-};
-
-fn ipval(self: *FLIR, ref: u16) ?IPMCVal {
-    const i = self.iref(ref) orelse return null;
-    if (i.tag == .constant) return .{ .constval = i.op1 };
-    if (i.mckind == .ipreg) return .{ .ipreg = @intToEnum(IPReg, i.mcidx) };
-    if (i.mckind == .frameslot) return .{ .frameslot = i.mcidx };
-    return null;
 }
 
 pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
@@ -196,10 +175,10 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                 .arg, .phi => {},
                 // lea relative RBP when used
                 .alloc => {},
-                .ret => try regmovmc(cfo, .rax, ipval(self, i.op1).?),
+                .ret => try regmovmc(cfo, .rax, self.ipval(i.op1).?),
                 .iop => {
-                    const lhs = ipval(self, i.op1) orelse return error.FLIRError;
-                    const rhs = ipval(self, i.op2) orelse return error.FLIRError;
+                    const lhs = self.ipval(i.op1) orelse return error.FLIRError;
+                    const rhs = self.ipval(i.op2) orelse return error.FLIRError;
                     const dst = i.ipreg() orelse @panic("missing spill");
                     const op = @intToEnum(FLIR.IntBinOp, i.spec);
 
@@ -237,13 +216,13 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                         }
                     }
                 },
-
-                .constant => if (i.mckind != .fused) @panic("I cannot believe you've done this"),
                 .icmp => {
                     // TODO: we can actually cmp [slot], reg as well as cmp reg, [slot].
                     // just `cmp [slot1], [slot2]` is a violation
-                    const lhs = self.iref(i.op1).?.ipreg() orelse @panic("missing unspill");
-                    const rhs = ipval(self, i.op2) orelse return error.FLIRError;
+                    // although "cmp imm, reg" needs an operand swap.
+                    // best if an earlier ABI step takes care of all of this
+                    const lhs = self.ipreg(i.op1) orelse @panic("missing unspill");
+                    const rhs = self.ipval(i.op2) orelse return error.FLIRError;
                     try regaritmc(cfo, .cmp, lhs, rhs);
                     cond = @intToEnum(CFO.Cond, i.spec);
                 },
@@ -251,8 +230,8 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     // TODO: actually check for parallell-move conflicts
                     // either here or as an extra deconstruction step
                     // TODO: phi of avxval
-                    const dest = ipval(self, i.op2).?;
-                    const src = ipval(self, i.op1) orelse return error.FLIRError;
+                    const dest = self.ipval(i.op2) orelse return error.FLIRError;
+                    const src = self.ipval(i.op1) orelse return error.FLIRError;
                     try movmcs(cfo, dest, src);
                 },
                 .load => {
@@ -281,24 +260,24 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     // const eaddr = CFO.qi(base, idx);
                     if (i.mckind == .fused) {} else {
                         if (true) unreachable;
-                        const base = self.iref(i.op1).?.ipreg() orelse unreachable;
-                        const idx = self.iref(i.op2).?.ipreg() orelse unreachable;
+                        const base = self.ipreg(i.op1) orelse unreachable;
+                        const idx = self.ipreg(i.op2) orelse unreachable;
                         const dst = i.ipreg() orelse @panic("missing spill");
                         try cfo.lea(dst, CFO.qi(base, idx));
                     }
                 },
                 .store => {
-                    var eaddr = try get_eaddr(self, self.iref(i.op1).?.*);
+                    var eaddr = try get_eaddr(self, i.op1);
                     switch (i.mem_type()) {
                         .intptr => |size| {
-                            const val = ipval(self, i.op2) orelse return error.NoYouCantPutThatThere;
+                            const val = self.ipval(i.op2) orelse return error.NoYouCantPutThatThere;
                             switch (val) {
-                                .ipreg => |ipreg| {
+                                .ipreg => |reg| {
                                     switch (size) {
                                         .byte => {
-                                            try cfo.movmr_byte(eaddr, ipreg);
+                                            try cfo.movmr_byte(eaddr, reg);
                                         },
-                                        .quadword => try cfo.movmr(eaddr, ipreg),
+                                        .quadword => try cfo.movmr(eaddr, reg),
                                         else => unreachable,
                                     }
                                 },
@@ -315,20 +294,19 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                             }
                         },
                         .avxval => |fmode| {
-                            const val = self.iref(i.op2).?;
-                            const src = val.avxreg() orelse return error.NoYouCantPutThatThere;
+                            const src = self.avxreg(i.op2) orelse return error.NoYouCantPutThatThere;
                             try cfo.vmovumr(fmode, eaddr, src);
                         },
                     }
                 },
                 .vmath => {
-                    const x = self.iref(i.op1).?.avxreg() orelse unreachable;
-                    const y = self.iref(i.op2).?.avxreg() orelse unreachable;
-                    const dst = i.avxreg() orelse unreachable;
+                    const x = self.avxreg(i.op1) orelse return error.FLIRError;
+                    const y = self.avxreg(i.op2) orelse return error.FLIRError;
+                    const dst = i.avxreg() orelse return error.FLIRError;
                     try cfo.vmathf(i.vop(), i.fmode(), dst, x, y);
                 },
                 .callarg => {
-                    try regmovmc(cfo, i.ipreg().?, ipval(self, i.op1).?);
+                    try regmovmc(cfo, i.ipreg().?, self.ipval(i.op1).?);
                 },
                 .call => {
                     try movri_zero(cfo, .rax, i.op1);
