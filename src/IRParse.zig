@@ -335,6 +335,7 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
                 print("unknown syscall: '{s}'\n", .{name});
                 return error.ParseError;
             };
+            const sysnum = try f.ir.const_int(@intCast(i32, @enumToInt(syscall)));
             var argno: u8 = 0;
             // TODO: call_arg could be something more complex later,
             // to simplify analyis we want all .callarg insn
@@ -343,7 +344,7 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
                 try f.ir.callarg(f.curnode, argno, arg);
                 argno += 1;
             }
-            return try f.ir.call(f.curnode, @intCast(u16, @enumToInt(syscall)));
+            return try f.ir.call(f.curnode, .syscall, sysnum);
         } else if (mem.eql(u8, kw, "alloc")) {
             const size = self.num() orelse 1;
             return f.ir.alloc(f.curnode, @intCast(u8, size));

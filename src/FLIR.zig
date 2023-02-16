@@ -596,9 +596,10 @@ pub fn callarg(self: *Self, node: u16, num: u8, ref: u16) !void {
     });
 }
 
-pub fn call(self: *Self, node: u16, num: u16) !u16 {
+pub fn call(self: *Self, node: u16, kind: CallKind, num: u16) !u16 {
     return try self.addInst(node, .{
         .tag = .call,
+        .spec = @enumToInt(kind),
         .op1 = num,
         .op2 = NoRef,
         .mckind = .ipreg,

@@ -309,8 +309,14 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     try regmovmc(cfo, i.ipreg().?, self.ipval(i.op1).?);
                 },
                 .call => {
-                    try movri_zero(cfo, .rax, i.op1);
-                    try cfo.syscall();
+                    const kind = @intToEnum(FLIR.CallKind, i.spec);
+                    switch (kind) {
+                        .syscall => {
+                            try regmovmc(cfo, .rax, self.ipval(i.op1).?);
+                            try cfo.syscall();
+                        },
+                        else => unreachable,
+                    }
                 },
                 else => {
                     print("unhandled tag: {}\n", .{i.tag});
