@@ -20,12 +20,8 @@
 
 Long term: integrate codebase completely with EIRI (submodules bad! monorepos good!)
 
-pub const CallKind = enum(u8) {
-    /// op1 is function pointer, use a constant
-    fun,
-    /// platform dependent. syscall index in op1
-    /// directly encodes the linux syscall number of the target
-    /// on EPBF this will be "helper" number?
-    syscall,
-};
+pub fn vmovdq_vg(self: *Self, quad: bool, dst: u4, src: IPReg) !void {
+    try self.new_inst(@returnAddress());
+    try self.vex3(wide, dst.ext(), src1.ext(), false, .h0F38, src2.id(), false, pp);
+}
 

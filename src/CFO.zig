@@ -428,15 +428,19 @@ pub fn vex3(self: *Self, w: bool, r: bool, x: bool, b: bool, mm: MM, vv: u4, l: 
 }
 
 pub fn vex0fwig(self: *Self, r: bool, x: bool, b: bool, vv: u4, l: bool, pp: PP) !void {
-    // TODO: stage2
-    // try if (x or b) self.vex3(false, r, x, b, .h0F, vv, l, pp) else self.vex2(r, vv, l, pp);
-    if (x or b) (try self.vex3(false, r, x, b, .h0F, vv, l, pp)) else (try self.vex2(r, vv, l, pp));
+    try if (x or b) self.vex3(false, r, x, b, .h0F, vv, l, pp) else self.vex2(r, vv, l, pp);
 }
 
 // control flow
 pub fn ret(self: *Self) !void {
     try self.new_inst(@returnAddress());
     try self.wb(0xC3);
+}
+
+// for quick debugging change ret to retnasm
+pub fn retnasm(self: *Self) !void {
+    try self.ret();
+    try self.dbg_nasm(std.testing.allocator);
 }
 
 pub fn enter(self: *Self) !void {
@@ -462,6 +466,13 @@ pub fn syscall(self: *Self) !void {
     // hello?
     try self.wb(0x0F);
     try self.wb(0x05);
+}
+
+pub fn call_ptr(self: *Self, reg: IPReg) !void {
+    try self.new_inst(@returnAddress());
+    try self.rex_wrxb(false, false, false, reg.ext());
+    try self.wb(0xFF);
+    try self.modRm(0b11, 2, reg.lowId());
 }
 
 // there..

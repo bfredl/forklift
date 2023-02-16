@@ -6,12 +6,6 @@ const expectEqual = std.testing.expectEqual;
 const a = Self.a;
 const bo = Self.bo;
 
-// for quick debugging change ret to retnasm
-pub fn retnasm(self: *Self) !void {
-    try self.ret();
-    try self.dbg_nasm(test_allocator);
-}
-
 test "return first argument" {
     var cfo = try Self.init(test_allocator);
     defer cfo.deinit();
@@ -365,4 +359,21 @@ test "shlx (shift left)" {
 
     var retval = try cfo.test_call2(17, 3);
     try expectEqual(@as(usize, 136), retval);
+}
+
+fn multiplier(arg: u64) callconv(.C) u64 {
+    return arg * 10 + 7;
+}
+
+test "indirect call" {
+    var cfo = try Self.init(test_allocator);
+    defer cfo.deinit();
+
+    try cfo.mov(.r10, .rdi);
+    try cfo.mov(.rdi, .rsi); // 2nd arg is now first
+    try cfo.call_ptr(.r10);
+    try cfo.ret();
+
+    var retval = try cfo.test_call2(@ptrToInt(&multiplier), 14);
+    try expectEqual(@as(usize, 147), retval);
 }
