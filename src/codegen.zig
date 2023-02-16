@@ -58,7 +58,7 @@ fn movmcs(cfo: *CFO, dst: IPMCVal, src: IPMCVal) !void {
         .ipreg => |reg| try regmovmc(cfo, reg, src),
         else => switch (src) {
             .ipreg => |reg| try mcmovreg(cfo, dst, reg),
-            else => @panic("unspill/respill"),
+            else => return error.SpillError, // TODO: mov [slot], imm32 (s.e. 64) OK
         },
     }
 }
@@ -75,7 +75,7 @@ pub fn makejmp(self: *FLIR, cfo: *CFO, cond: ?CFO.Cond, ni: u16, si: u1, labels:
 }
 
 // lol no co-recursive inferred error sets
-const EERROR = error{ WHAAAAA, @"TODO: unfused lea", VOLKTANZ };
+const EERROR = error{ SpillError, @"TODO: unfused lea", FLIRError };
 fn get_eaddr(self: *FLIR, ref: u16) EERROR!EAddr {
     const i = self.iref(ref).?;
     if (i.tag == .alloc) {
@@ -83,8 +83,7 @@ fn get_eaddr(self: *FLIR, ref: u16) EERROR!EAddr {
     } else if (i.tag == .lea) {
         return get_eaddr_load_or_lea(self, i.*);
     } else {
-        // TODO: spill spall supllit?
-        const base = i.ipreg() orelse return error.WHAAAAA;
+        const base = i.ipreg() orelse return error.SpillError;
         return CFO.a(base);
     }
 }
@@ -97,7 +96,7 @@ fn get_eaddr_load_or_lea(self: *FLIR, i: Inst) !EAddr {
     var eaddr = try get_eaddr(self, i.op1);
 
     if (i.op2 == FLIR.NoRef) return eaddr;
-    const idx = self.ipval(i.op2) orelse return error.WHAAAAA;
+    const idx = self.ipval(i.op2) orelse return error.FLIRError;
     switch (idx) {
         .ipreg => |reg| {
             if (eaddr.index != null) {
@@ -109,7 +108,7 @@ fn get_eaddr_load_or_lea(self: *FLIR, i: Inst) !EAddr {
         .constval => |c| {
             eaddr = eaddr.o(@intCast(i32, c)); // TODO: scale just disappears??
         },
-        else => return error.VOLKTANZ,
+        else => return error.SpillError,
     }
     return eaddr;
 }
@@ -179,7 +178,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                 .ibinop => {
                     const lhs = self.ipval(i.op1) orelse return error.FLIRError;
                     const rhs = self.ipval(i.op2) orelse return error.FLIRError;
-                    const dst = i.ipreg() orelse @panic("missing spill");
+                    const dst = i.ipreg() orelse return error.SpillError;
                     const op = @intToEnum(FLIR.IntBinOp, i.spec);
 
                     if (op.asAOP()) |aop| {
@@ -190,14 +189,14 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     } else if (op == .mul) {
                         switch (rhs) {
                             .constval => |c| {
-                                const src = lhs.as_ipreg() orelse @panic("nheee");
+                                const src = lhs.as_ipreg() orelse return error.SpillError; // TODO: can be mem
                                 try cfo.imulrri(dst, src, @intCast(i8, c));
                             },
                             .ipreg => if (rhs.as_ipreg()) |rhsreg| {
                                 try regmovmc(cfo, dst, lhs);
                                 try cfo.imulrr(dst, rhsreg);
                             },
-                            else => unreachable,
+                            else => return error.SpillError, // TODO: can be mem if lhs reg
                         }
                     } else if (op.asShift()) |sop| {
                         switch (rhs) {
@@ -212,7 +211,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                                 };
                                 try cfo.sx(sop, dst, src1, src2);
                             },
-                            else => @panic("fast... nej."),
+                            else => return error.SpillError,
                         }
                     }
                 },
@@ -221,7 +220,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     // just `cmp [slot1], [slot2]` is a violation
                     // although "cmp imm, reg" needs an operand swap.
                     // best if an earlier ABI step takes care of all of this
-                    const lhs = self.ipreg(i.op1) orelse @panic("missing unspill");
+                    const lhs = self.ipreg(i.op1) orelse return error.SpillError;
                     const rhs = self.ipval(i.op2) orelse return error.FLIRError;
                     try regaritmc(cfo, .cmp, lhs, rhs);
                     cond = @intToEnum(CFO.Cond, i.spec);
@@ -240,7 +239,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     switch (spec_type) {
                         .intptr => |size| {
                             // tbh, loading from memory into a spill slot is bit stupid
-                            const dst = i.ipreg() orelse @panic("missing spill");
+                            const dst = i.ipreg() orelse return error.SpillError;
                             switch (size) {
                                 .byte => {
                                     try cfo.movrm_byte(dst, eaddr);
@@ -250,7 +249,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                             }
                         },
                         .avxval => |fmode| {
-                            const dst = i.avxreg() orelse unreachable;
+                            const dst = i.avxreg() orelse return error.FLIRError;
                             try cfo.vmovurm(fmode, dst, eaddr);
                         },
                     }
@@ -260,9 +259,9 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     // const eaddr = CFO.qi(base, idx);
                     if (i.mckind == .fused) {} else {
                         if (true) unreachable;
-                        const base = self.ipreg(i.op1) orelse unreachable;
-                        const idx = self.ipreg(i.op2) orelse unreachable;
-                        const dst = i.ipreg() orelse @panic("missing spill");
+                        const base = self.ipreg(i.op1) orelse return error.SpillError;
+                        const idx = self.ipreg(i.op2) orelse return error.SpillError;
+                        const dst = i.ipreg() orelse return error.SpillError;
                         try cfo.lea(dst, CFO.qi(base, idx));
                     }
                 },
@@ -270,7 +269,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     var eaddr = try get_eaddr(self, i.op1);
                     switch (i.mem_type()) {
                         .intptr => |size| {
-                            const val = self.ipval(i.op2) orelse return error.NoYouCantPutThatThere;
+                            const val = self.ipval(i.op2) orelse return error.FLIRError;
                             switch (val) {
                                 .ipreg => |reg| {
                                     switch (size) {
@@ -290,11 +289,11 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                                         else => unreachable,
                                     }
                                 },
-                                else => @panic("respill"),
+                                else => return error.SpillError,
                             }
                         },
                         .avxval => |fmode| {
-                            const src = self.avxreg(i.op2) orelse return error.NoYouCantPutThatThere;
+                            const src = self.avxreg(i.op2) orelse return error.FLIRError;
                             try cfo.vmovumr(fmode, eaddr, src);
                         },
                     }
@@ -320,7 +319,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                 },
                 else => {
                     print("unhandled tag: {}\n", .{i.tag});
-                    return error.Panik;
+                    return error.FLIRError;
                 },
             }
         }
