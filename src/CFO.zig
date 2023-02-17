@@ -468,6 +468,29 @@ pub fn syscall(self: *Self) !void {
     try self.wb(0x05);
 }
 
+pub fn call_rel(self: *Self, addr: u32) !void {
+    try self.new_inst(@returnAddress());
+    const rel_pos = self.get_target() + 5;
+    // TODO: check bounds
+    const diff = @intCast(i32, addr) - @intCast(i32, rel_pos);
+    try self.wb(0xE8);
+    try self.wd(diff);
+}
+
+pub fn maybe_call_rel_abs(self: *Self, addr: *const u8) !?void {
+    // TRICKY: this assumes code won't move.
+    const rel_pos = @ptrToInt(self.code.items.ptr) + self.get_target() + 5;
+    // This should be safe if we stay in USER space (0 <= intptr < 2**47)
+    const diff = @intCast(isize, @ptrToInt(addr)) - @intCast(isize, rel_pos);
+    const short_diff = @truncate(i32, diff);
+    if (diff != short_diff) return null;
+
+    try self.new_inst(@returnAddress());
+    try self.wb(0xE8);
+    try self.wd(short_diff);
+    return {};
+}
+
 pub fn call_ptr(self: *Self, reg: IPReg) !void {
     try self.new_inst(@returnAddress());
     try self.rex_wrxb(false, false, false, reg.ext());

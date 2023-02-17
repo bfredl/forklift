@@ -25,3 +25,6 @@ pub fn vmovdq_vg(self: *Self, quad: bool, dst: u4, src: IPReg) !void {
     try self.vex3(wide, dst.ext(), src1.ext(), false, .h0F38, src2.id(), false, pp);
 }
 
+
+std.debug.print("\nnee: {}", .{std.os.system.getpid()});
+std.time.sleep(1000 * 1e9);

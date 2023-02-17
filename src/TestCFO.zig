@@ -375,5 +375,23 @@ test "indirect call" {
     try cfo.ret();
 
     var retval = try cfo.test_call2(@ptrToInt(&multiplier), 14);
+
     try expectEqual(@as(usize, 147), retval);
+}
+
+test "direct call" {
+    // std.heap.next_mmap_addr_hint = @intToPtr(@TypeOf(std.heap.next_mmap_addr_hint), @ptrToInt(&multiplier) & ~@as(usize, 0x0FFF));
+    // std.debug.print("\nBRK: {}\n", .{@intToPtr(*u8, std.os.linux.syscall1(.brk, 0))});
+    // Well I made it, despite your directions
+    std.heap.next_mmap_addr_hint = @intToPtr(@TypeOf(std.heap.next_mmap_addr_hint), 0x01000000);
+    var cfo = try Self.init(test_allocator);
+    // std.debug.print("\nyes: {}\nbut: {*}\n", .{ &multiplier, cfo.code.items.ptr });
+
+    defer cfo.deinit();
+
+    try cfo.maybe_call_rel_abs(@ptrCast(*const u8, &multiplier)) orelse return error.BadDirections;
+    try cfo.ret();
+
+    var retval = try cfo.test_call2(4, 1337);
+    try expectEqual(@as(usize, 47), retval);
 }
