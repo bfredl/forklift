@@ -395,3 +395,34 @@ test "direct call" {
     var retval = try cfo.test_call2(4, 1337);
     try expectEqual(@as(usize, 47), retval);
 }
+
+test "local call" {
+    // std.heap.next_mmap_addr_hint = @intToPtr(@TypeOf(std.heap.next_mmap_addr_hint), @ptrToInt(&multiplier) & ~@as(usize, 0x0FFF));
+    // std.debug.print("\nBRK: {}\n", .{@intToPtr(*u8, std.os.linux.syscall1(.brk, 0))});
+    // Well I made it, despite your directions
+    std.heap.next_mmap_addr_hint = @intToPtr(@TypeOf(std.heap.next_mmap_addr_hint), 0x01000000);
+    var cfo = try Self.init(test_allocator);
+    // std.debug.print("\nyes: {}\nbut: {*}\n", .{ &multiplier, cfo.code.items.ptr });
+
+    defer cfo.deinit();
+
+    const entry_nested = cfo.get_target();
+    try cfo.mov(.rax, .rdi);
+    try cfo.sh_ri(.rax, .hl, 10);
+    try cfo.arit(.add, .rax, .rsi);
+    try cfo.ret();
+
+    const entry = cfo.get_target();
+    try cfo.movri(.rdi, 1000);
+    try cfo.movri(.rsi, 237);
+    try cfo.call_rel(entry_nested);
+    try cfo.sh_ri(.rax, .hl, 1);
+    try cfo.ret();
+
+    try cfo.finalize();
+    const fun = cfo.get_ptr(entry, *const fn () callconv(.C) u64);
+    try expectEqual(@as(u64, 2048474), fun());
+    // why not
+    const fun2 = cfo.get_ptr(entry_nested, *const fn (usize, usize) callconv(.C) u64);
+    try expectEqual(@as(u64, 10243), fun2(10, 3));
+}
