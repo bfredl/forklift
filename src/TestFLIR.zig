@@ -8,15 +8,12 @@ const os = std.os;
 const IRParse = @import("./IRParse.zig");
 const test_allocator = std.testing.allocator;
 
-pub fn parse(ir: []const u8) !FLIR {
-    // small init size on purpose: must allow reallocations in place
-    var self = try FLIR.init(4, test_allocator);
+pub fn parse(self: *FLIR, ir: []const u8) !void {
     var parser = IRParse.init(ir);
-    parser.parse_func(&self, test_allocator) catch |e| {
+    parser.parse_func(self, test_allocator) catch |e| {
         print("fail at {}\n", .{parser.pos});
         return e;
     };
-    return self;
 }
 
 pub fn analyze_generate(self: *FLIR) !CFO {
@@ -30,8 +27,11 @@ pub fn analyze_generate(self: *FLIR) !CFO {
 }
 
 pub fn parse_test(ir: []const u8) !CFO {
-    var self = try parse(ir);
+    // small init size on purpose: must allow reallocations in place
+    var self = try FLIR.init(4, test_allocator);
     defer self.deinit();
+    try parse(&self, ir);
+
     return analyze_generate(&self);
 }
 
@@ -195,7 +195,8 @@ test "diamond cfg" {
 }
 
 test "maybe_split" {
-    var self = try parse(
+    var self = try FLIR.init(4, test_allocator);
+    try parse(&self,
         \\func returner
         \\  %x = arg
         \\  %c = 1
