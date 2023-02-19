@@ -21,7 +21,7 @@ pub fn analyze_generate(self: *FLIR) !CFO {
 
     var cfo = try CFO.init(test_allocator);
 
-    _ = try @import("./codegen.zig").codegen(self, &cfo, false);
+    _ = try self.codegen(&cfo, false);
     try cfo.finalize();
     return cfo;
 }
@@ -356,4 +356,42 @@ test "shift variable" {
     try expect(usize, 6, fun(6, 0));
     try expect(usize, 10, fun(5, 1));
     try expect(usize, 24, fun(6, 2));
+}
+
+test "multi function" {
+    var cfo = try CFO.init(test_allocator);
+    defer cfo.deinit();
+    var self = try FLIR.init(4, test_allocator);
+    defer self.deinit();
+
+    try parse(&self,
+        \\func adder
+        \\  %x = arg
+        \\  %y = arg
+        \\  %z = shl %x 1
+        \\  %sum = add %y %z
+        \\  ret %sum
+        \\end
+    );
+    try self.test_analysis(true);
+    const func1addr = try self.codegen(&cfo, false);
+
+    self.reinit();
+    try parse(&self,
+        \\func multiplier
+        \\  %x = arg
+        \\  %y = arg
+        \\  %z = mul %x %y
+        \\  ret %z
+        \\end
+    );
+    try self.test_analysis(true);
+    const func2addr = try self.codegen(&cfo, false);
+
+    try cfo.finalize();
+
+    const fun1 = cfo.get_ptr(func1addr, BFunc);
+    const fun2 = cfo.get_ptr(func2addr, BFunc);
+    try expect(usize, 210, fun1(100, 10));
+    try expect(usize, 1000, fun2(100, 10));
 }

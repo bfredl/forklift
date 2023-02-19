@@ -411,6 +411,27 @@ pub fn init(n: u16, allocator: Allocator) !Self {
     };
 }
 
+pub fn reinit(self: *Self) void {
+    const info = @typeInfo(Self).Struct;
+
+    // 1. reset fields with initializers to their initial value (most int members)
+    // 2. set ArrayList members to empty (but keep existing allocations)
+    inline for (info.fields) |field| {
+        if (field.default_value) |default_value_ptr| {
+            const default_value = @ptrCast(*align(1) const field.type, default_value_ptr).*;
+            @field(self, field.name) = default_value;
+        } else if (@typeInfo(field.type) == .Struct) {
+            if (@hasField(field.type, "items")) {
+                @field(self, field.name).items.len = 0;
+            }
+        }
+    }
+
+    // FUBBIT
+    self.constvals.appendAssumeCapacity(0);
+    self.constvals.appendAssumeCapacity(1);
+}
+
 pub fn deinit(self: *Self) void {
     self.n.deinit();
     self.blkorder.deinit();
@@ -1406,6 +1427,8 @@ pub fn empty(self: *Self, ni: u16, allow_succ: bool) bool {
     assert(node.s[1] == 0);
     return true;
 }
+
+pub const codegen = @import("./codegen.zig").codegen;
 
 // force tests to run:
 test {
