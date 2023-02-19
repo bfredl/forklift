@@ -336,15 +336,16 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
                 return error.ParseError;
             };
             const sysnum = try f.ir.const_int(@intCast(i32, @enumToInt(syscall)));
-            var argno: u8 = 0;
-            // TODO: call_arg could be something more complex later,
-            // to simplify analyis we want all .callarg insn
-            // in a row before the .call
-            while (try self.call_arg(f)) |arg| {
-                try f.ir.callarg(f.curnode, argno, arg);
-                argno += 1;
-            }
+
+            try self.parse_args(f);
+
             return try f.ir.call(f.curnode, .syscall, sysnum);
+        } else if (mem.eql(u8, kw, "call")) {
+            // TODO: obviously should be a function name
+            const off = self.num() orelse return error.ParseError;
+            const constoff = try f.ir.const_uint(off);
+            try self.parse_args(f);
+            return try f.ir.call(f.curnode, .near, constoff);
         } else if (mem.eql(u8, kw, "alloc")) {
             const size = self.num() orelse 1;
             return f.ir.alloc(f.curnode, @intCast(u8, size));
@@ -352,4 +353,15 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
         print("NIN: {s}\n", .{kw});
     }
     return error.ParseError;
+}
+
+pub fn parse_args(self: *Self, f: *Func) ParseError!void {
+    var argno: u8 = 0;
+    // TODO: call_arg could be something more complex later,
+    // to simplify analyis we want all .callarg insn
+    // in a row before the .call
+    while (try self.call_arg(f)) |arg| {
+        try f.ir.callarg(f.curnode, argno, arg);
+        argno += 1;
+    }
 }

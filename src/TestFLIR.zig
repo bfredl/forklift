@@ -395,3 +395,46 @@ test "multi function" {
     try expect(usize, 210, fun1(100, 10));
     try expect(usize, 1000, fun2(100, 10));
 }
+
+test "call near" {
+    var cfo = try CFO.init(test_allocator);
+    defer cfo.deinit();
+    var self = try FLIR.init(4, test_allocator);
+    defer self.deinit();
+
+    try parse(&self,
+        \\func kuben
+        \\  %x = arg
+        \\  %prod = mul %x %x
+        \\  %prod2 = mul %prod %x
+        \\  ret %prod2
+        \\end
+    );
+    try self.test_analysis(true);
+    const func1addr = try self.codegen(&cfo, false);
+    // TODO: add an actual symbol table
+    try expect(u32, func1addr, 0);
+
+    self.reinit();
+    try parse(&self,
+        \\func twokube
+        \\  %x = arg
+        \\  %y = arg
+        \\  %xx = call 0 %x
+        \\  %yy = call 0 %y
+        \\  %summa = add %xx %yy
+        \\  ret %summa
+        \\end
+    );
+    try self.test_analysis(true);
+    const func2addr = try self.codegen(&cfo, false);
+
+    try cfo.dbg_nasm(test_allocator);
+    try cfo.finalize();
+
+    const fun2 = cfo.get_ptr(func2addr, BFunc);
+    try expect(usize, 1008, fun2(2, 10));
+
+    const fun1 = cfo.get_ptr(func1addr, AFunc);
+    try expect(usize, 210, fun1(100));
+}

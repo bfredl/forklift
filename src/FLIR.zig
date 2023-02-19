@@ -356,8 +356,10 @@ pub const IntBinOp = enum(u6) {
 };
 
 pub const CallKind = enum(u8) {
+    /// op1 is relative start of pointer, must be a constant
+    near,
     /// op1 is function pointer, use a constant
-    fun,
+    fun_ptr,
     /// platform dependent. syscall index in op1
     /// directly encodes the linux syscall number of the target
     /// on EPBF this will be "helper" number?

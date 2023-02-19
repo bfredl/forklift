@@ -314,6 +314,10 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                             try regmovmc(cfo, .rax, self.ipval(i.op1).?);
                             try cfo.syscall();
                         },
+                        .near => {
+                            const val = self.constval(i.op1) orelse return error.FLIRError;
+                            try cfo.call_rel(@intCast(u32, val));
+                        },
                         else => unreachable,
                     }
                 },
