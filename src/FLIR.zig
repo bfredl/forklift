@@ -528,10 +528,9 @@ pub fn preInst(self: *Self, node: u16, inst: Inst) !u16 {
     var blk = &self.b.items[blkid];
 
     var firstfree: i8 = -1;
-    var i: i8 = 0;
-    while (i < BLK_SIZE) : (i += 1) {
-        if (blk.i[@intCast(u8, i)].free()) {
-            firstfree = i;
+    for (0..BLK_SIZE) |i| {
+        if (blk.i[i].free()) {
+            firstfree = @intCast(i8, i);
         } else {
             break;
         }
@@ -699,9 +698,7 @@ pub fn calc_preds(self: *Self) !void {
         }
     }
 
-    var i: usize = 0;
-    const fixlen = self.n.items.len;
-    while (i < fixlen) : (i += 1) {
+    for (0..self.n.items.len) |i| {
         // by value. predlink might reallocate self.n in place!
         const v = self.n.items[i];
         const shared = v.s[1] > 0 and v.s[1] == v.s[0];
@@ -920,8 +917,7 @@ pub fn calc_use(self: *Self) !void {
             // TODO: make me a loop membership bitset globally
             if (self.n.items.len > 64) unreachable;
             var loop_set: u64 = @as(u64, 1) << @intCast(u6, ni);
-            var ch_i = ni + 1;
-            while (ch_i < self.n.items.len) : (ch_i += 1) {
+            for (ni + 1..self.n.items.len) |ch_i| {
                 const ch_n = &self.n.items[ch_i];
                 const ch_loop: u64 = @as(u64, 1) << @intCast(u6, ch_i);
                 if (((@as(u64, 1) << @intCast(u6, ch_n.loop)) & loop_set) != 0) {
@@ -1039,9 +1035,8 @@ pub fn maybe_split(self: *Self, after: u16) !u16 {
     if (r.idx < BLK_SIZE - 1) {
         mem.copy(Inst, newblk.i[r.idx + 1 ..], blk.i[r.idx + 1 ..]);
         mem.set(Inst, blk.i[r.idx + 1 ..], EMPTY);
-        var i = r.idx + 1;
-        while (i < BLK_SIZE) : (i += 1) {
-            self.renumber_sloow(toref(r.block, i), toref(blkid, i));
+        for (r.idx + 1..BLK_SIZE) |i| {
+            self.renumber_sloow(toref(r.block, uv(i)), toref(blkid, uv(i)));
         }
         return toref(r.block, r.idx + 1);
     } else {
@@ -1222,8 +1217,7 @@ pub fn scan_alloc(self: *Self) !void {
                     // [Node X VReg] bitset, so we can just do (me_livein & other_livein) over all nodes
                     const otherflag = @as(u64, 1) << @intCast(u6, vi);
                     const flagmask = myflag | otherflag;
-                    var ni2 = ni + 1;
-                    while (ni2 < self.n.items.len) : (ni2 += 1) {
+                    for (ni + 1..self.n.items.len) |ni2| {
                         if (self.n.items[ni2].live_in & flagmask == flagmask) {
                             // mckind checked above
                             usable_regs[vr.mcidx] = false;
