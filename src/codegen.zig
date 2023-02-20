@@ -150,7 +150,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
         try cfo.aritri(.sub, .rsp, stacksize + padding);
     }
 
-    for (self.n.items) |*n, ni| {
+    for (self.n.items, 0..) |*n, ni| {
         if ((n.dfnum == 0 or n.is_empty) and ni > 0) {
             // non-entry block not reached by df search is dead.
             // TODO: these should already been cleaned up at this point

@@ -63,7 +63,7 @@ pub fn check_ir_valid(self: *FLIR) !void {
 
     var worklist = ArrayList(u16).init(self.a);
     defer worklist.deinit();
-    for (self.n.items) |*n, ni| {
+    for (self.n.items, 0..) |*n, ni| {
         for (n.s) |s| {
             if (s > self.n.items.len) return error.InvalidCFG;
             reached[s] = true;
@@ -90,7 +90,7 @@ pub fn check_ir_valid(self: *FLIR) !void {
         }
         if (n.lastblk != prev_blk) return error.InvalidCFG;
     }
-    for (self.n.items) |*n, ni| {
+    for (self.n.items, 0..) |*n, ni| {
         const last = try get_jmp_or_last(self, n);
         if ((last == Tag.icmp) != (n.s[1] != 0)) return error.InvalidCFG;
         if (last == Tag.ret and n.s[0] != 0) return error.InvalidCFG;
@@ -103,7 +103,7 @@ pub fn check_ir_valid(self: *FLIR) !void {
 pub fn check_vregs(self: *FLIR) !void {
     if (self.n.items[0].live_in != 0) return error.HOPPSANSA;
     var err = false;
-    for (self.n.items) |*n, ni| {
+    for (self.n.items, 0..) |*n, ni| {
         var live_out: u64 = 0;
         // hack: if n.s[i] == 0 then no bits will be added anyway
         live_out |= self.n.items[n.s[0]].live_in;
@@ -133,7 +133,7 @@ pub fn check_vregs(self: *FLIR) !void {
 
 pub fn debug_print(self: *FLIR) void {
     print("\n", .{});
-    for (self.n.items) |*n, i| {
+    for (self.n.items, 0..) |*n, i| {
         print("node {} (npred {}, loop {}):", .{ i, n.npred, n.loop });
         if (n.is_header) print(" HEADER", .{});
         if (n.live_in != 0) {
@@ -275,7 +275,7 @@ pub fn print_interval(self: *FLIR, ref: u16) void {
     const vreg = b.i.vreg;
     const vreg_flag = if (vreg != NoRef) @as(u64, 1) << @intCast(u6, vreg) else null;
     print("\x1b[4m", .{});
-    for (self.n.items) |n, ni| {
+    for (self.n.items, 0..) |n, ni| {
         var live: bool = if (vreg_flag) |f| (f & n.live_in) != 0 else false;
         if (b.i.tag == .phi and b.n == ni) {
             live = true;
@@ -313,7 +313,7 @@ pub fn print_interval(self: *FLIR, ref: u16) void {
 pub fn print_loop(self: *FLIR, head: u16) void {
     var enda: u16 = 0;
     print("\x1b[4m", .{});
-    for (self.n.items) |n, ni| {
+    for (self.n.items, 0..) |n, ni| {
         var it = self.ins_iterator(n.firstblk);
         if (ni == head) {
             enda = n.loop_end;
@@ -337,7 +337,7 @@ pub fn print_loop(self: *FLIR, head: u16) void {
 }
 
 pub fn print_intervals(self: *FLIR) void {
-    for (self.n.items) |n, ni| {
+    for (self.n.items, 0..) |n, ni| {
         if (n.is_header) {
             print("           ", .{});
             print_loop(self, uv(ni));

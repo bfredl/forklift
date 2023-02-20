@@ -22,7 +22,7 @@ pub fn ssa_gvn(flir: *FLIR) !void {
 }
 
 fn ssa(self: Self) !void {
-    for (self.f.n.items) |n, ni| {
+    for (self.f.n.items, 0..) |n, ni| {
         try self.fill_blk(@intCast(u16, ni), n.firstblk);
     }
 
@@ -31,7 +31,7 @@ fn ssa(self: Self) !void {
     // TODO: keep a worklist of unfinished phi nodes, more effective
     while (true) {
         var did_phi: bool = false;
-        for (self.f.n.items) |n, ni| {
+        for (self.f.n.items, 0..) |n, ni| {
             did_phi = did_phi or try self.resolve_blk(@intCast(u16, ni), n.firstblk);
         }
         if (!did_phi) break;

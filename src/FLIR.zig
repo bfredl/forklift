@@ -554,7 +554,7 @@ pub fn preInst(self: *Self, node: u16, inst: Inst) !u16 {
 }
 
 pub fn const_uint(self: *Self, val: u64) !u16 {
-    for (self.constvals.items) |v, i| {
+    for (self.constvals.items, 0..) |v, i| {
         if (v == val) return uv(ConstOff + i);
     }
     if (self.constvals.items.len == 511) return error.FLIRError;
@@ -823,8 +823,8 @@ pub fn reorder_nodes(self: *Self) !void {
     self.n.items.len = newpos;
 
     // fixup references:
-    for (self.n.items) |*n, ni| {
-        for (n.s) |*s| {
+    for (self.n.items, 0..) |*n, ni| {
+        for (&n.s) |*s| {
             if (s.* != NoRef) {
                 s.* = newlink[s.*];
             }
@@ -865,7 +865,7 @@ pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
 pub fn calc_use(self: *Self) !void {
     // TODO: NOT LIKE THIS
     try self.vregs.ensureTotalCapacity(64);
-    for (self.n.items) |*n, ni| {
+    for (self.n.items, 0..) |*n, ni| {
         var it = self.ins_iterator(n.firstblk);
         while (it.next()) |item| {
             const i = item.i;
@@ -952,7 +952,7 @@ pub fn calc_use(self: *Self) !void {
             while (idx > 0) {
                 idx -= 1;
                 const i = &b.i[idx];
-                for (i.ops(false)) |op, i_op| {
+                for (i.ops(false), 0..) |op, i_op| {
                     var kill: bool = false;
                     if (self.iref(op)) |ref| {
                         if (ref.vreg != NoRef) {
@@ -1051,7 +1051,7 @@ pub fn maybe_split(self: *Self, after: u16) !u16 {
 
 pub fn renumber_sloow(self: *Self, from: u16, to: u16) void {
     for (self.b.items) |*blk| {
-        for (blk.i) |*i| {
+        for (&blk.i) |*i| {
             const nop = i.n_op(false);
             if (nop > 0) {
                 if (i.op1 == from) i.op1 = to;
@@ -1074,7 +1074,7 @@ pub fn trivial_alloc(self: *Self) !void {
         var cur_blk: ?u16 = n.firstblk;
         while (cur_blk) |blk| {
             var b = &self.b.items[blk];
-            for (b.i) |*i, idx| {
+            for (b.i, 0..) |*i, idx| {
                 const ref = toref(blk, uv(idx));
 
                 if (i.tag == .arg) {
@@ -1137,7 +1137,7 @@ pub fn scan_alloc(self: *Self) !void {
     const reg_first_save = 9;
     var highest_used: u8 = 0;
 
-    for (self.n.items) |*n, ni| {
+    for (self.n.items, 0..) |*n, ni| {
         var it = self.ins_iterator(n.firstblk);
         // registers currently free.
         var free_regs_ip: [16]bool = .{true} ** 16;
@@ -1148,7 +1148,7 @@ pub fn scan_alloc(self: *Self) !void {
         free_regs_ip[IPReg.rbp.id()] = false;
 
         // any vreg which is "live in" should already be allocated. mark these as non-free
-        for (self.vregs.items) |vref, vi| {
+        for (self.vregs.items, 0..) |vref, vi| {
             const vr = self.iref(vref).?;
             const flag = @as(u64, 1) << @intCast(u6, vi);
             if ((flag & n.live_in) != 0) {
@@ -1213,7 +1213,7 @@ pub fn scan_alloc(self: *Self) !void {
             mem.copy(bool, &usable_regs, free_regs);
             if (i.vreg != NoRef) {
                 const myflag = @as(u64, 1) << @intCast(u6, i.vreg);
-                for (self.vregs.items) |vref, vi| {
+                for (self.vregs.items, 0..) |vref, vi| {
                     const vr = self.iref(vref).?;
                     if (vr.mckind != reg_kind) continue;
                     // NOTE: This does purposefully exclude current node. free_regs[]
@@ -1245,14 +1245,14 @@ pub fn scan_alloc(self: *Self) !void {
                 // TODO: in the og wimmer paper they do sorting of the "longest" free interval. how do we
                 // do this if without reorder_inst?
                 if (is_avx) {
-                    for (usable_regs) |usable, reg| {
+                    for (usable_regs, 0..) |usable, reg| {
                         if (usable) {
                             chosen_reg = @intCast(u8, reg);
                             break;
                         }
                     }
                 } else {
-                    for (reg_order) |reg_try, reg_i| {
+                    for (reg_order, 0..) |reg_try, reg_i| {
                         if (usable_regs[reg_try.id()]) {
                             chosen_reg = reg_try.id();
                             if (reg_i > highest_used) {
@@ -1397,7 +1397,7 @@ pub fn find_nonempty(self: *Self, ni_0: u16) u16 {
 }
 
 pub fn mark_empty(self: *Self) !void {
-    for (self.n.items) |*n, ni| {
+    for (self.n.items, 0..) |*n, ni| {
         if (self.empty(uv(ni), true)) {
             n.is_empty = true;
         }

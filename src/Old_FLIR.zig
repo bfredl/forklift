@@ -152,7 +152,7 @@ pub fn scanreg(self: FLIR, doit: bool) !u5 {
         const inst = &self.inst.items[pos];
         if (inst.live) |end| {
             const reg = inst.alloc orelse found: {
-                for (active) |v, i| {
+                for (active, 0..) |v, i| {
                     if (v == null or v.? <= pos) {
                         break :found @intCast(u4, i);
                     }
