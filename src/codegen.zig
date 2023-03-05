@@ -205,9 +205,9 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                                 try cfo.sh_ri(dst, sop, @intCast(u8, c));
                             },
                             .ipreg => |src2| {
-                                const src1 = lhs.as_ipreg() orelse {
+                                const src1 = lhs.as_ipreg() orelse src1: {
                                     try regmovmc(cfo, dst, lhs);
-                                    break dst;
+                                    break :src1 dst;
                                 };
                                 try cfo.sx(sop, dst, src1, src2);
                             },
