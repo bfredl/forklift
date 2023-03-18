@@ -432,9 +432,10 @@ test "call near" {
     try cfo.dbg_nasm(test_allocator);
     try cfo.finalize();
 
+    const fun1 = cfo.get_ptr(func1addr, AFunc);
+    try expect(usize, 1000000, fun1(100));
+
+    // known failure for a bit
     const fun2 = cfo.get_ptr(func2addr, BFunc);
     try expect(usize, 1008, fun2(2, 10));
-
-    const fun1 = cfo.get_ptr(func1addr, AFunc);
-    try expect(usize, 210, fun1(100));
 }

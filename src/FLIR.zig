@@ -55,9 +55,12 @@ pub const DEAD: u16 = 0xFEFF;
 // For blocks: we cannot have more than 2^14 blocks anyway
 // for vars: don't allocate last block!
 pub const NoRef: u16 = 0xFFFF;
-// 511 constants should be enough for everyone
+// 255 constants should be enough for everyone
 // could be smarter, like dedicated Block type for constants!
 pub const ConstOff: u16 = 0xFF00;
+// 255 vrefs should be enough for everyone
+// could be smarter, like dedicated Block type for vrefs!
+pub const VRefOff: u16 = 0xFE00;
 
 pub fn uv(s: usize) u16 {
     return @intCast(u16, s);
@@ -463,7 +466,9 @@ pub fn biref(self: *Self, ref: u16) ?BIREF {
     if (ref >= ConstOff) {
         return null;
     }
-    const r = fromref(ref);
+    const blkref = if (ref >= VRefOff) self.vregs.items[ref - VRefOff] else ref;
+    if (blkref >= VRefOff) @panic("NOT LIKE THIS");
+    const r = fromref(blkref);
     const blk = &self.b.items[r.block];
     return BIREF{ .n = blk.node, .i = &blk.i[r.idx] };
 }
@@ -843,9 +848,9 @@ pub fn reorder_nodes(self: *Self) !void {
 }
 
 // ni = node id of user
-pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
+pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) u16 {
     _ = user;
-    const ref = self.biref(used) orelse return;
+    const ref = self.biref(used) orelse return used;
     //ref.i.n_use += 1;
     // it leaks to another block: give it a virtual register number
     if (ref.n != ni) {
@@ -854,7 +859,9 @@ pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
             self.nvreg += 1;
             self.vregs.appendAssumeCapacity(used);
         }
+        return uv(VRefOff + ref.i.vreg);
     }
+    return used;
 }
 
 // TODO: not idempotent! does not reset n_use=0 first.
@@ -866,8 +873,8 @@ pub fn calc_use(self: *Self) !void {
         var it = self.ins_iterator(n.firstblk);
         while (it.next()) |item| {
             const i = item.i;
-            for (i.ops(false)) |op| {
-                self.adduse(uv(ni), item.ref, op);
+            for (i.ops(false)) |*op| {
+                op.* = self.adduse(uv(ni), item.ref, op.*);
             }
         }
     }
@@ -1000,6 +1007,9 @@ pub fn alloc(self: *Self, node: u16, size: u8) !u16 {
 // invalidates all refs after "after" (in self.n order), but leaves earlier untouched.
 // returns the slot (currenty having an Empty filler)
 // no need to split if there is an Empty in the same block (or just after if "after" is last)
+//
+// assumes no direct references between blocks! that should via self.vregs by now!
+//
 // TODO: take an arg for how many slots are needed?
 pub fn maybe_split(self: *Self, after: u16) !u16 {
     const r = fromref(after);
@@ -1036,7 +1046,10 @@ pub fn maybe_split(self: *Self, after: u16) !u16 {
         mem.copy(Inst, newblk.i[r.idx + 1 ..], blk.i[r.idx + 1 ..]);
         mem.set(Inst, blk.i[r.idx + 1 ..], EMPTY);
         for (r.idx + 1..BLK_SIZE) |i| {
-            self.renumber_sloow(toref(r.block, uv(i)), toref(blkid, uv(i)));
+            self.renumber(blkid, toref(r.block, uv(i)), toref(blkid, uv(i)));
+            if (newblk.i[i].vreg != NoRef) {
+                self.vregs.items[newblk.i[i].vreg] = toref(blkid, uv(i));
+            }
         }
         return toref(r.block, r.idx + 1);
     } else {
@@ -1044,10 +1057,12 @@ pub fn maybe_split(self: *Self, after: u16) !u16 {
     }
 }
 
-pub fn renumber_sloow(self: *Self, from: u16, to: u16) void {
-    for (self.b.items) |*blk| {
+fn renumber(self: *Self, firstblk: u16, from: u16, to: u16) void {
+    var cur_blk = firstblk;
+    while (true) {
+        const blk = &self.b.items[cur_blk];
         for (&blk.i) |*i| {
-            const nop = i.n_op(false);
+            const nop = i.n_op(true);
             if (nop > 0) {
                 if (i.op1 == from) i.op1 = to;
                 if (nop > 1) {
@@ -1055,6 +1070,7 @@ pub fn renumber_sloow(self: *Self, from: u16, to: u16) void {
                 }
             }
         }
+        cur_blk = blk.next() orelse break;
     }
 }
 
