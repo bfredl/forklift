@@ -320,14 +320,22 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
                 return error.ParseError;
             };
             const opname = try require(self.keyword(), "vop");
-            const op = meta.stringToEnum(CFO.VMathOp, opname) orelse {
+            const mathop = meta.stringToEnum(CFO.VMathOp, opname);
+            const cmpop = if (mathop == null) meta.stringToEnum(CFO.VCmpOp, opname) else null;
+            if (mathop == null and cmpop == null) {
                 print("aeue-r: '{s}'\n", .{opname});
                 return error.ParseError;
-            };
+            }
 
             const left = try require(try self.call_arg(f), "left");
             const right = try require(try self.call_arg(f), "right");
-            return f.ir.vmath(f.curnode, op, fmode, left, right);
+            if (mathop) |op| {
+                return f.ir.vmath(f.curnode, op, fmode, left, right);
+            } else if (cmpop) |op| {
+                return f.ir.vcmpf(f.curnode, op, fmode, left, right);
+            } else {
+                unreachable;
+            }
         } else if (mem.eql(u8, kw, "syscall")) {
             const name = try require(self.keyword(), "name");
             // TODO: non-native for

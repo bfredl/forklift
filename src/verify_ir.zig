@@ -196,11 +196,13 @@ pub fn print_blk(self: *FLIR, firstblk: u16) void {
         print("  %{} {c} {s}", .{ item.ref, chr, name });
 
         if (i.tag == .variable) {
-            print(" {s}", .{@tagName(i.spec_type())});
+            print(" {s}", .{@tagName(i.mem_type())});
         }
 
         if (i.tag == .vmath) {
-            print(".{s}", .{@tagName(i.vop())});
+            print(".{s}", .{@tagName(i.vmathop())});
+        } else if (i.tag == .vcmpf) {
+            print(".{s}", .{@tagName(i.vcmpop())});
         } else if (i.tag == .ibinop) {
             print(".{s}", .{@tagName(@intToEnum(FLIR.IntBinOp, i.spec))});
         } else if (i.tag == .icmp) {

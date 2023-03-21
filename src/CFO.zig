@@ -145,7 +145,7 @@ pub const ISize = enum(u2) {
     quadword,
 };
 
-pub const VCmp = enum(u5) {
+pub const VCmpOp = enum(u5) {
     eq,
     lt,
     le,
@@ -178,8 +178,8 @@ pub const VCmp = enum(u5) {
     ge_oq,
     gt_oq,
     true_us,
-    fn val(self: @This()) u8 {
-        return @as(u8, @enumToInt(self));
+    pub fn val(self: @This()) u5 {
+        return @as(u5, @enumToInt(self));
     }
 };
 
@@ -804,10 +804,12 @@ pub fn vmathfrm(self: *Self, op: VMathOp, fmode: FMode, dst: u4, src1: u4, src2:
     try self.vop_rm(0x58 + op.off(), fmode, dst, src1, src2);
 }
 
-pub fn vcmp(self: *Self, op: VCmp, fmode: FMode, dst: u4, src1: u4, src2: EAddr) !void {
-    if (fmode.scalar()) {
-        return error.FEEEEL; // TODO:probably does something useful for scalars?
-    }
+pub fn vcmpf(self: *Self, op: VCmpOp, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
+    try self.vop_rr(0xC2, fmode, dst, src1, src2);
+    try self.wb(op.val());
+}
+
+pub fn vcmpfrm(self: *Self, op: VCmpOp, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
     try self.vop_rr(0xC2, fmode, dst, src1, src2);
     try self.wb(op.val());
 }

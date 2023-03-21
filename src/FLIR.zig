@@ -19,6 +19,7 @@ const assert = std.debug.assert;
 
 const IPReg = CFO.IPReg;
 const VMathOp = CFO.VMathOp;
+const VCmpOp = CFO.VCmpOp;
 const FMode = CFO.FMode;
 const ISize = CFO.ISize;
 
@@ -134,7 +135,7 @@ pub const SpecType = union(ValType) {
             return .{ .avxval = @intToEnum(FMode, val) };
         }
     }
-    pub fn into(self: SpecType) u4 {
+    pub fn into(self: SpecType) u5 {
         return switch (self) {
             .intptr => |i| INT_SPEC_OFF + @enumToInt(i),
             .avxval => |a| @enumToInt(a),
@@ -178,47 +179,61 @@ pub const Inst = struct {
     }
 
     // TODO: handle spec being split between u4 type and u4 somethingelse?
-    pub fn spec_type(self: Inst) ValType {
+    fn spec_type(self: Inst) ValType {
         return self.mem_type();
     }
 
     // TODO: handle spec being split between u4 type and u4 somethingelse?
     // for load/store insts that can handle both intptr and avxvalues
     pub fn mem_type(self: Inst) SpecType {
-        return SpecType.from(self.spec & TYPE_MASK);
+        return SpecType.from(self.low_spec());
     }
 
-    const TYPE_MASK: u8 = (1 << 4) - 1;
-    const HIGH_MASK: u8 = ~TYPE_MASK;
-
-    pub fn high_spec(self: Inst) u4 {
-        return @intCast(u4, (self.spec & HIGH_MASK) >> 4);
+    pub fn scale(self: Inst) u2 {
+        return @intCast(u2, self.high_spec());
     }
 
-    pub fn vop(self: Inst) VMathOp {
-        return @intToEnum(VMathOp, self.high_spec());
+    const LOW_MASK: u8 = (1 << 5) - 1;
+    const HIGH_MASK: u8 = ~LOW_MASK;
+
+    fn high_spec(self: Inst) u3 {
+        return @intCast(u3, (self.spec & HIGH_MASK) >> 5);
     }
 
-    pub fn fmode(self: Inst) FMode {
-        return @intToEnum(FMode, self.spec & TYPE_MASK);
+    fn low_spec(self: Inst) u5 {
+        return @intCast(u5, self.spec & LOW_MASK);
+    }
+
+    pub fn vmathop(self: Inst) VMathOp {
+        return @intToEnum(VMathOp, self.low_spec());
+    }
+
+    pub fn vcmpop(self: Inst) VCmpOp {
+        return @intToEnum(VCmpOp, self.low_spec());
+    }
+
+    // only valid for op instructions. otherwise use mem_type
+    pub fn fmode_op(self: Inst) FMode {
+        return @intToEnum(FMode, self.high_spec());
     }
 
     pub fn res_type(inst: Inst) ?ValType {
         return switch (inst.tag) {
             .empty => null,
-            .arg => inst.spec_type(), // TODO: haIIIII
-            .variable => inst.spec_type(), // gets preserved to the phis
+            .arg => inst.mem_type(), // TODO: haIIIII
+            .variable => inst.mem_type(), // gets preserved to the phis
             .putvar => null,
-            .phi => inst.spec_type(),
+            .phi => inst.mem_type(),
             .putphi => null, // stated in the phi instruction
             .alloc => .intptr, // the type of .alloc is a pointer to it
             .renum => null, // should be removed at this point
-            .load => inst.spec_type(),
+            .load => inst.mem_type(),
             .lea => .intptr, // Lea? Who's Lea??
             .store => null,
             .ibinop => .intptr,
             .icmp => null, // technically the FLAG register but anyway
             .vmath => .avxval,
+            .vcmpf => .avxval,
             .ret => null,
             .call => .intptr,
             .callarg => null,
@@ -248,6 +263,7 @@ pub const Inst = struct {
             .ibinop => 2,
             .icmp => 2,
             .vmath => 2,
+            .vcmpf => 2,
             .ret => 1,
             .callarg => 1,
             .call => 0, // could be for funptr/dynamic syscall?
@@ -321,6 +337,7 @@ pub const Tag = enum(u8) {
     ibinop,
     icmp,
     vmath,
+    vcmpf,
     ret,
     call,
     callarg,
@@ -477,8 +494,16 @@ pub fn iref(self: *Self, ref: u16) ?*Inst {
     return if (self.biref(ref)) |bi| bi.i else null;
 }
 
-pub fn vspec(vop: VMathOp, fmode: FMode) u8 {
-    return (vop.off() << 4) | @as(u8, @enumToInt(fmode));
+fn sphigh(high: u3, low: u5) u8 {
+    return @as(u8, high) << 5 | low;
+}
+
+pub fn vmathspec(vop: VMathOp, fmode: FMode) u8 {
+    return sphigh(@enumToInt(fmode), @intCast(u5, vop.off()));
+}
+
+pub fn vcmpfspec(vcmp: VCmpOp, fmode: FMode) u8 {
+    return sphigh(@enumToInt(fmode), vcmp.val());
 }
 
 pub fn addNode(self: *Self) !u16 {
@@ -575,22 +600,22 @@ pub fn binop(self: *Self, node: u16, tag: Tag, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = tag, .op1 = op1, .op2 = op2 });
 }
 
-pub fn sphigh(high: u4, low: u4) u8 {
-    return @as(u8, high) << 4 | low;
-}
-
 pub fn load(self: *Self, node: u16, kind: SpecType, base: u16, idx: u16, scale: u2) !u16 {
     return self.addInst(node, .{ .tag = .load, .op1 = base, .op2 = idx, .spec = sphigh(scale, kind.into()) });
 }
 pub fn store(self: *Self, node: u16, kind: SpecType, base: u16, idx: u16, scale: u2, val: u16) !u16 {
     // FUBBIT: all possible instances of fusing should be detected in analysis anyway
     const addr = if (idx != NoRef) try self.addInst(node, .{ .tag = .lea, .op1 = base, .op2 = idx, .mckind = .fused, .spec = sphigh(scale, 0) }) else base;
-    return self.addInst(node, .{ .tag = .store, .op1 = addr, .op2 = val, .spec = kind.into() });
+    return self.addInst(node, .{ .tag = .store, .op1 = addr, .op2 = val, .spec = sphigh(0, kind.into()) });
 }
 
 pub fn vmath(self: *Self, node: u16, vop: VMathOp, fmode: FMode, op1: u16, op2: u16) !u16 {
     // TODO: somewhere, typecheck that FMode matches fmode of args..
-    return self.addInst(node, .{ .tag = .vmath, .spec = vspec(vop, fmode), .op1 = op1, .op2 = op2 });
+    return self.addInst(node, .{ .tag = .vmath, .spec = vmathspec(vop, fmode), .op1 = op1, .op2 = op2 });
+}
+
+pub fn vcmpf(self: *Self, node: u16, vop: VCmpOp, fmode: FMode, op1: u16, op2: u16) !u16 {
+    return self.addInst(node, .{ .tag = .vcmpf, .spec = vcmpfspec(vop, fmode), .op1 = op1, .op2 = op2 });
 }
 
 pub fn ibinop(self: *Self, node: u16, op: IntBinOp, op1: u16, op2: u16) !u16 {

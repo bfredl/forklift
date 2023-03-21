@@ -103,7 +103,7 @@ fn get_eaddr_load_or_lea(self: *FLIR, i: Inst) !EAddr {
                 return error.@"TODO: unfused lea";
             }
             eaddr.index = reg;
-            eaddr.scale = @intCast(u2, i.high_spec());
+            eaddr.scale = i.scale();
         },
         .constval => |c| {
             eaddr = eaddr.o(@intCast(i32, c)); // TODO: scale just disappears??
@@ -235,8 +235,8 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                 },
                 .load => {
                     var eaddr = try get_eaddr_load_or_lea(self, i.*);
-                    const spec_type = i.mem_type();
-                    switch (spec_type) {
+                    const mem_type = i.mem_type();
+                    switch (mem_type) {
                         .intptr => |size| {
                             // tbh, loading from memory into a spill slot is bit stupid
                             const dst = i.ipreg() orelse return error.SpillError;
@@ -302,7 +302,13 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     const x = self.avxreg(i.op1) orelse return error.FLIRError;
                     const y = self.avxreg(i.op2) orelse return error.FLIRError;
                     const dst = i.avxreg() orelse return error.FLIRError;
-                    try cfo.vmathf(i.vop(), i.fmode(), dst, x, y);
+                    try cfo.vmathf(i.vmathop(), i.fmode_op(), dst, x, y);
+                },
+                .vcmpf => {
+                    const x = self.avxreg(i.op1) orelse return error.FLIRError;
+                    const y = self.avxreg(i.op2) orelse return error.FLIRError;
+                    const dst = i.avxreg() orelse return error.FLIRError;
+                    try cfo.vcmpf(i.vcmpop(), i.fmode_op(), dst, x, y);
                 },
                 .callarg => {
                     try regmovmc(cfo, i.ipreg().?, self.ipval(i.op1).?);
