@@ -170,8 +170,13 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
             switch (i.tag) {
                 // empty doesn't flush fused value
                 .empty => continue,
-                // these expect their values to be in place when executed
-                .arg, .phi => {},
+                // work is done by putphi
+                .phi => {},
+                .arg => {
+                    const src = FLIR.callregs[i.op1];
+                    const dst = i.ipval() orelse return error.FLIRError;
+                    try mcmovreg(cfo, dst, src);
+                },
                 // lea relative RBP when used
                 .alloc => {},
                 .ret => try regmovmc(cfo, .rax, self.ipval(i.op1).?),
@@ -327,7 +332,13 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                         else => unreachable,
                     }
                 },
-                else => {
+                .copy => {
+                    // TODO: of course also avxvals can be copied!
+                    const src = self.ipval(i.op1) orelse return error.FLIRError;
+                    const dest = i.ipval() orelse return error.FLIRError;
+                    try movmcs(cfo, dest, src);
+                },
+                .variable, .putvar => {
                     print("unhandled tag: {}\n", .{i.tag});
                     return error.FLIRError;
                 },
