@@ -115,7 +115,7 @@ pub fn check_vregs(self: *FLIR) !void {
             var ireg: u16 = 0;
             while (ireg < self.nvreg) : (ireg += 1) {
                 if ((born & (@as(usize, 1) << @intCast(u6, ireg))) != 0) {
-                    const i = self.vregs.items[ireg];
+                    const i = self.vregs.items[ireg].ref;
                     // print(" %{}", .{i});
                     if (self.biref(i).?.n != ni) {
                         // print("!!", .{});
@@ -142,7 +142,7 @@ pub fn debug_print(self: *FLIR) void {
             while (ireg < self.nvreg) : (ireg += 1) {
                 const live = (n.live_in & (@as(usize, 1) << @intCast(u6, ireg))) != 0;
                 if (live) {
-                    print(" %{}", .{self.vregs.items[ireg]});
+                    print(" %{}", .{self.vregs.items[ireg].ref});
                 }
             }
         }
@@ -167,7 +167,7 @@ pub fn debug_print(self: *FLIR) void {
                 while (ireg < self.nvreg) : (ireg += 1) {
                     const live = (live_out & (@as(usize, 1) << @intCast(u6, ireg))) != 0;
                     if (live) {
-                        print(" %{}", .{self.vregs.items[ireg]});
+                        print(" %{}", .{self.vregs.items[ireg].ref});
                     }
                 }
             }

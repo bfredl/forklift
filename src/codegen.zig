@@ -173,7 +173,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                 // work is done by putphi
                 .phi => {},
                 .arg => {
-                    const src = FLIR.callregs[i.op1];
+                    const src = FLIR.argregs[i.op1];
                     const dst = i.ipval() orelse return error.FLIRError;
                     try mcmovreg(cfo, dst, src);
                 },
