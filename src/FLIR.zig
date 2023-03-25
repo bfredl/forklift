@@ -926,68 +926,78 @@ pub fn calc_use(self: *Self) !void {
         }
     }
 
-    var ni: u16 = uv(self.n.items.len - 1);
-    // TODO: at this point the number of vregs is known. so a bitset for
-    // node X vreg can be allocated here.
+    {
+        var ni: u16 = uv(self.n.items.len - 1);
+        // TODO: at this point the number of vregs is known. so a bitset for
+        // node X vreg can be allocated here.
 
-    if (self.nvreg > 64) return error.DoTheWork;
+        if (self.nvreg > 64) return error.DoTheWork;
 
-    while (true) : (ni -= 1) {
-        const n = &self.n.items[ni];
-        var live: u64 = 0;
-        for (n.s) |s| {
-            if (s != 0) {
-                live |= self.n.items[s].live_in;
+        while (true) : (ni -= 1) {
+            const n = &self.n.items[ni];
+            var live: u64 = 0;
+            for (n.s) |s| {
+                if (s != 0) {
+                    live |= self.n.items[s].live_in;
+                }
             }
-        }
-        // print("LIVEUT {}: {x} (dvs {})\n", .{ ni, live, @popCount(live) });
+            // print("LIVEUT {}: {x} (dvs {})\n", .{ ni, live, @popCount(live) });
 
-        var cur_blk: ?u16 = n.lastblk;
-        while (cur_blk) |blk| {
-            var b = &self.b.items[blk];
-            var idx: usize = BLK_SIZE;
-            while (idx > 0) {
-                idx -= 1;
-                const i = &b.i[idx];
+            var cur_blk: ?u16 = n.lastblk;
+            while (cur_blk) |blk| {
+                var b = &self.b.items[blk];
+                var idx: usize = BLK_SIZE;
+                while (idx > 0) {
+                    idx -= 1;
+                    const i = &b.i[idx];
 
-                if (i.vreg != NoRef) {
-                    live &= ~(@as(usize, 1) << @intCast(u6, i.vreg));
+                    if (i.vreg != NoRef) {
+                        live &= ~(@as(usize, 1) << @intCast(u6, i.vreg));
+                    }
+
+                    for (i.ops(false)) |op| {
+                        if (self.iref(op)) |ref| {
+                            if (ref.vreg != NoRef) live |= (@as(usize, 1) << @intCast(u6, ref.vreg));
+                        }
+                    }
                 }
 
-                for (i.ops(false)) |op| {
-                    if (self.iref(op)) |ref| {
-                        if (ref.vreg != NoRef) live |= (@as(usize, 1) << @intCast(u6, ref.vreg));
+                cur_blk = b.prev();
+            }
+
+            n.live_in = live;
+            // print("LIVEIN {}: {x} (dvs {})\n", .{ ni, n.live_in, @popCount(n.live_in) });
+
+            if (n.is_header) {
+                // TODO: make me a loop membership bitset globally
+                if (self.n.items.len > 64) unreachable;
+                var loop_set: u64 = @as(u64, 1) << @intCast(u6, ni);
+                for (ni + 1..self.n.items.len) |ch_i| {
+                    const ch_n = &self.n.items[ch_i];
+                    const ch_loop: u64 = @as(u64, 1) << @intCast(u6, ch_i);
+                    if (((@as(u64, 1) << @intCast(u6, ch_n.loop)) & loop_set) != 0) {
+                        if (ch_n.is_header) {
+                            loop_set |= ch_loop;
+                        }
+                        ch_n.live_in |= n.live_in;
+                    } else {
+                        break; // assuming the contigous property by now
                     }
                 }
             }
-
-            cur_blk = b.prev();
+            if (ni == 0) break;
         }
-
-        n.live_in = live;
-        // print("LIVEIN {}: {x} (dvs {})\n", .{ ni, n.live_in, @popCount(n.live_in) });
-
-        if (n.is_header) {
-            // TODO: make me a loop membership bitset globally
-            if (self.n.items.len > 64) unreachable;
-            var loop_set: u64 = @as(u64, 1) << @intCast(u6, ni);
-            for (ni + 1..self.n.items.len) |ch_i| {
-                const ch_n = &self.n.items[ch_i];
-                const ch_loop: u64 = @as(u64, 1) << @intCast(u6, ch_i);
-                if (((@as(u64, 1) << @intCast(u6, ch_n.loop)) & loop_set) != 0) {
-                    if (ch_n.is_header) {
-                        loop_set |= ch_loop;
-                    }
-                    ch_n.live_in |= n.live_in;
-                } else {
-                    break; // assuming the contigous property by now
-                }
-            }
-        }
-        if (ni == 0) break;
     }
 
-    for (self.n.items) |*n| {
+    for (self.n.items, 0..) |*n, ni| {
+        const node_bit = (@as(u64, 1) << @intCast(u6, ni));
+        for (self.vregs.items, 0..) |*v, vi| {
+            const vref_bit = (@as(u64, 1) << @intCast(u6, vi));
+            if ((n.live_in & vref_bit) != 0) {
+                v.live_in |= node_bit;
+            }
+        }
+
         var live_out: u64 = 0;
         for (n.s) |s| {
             live_out |= self.n.items[s].live_in;
@@ -997,7 +1007,6 @@ pub fn calc_use(self: *Self) !void {
         var cur_blk: ?u16 = n.lastblk;
         while (cur_blk) |blk| {
             var b = &self.b.items[blk];
-
             var idx: usize = BLK_SIZE;
             while (idx > 0) {
                 idx -= 1;
@@ -1199,11 +1208,12 @@ pub fn scan_alloc(self: *Self) !void {
         // just say NO to -fomiting the framepointer!
         free_regs_ip[IPReg.rbp.id()] = false;
 
+        const flag = @as(u64, 1) << @intCast(u6, ni);
+
         // any vreg which is "live in" should already be allocated. mark these as non-free
-        for (self.vregs.items, 0..) |vref, vi| {
-            const vr = self.iref(vref.ref).?;
-            const flag = @as(u64, 1) << @intCast(u6, vi);
-            if ((flag & n.live_in) != 0) {
+        for (self.vregs.items) |vreg| {
+            const vr = self.iref(vreg.ref).?;
+            if ((flag & vreg.live_in) != 0) {
                 if (vr.mckind == .ipreg) free_regs_ip[vr.mcidx] = false;
                 if (vr.mckind == .vfreg) free_regs_avx[vr.mcidx] = false;
             }
