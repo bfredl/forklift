@@ -1198,7 +1198,7 @@ pub fn scan_alloc(self: *Self) !void {
     const reg_first_save = 9;
     var highest_used: u8 = 0;
 
-    for (self.n.items, 0..) |*n, ni| {
+    for (self.n.items) |*n| {
         var it = self.ins_iterator(n.firstblk);
         // registers currently free.
         var free_regs_ip: [16]bool = .{true} ** 16;
@@ -1208,12 +1208,11 @@ pub fn scan_alloc(self: *Self) !void {
         // just say NO to -fomiting the framepointer!
         free_regs_ip[IPReg.rbp.id()] = false;
 
-        const flag = @as(u64, 1) << @intCast(u6, ni);
-
         // any vreg which is "live in" should already be allocated. mark these as non-free
-        for (self.vregs.items) |vreg| {
-            const vr = self.iref(vreg.ref).?;
-            if ((flag & vreg.live_in) != 0) {
+        for (self.vregs.items, 0..) |vref, vi| {
+            const vr = self.iref(vref.ref).?;
+            const flag = @as(u64, 1) << @intCast(u6, vi);
+            if ((flag & n.live_in) != 0) {
                 if (vr.mckind == .ipreg) free_regs_ip[vr.mcidx] = false;
                 if (vr.mckind == .vfreg) free_regs_avx[vr.mcidx] = false;
             }
