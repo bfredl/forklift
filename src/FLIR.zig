@@ -1273,22 +1273,14 @@ pub fn scan_alloc(self: *Self) !void {
 
             mem.copy(bool, &usable_regs, free_regs);
             if (i.vreg != NoRef) {
-                const myflag = @as(u64, 1) << @intCast(u6, i.vreg);
-                for (self.vregs.items, 0..) |vref, vi| {
+                const imask = self.vregs.items[i.vreg].live_in;
+                for (self.vregs.items) |vref| {
                     const vr = self.iref(vref.ref).?;
                     if (vr.mckind != reg_kind) continue;
-                    // NOTE: This does purposefully exclude current node. free_regs[]
-                    // will already track vregs active at the current position (precisely)
-                    // NOTE2: this should be made more efficient by transposing the
-                    // [Node X VReg] bitset, so we can just do (me_livein & other_livein) over all nodes
-                    const otherflag = @as(u64, 1) << @intCast(u6, vi);
-                    const flagmask = myflag | otherflag;
-                    for (ni + 1..self.n.items.len) |ni2| {
-                        if (self.n.items[ni2].live_in & flagmask == flagmask) {
-                            // mckind checked above
-                            usable_regs[vr.mcidx] = false;
-                            break;
-                        }
+                    if ((imask & vref.live_in) != 0) {
+                        // mckind checked above
+                        usable_regs[vr.mcidx] = false;
+                        break;
                     }
                 }
             }
