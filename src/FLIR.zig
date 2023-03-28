@@ -963,9 +963,10 @@ pub fn calc_use(self: *Self) !void {
             var cur_blk: ?u16 = n.lastblk;
             while (cur_blk) |blk| {
                 var b = &self.b.items[blk];
-                var idx: usize = BLK_SIZE;
+                var idx: u16 = BLK_SIZE;
                 while (idx > 0) {
                     idx -= 1;
+                    neg_counter += 1;
                     const i = &b.i[idx];
 
                     if (i.vreg()) |vreg| {
@@ -1270,7 +1271,6 @@ pub fn scan_alloc(self: *Self) !void {
                 if (i.op1 >= argregs.len) return error.FLIRError;
                 i.mckind = .unallocated_ipreghint;
                 i.mcidx = argregs[i.op1].id();
-                try self.alloc_arg(i);
             }
 
             if (i.tag == .putphi) {

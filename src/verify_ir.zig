@@ -221,6 +221,9 @@ pub fn print_blk(self: *FLIR, firstblk: u16) void {
         if (i.vreg()) |_| {
             print(" *", .{});
         }
+        if (i.f.call_overlap) {
+            print(" !", .{});
+        }
         if (i.tag == .putphi) {
             if (self.ipreg(i.op2)) |reg| {
                 const regsrc = self.ipreg(i.op1);

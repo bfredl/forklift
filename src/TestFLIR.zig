@@ -429,7 +429,6 @@ test "call near" {
     try self.test_analysis(true);
     const func2addr = try self.codegen(&cfo, false);
 
-    try cfo.dbg_nasm(test_allocator);
     try cfo.finalize();
 
     const fun1 = cfo.get_ptr(func1addr, AFunc);
