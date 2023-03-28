@@ -1192,8 +1192,6 @@ pub fn trivial_alloc(self: *Self) !void {
 // fixed intervalls: ABI and instruction constraints mandating specific register
 //   -- TODO: not implemented in first iteration
 pub fn scan_alloc(self: *Self) !void {
-
-    // first 9 caller saved and then 5 calle saved regs
     // as allocation is greedy (currently) we will only use the latter when the 8 first are all filled
     const reg_first_save = 9;
     var highest_used: u8 = 0;
