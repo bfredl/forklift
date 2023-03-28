@@ -218,7 +218,7 @@ pub fn print_blk(self: *FLIR, firstblk: u16) void {
             }
         }
         print_mcval(i);
-        if (i.vreg != NoRef) {
+        if (i.vreg()) |_| {
             print(" *", .{});
         }
         if (i.tag == .putphi) {
@@ -274,8 +274,7 @@ pub fn uses(i: *FLIR.Inst, r: u16) bool {
 
 pub fn print_interval(self: *FLIR, ref: u16) void {
     const b = self.biref(ref).?;
-    const vreg = b.i.vreg;
-    const vreg_flag = if (vreg != NoRef) @as(u64, 1) << @intCast(u6, vreg) else null;
+    const vreg_flag = if (b.i.vreg()) |vreg| @as(u64, 1) << @intCast(u6, vreg) else null;
     print("\x1b[4m", .{});
     for (self.n.items, 0..) |n, ni| {
         var live: bool = if (vreg_flag) |f| (f & n.live_in) != 0 else false;
@@ -347,7 +346,7 @@ pub fn print_intervals(self: *FLIR) void {
         var it = self.ins_iterator(n.firstblk);
         while (it.next()) |item| {
             const i = item.i;
-            const vreg: bool = (i.vreg != NoRef);
+            const vreg: bool = i.vreg() != null;
             const is_phi = i.tag == .phi;
             const show_temp = i.f.killed and true;
             if (vreg or show_temp) {

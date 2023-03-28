@@ -180,26 +180,35 @@ pub const Inst = struct {
     op2: u16,
     mckind: MCKind = .unallocated_raw,
     mcidx: u8 = undefined,
-    vreg: u16 = NoRef,
+    vreg_scratch: u16 = NoRef,
     f: packed struct {
         // note: if the reference is a vreg, it might
         // be alive in an other branch processed later
         kill_op1: bool = false,
         kill_op2: bool = false,
         killed: bool = false, // if false after calc_use, a non-vreg is never used
+        is_vreg: bool = false, // if true: vreg_scratch is a vreg number. otherwise it is free real (scratch) estate
+
+        // if true: live range intersects a call
+        // TODO: this presupposed one hard-coded callconv per FLIR
+        // ideally there should be a bitmask encoded with all ipregs that are
+        // blocked for this live range.
+        call_overlap: bool = false,
     } = .{},
+
+    pub fn vreg(self: Inst) ?u16 {
+        return if (self.f.is_vreg) self.vreg_scratch else return null;
+    }
 
     fn free(self: @This()) bool {
         return self.tag == .empty;
     }
 
-    // TODO: handle spec being split between u4 type and u4 somethingelse?
     fn spec_type(self: Inst) ValType {
         return self.mem_type();
     }
 
-    // TODO: handle spec being split between u4 type and u4 somethingelse?
-    // for load/store insts that can handle both intptr and avxvalues
+    // For load/store insts that can handle both intptr and avxvalues
     pub fn mem_type(self: Inst) SpecType {
         return SpecType.from(self.low_spec());
     }
@@ -901,12 +910,13 @@ pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) u16 {
     //ref.i.n_use += 1;
     // it leaks to another block: give it a virtual register number
     if (ref.n != ni) {
-        if (ref.i.vreg == NoRef) {
-            ref.i.vreg = self.nvreg;
+        if (!ref.i.f.is_vreg) {
+            ref.i.f.is_vreg = true;
+            ref.i.vreg_scratch = self.nvreg;
             self.nvreg += 1;
             self.vregs.appendAssumeCapacity(.{ .ref = used });
         }
-        return uv(VRefOff + ref.i.vreg);
+        return uv(VRefOff + ref.i.vreg_scratch);
     }
     return used;
 }
@@ -916,6 +926,8 @@ pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) u16 {
 pub fn calc_use(self: *Self) !void {
     // TODO: NOT LIKE THIS
     try self.vregs.ensureTotalCapacity(64);
+
+    // step1: allocate vregs for results that leak from the block
     for (self.n.items, 0..) |*n, ni| {
         var it = self.ins_iterator(n.firstblk);
         while (it.next()) |item| {
@@ -926,6 +938,8 @@ pub fn calc_use(self: *Self) !void {
         }
     }
 
+    // step 2: process the dominator tree backwards (flattened works fine) to
+    // progagate uses to predecessors
     {
         var ni: u16 = uv(self.n.items.len - 1);
         // TODO: at this point the number of vregs is known. so a bitset for
@@ -943,6 +957,9 @@ pub fn calc_use(self: *Self) !void {
             }
             // print("LIVEUT {}: {x} (dvs {})\n", .{ ni, live, @popCount(live) });
 
+            var neg_counter: u16 = 0;
+            var last_call: u16 = 0;
+
             var cur_blk: ?u16 = n.lastblk;
             while (cur_blk) |blk| {
                 var b = &self.b.items[blk];
@@ -951,13 +968,41 @@ pub fn calc_use(self: *Self) !void {
                     idx -= 1;
                     const i = &b.i[idx];
 
-                    if (i.vreg != NoRef) {
-                        live &= ~(@as(usize, 1) << @intCast(u6, i.vreg));
+                    if (i.vreg()) |vreg| {
+                        live &= ~(@as(usize, 1) << @intCast(u6, vreg));
+                    } else {
+                        if (i.vreg_scratch != NoRef) {
+                            // negative counter: is the last_call _before_ the kill position
+                            if (i.vreg_scratch < last_call) {
+                                i.f.call_overlap = true;
+                            }
+                            i.vreg_scratch = NoRef; // reinit scratch space
+                        }
                     }
 
                     for (i.ops(false)) |op| {
                         if (self.iref(op)) |ref| {
-                            if (ref.vreg != NoRef) live |= (@as(usize, 1) << @intCast(u6, ref.vreg));
+                            if (ref.vreg()) |vreg| {
+                                live |= (@as(usize, 1) << @intCast(u6, vreg));
+                            } else {
+                                if (ref.vreg_scratch == NoRef) {
+                                    ref.vreg_scratch = neg_counter;
+                                }
+                            }
+                        }
+                    }
+
+                    // call: result not considered live.
+                    // arguments are handled in callarg and are also not conflicting
+                    if (i.tag == .call) {
+                        last_call = neg_counter;
+                        for (self.vregs.items, 0..) |*v, vi| {
+                            const iflag = (@as(usize, 1) << @intCast(u6, vi));
+                            if (live & iflag != 0) {
+                                const def = self.iref(v.ref).?;
+                                // TODO: misses not yet marked loop live vars (see TODO below)
+                                def.f.call_overlap = true;
+                            }
                         }
                     }
                 }
@@ -970,6 +1015,8 @@ pub fn calc_use(self: *Self) !void {
 
             if (n.is_header) {
                 // TODO: make me a loop membership bitset globally
+                // TODO: if there was a call anywhere in the loop
+                // propagate call clobbers onto the loop invariant vregs
                 if (self.n.items.len > 64) unreachable;
                 var loop_set: u64 = @as(u64, 1) << @intCast(u6, ni);
                 for (ni + 1..self.n.items.len) |ch_i| {
@@ -1014,8 +1061,8 @@ pub fn calc_use(self: *Self) !void {
                 for (i.ops(false), 0..) |op, i_op| {
                     var kill: bool = false;
                     if (self.iref(op)) |ref| {
-                        if (ref.vreg != NoRef) {
-                            const bit = (@as(u64, 1) << @intCast(u6, ref.vreg));
+                        if (ref.vreg()) |vreg| {
+                            const bit = (@as(u64, 1) << @intCast(u6, vreg));
                             if ((killed & bit) != 0) {
                                 killed = killed & ~bit;
                                 kill = true;
@@ -1102,8 +1149,8 @@ pub fn maybe_split(self: *Self, after: u16) !u16 {
         mem.set(Inst, blk.i[r.idx + 1 ..], EMPTY);
         for (r.idx + 1..BLK_SIZE) |i| {
             self.renumber(blkid, toref(r.block, uv(i)), toref(blkid, uv(i)));
-            if (newblk.i[i].vreg != NoRef) {
-                self.vregs.items[newblk.i[i].vreg].ref = toref(blkid, uv(i));
+            if (newblk.i[i].vreg()) |vreg| {
+                self.vregs.items[vreg].ref = toref(blkid, uv(i));
             }
         }
         return toref(r.block, r.idx + 1);
@@ -1149,7 +1196,7 @@ pub fn trivial_alloc(self: *Self) !void {
                     const regkind: MCKind = if (i.res_type() == ValType.avxval) .vfreg else .ipreg;
                     const op1 = if (i.n_op(false) > 0) self.iref(i.op1) else null;
                     if (op1) |o| {
-                        if (o.mckind == regkind and o.vreg == NoRef and o.last_use == ref) {
+                        if (o.mckind == regkind and o.vreg() == null and o.last_use == ref) {
                             i.mckind = regkind;
                             i.mcidx = o.mcidx;
                             continue;
@@ -1269,8 +1316,14 @@ pub fn scan_alloc(self: *Self) !void {
             var reg_kind: MCKind = if (is_avx) .vfreg else .ipreg;
 
             mem.copy(bool, &usable_regs, free_regs);
-            if (i.vreg != NoRef) {
-                const imask = self.vregs.items[i.vreg].live_in;
+            if (i.f.call_overlap) {
+                for (unsaved) |c| { // clobbered regs
+                    usable_regs[c.id()] = false;
+                }
+            }
+
+            if (i.vreg()) |vreg| {
+                const imask = self.vregs.items[vreg].live_in;
                 for (self.vregs.items) |vref| {
                     const vr = self.iref(vref.ref).?;
                     if (vr.mckind != reg_kind) continue;
