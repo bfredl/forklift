@@ -16,31 +16,21 @@ pub fn parse(self: *FLIR, ir: []const u8) !void {
     };
 }
 
-pub fn analyze_generate(self: *FLIR) !CFO {
-    try self.test_analysis(true);
-
-    var cfo = try CFO.init(test_allocator);
-
-    _ = try self.codegen(&cfo, false);
-    try cfo.finalize();
-    return cfo;
-}
-
 pub fn parse_test(ir: []const u8) !CFO {
-    // small init size on purpose: must allow reallocations in place
-    var self = try FLIR.init(4, test_allocator);
-    defer self.deinit();
-    try parse(&self, ir);
-
-    return analyze_generate(&self);
+    var res = try parse_multi(ir);
+    if (res.objs.count() != 1) {
+        return error.ExpectedOneFunction;
+    }
+    res.objs.deinit();
+    return res.cfo;
 }
 
 const Res = struct {
     cfo: CFO,
     objs: std.StringHashMap(u32),
 
-    pub fn get_ptr(self: *Res, name: []const u8, comptime T: type) ?T {
-        const addr = self.objs.get(name) orelse return null;
+    pub fn get_ptr(self: *Res, name: []const u8, comptime T: type) !T {
+        const addr = self.objs.get(name) orelse return error.FAILURE;
         return self.cfo.get_ptr(addr, T);
     }
 
@@ -235,8 +225,11 @@ test "maybe_split" {
     const pos = 1; // TODO: get("%c")
     const new_pos = try self.maybe_split(pos);
     try std.testing.expectEqual(self.iref(new_pos).?.tag, .empty);
-    var cfo = try analyze_generate(&self);
+    try self.test_analysis(true);
+    var cfo = try CFO.init(test_allocator);
     defer cfo.deinit();
+    _ = try self.codegen(&cfo, false);
+    try cfo.finalize();
     const fun = cfo.get_ptr(0, AFunc);
     try expect(usize, 12, fun(11));
 }
@@ -385,12 +378,7 @@ test "shift variable" {
 }
 
 test "multi function" {
-    var cfo = try CFO.init(test_allocator);
-    defer cfo.deinit();
-    var self = try FLIR.init(4, test_allocator);
-    defer self.deinit();
-
-    try parse(&self,
+    var res = try parse_multi(
         \\func adder
         \\  %x = arg
         \\  %y = arg
@@ -398,12 +386,7 @@ test "multi function" {
         \\  %sum = add %y %z
         \\  ret %sum
         \\end
-    );
-    try self.test_analysis(true);
-    const func1addr = try self.codegen(&cfo, false);
-
-    self.reinit();
-    try parse(&self,
+        \\
         \\func multiplier
         \\  %x = arg
         \\  %y = arg
@@ -411,13 +394,10 @@ test "multi function" {
         \\  ret %z
         \\end
     );
-    try self.test_analysis(true);
-    const func2addr = try self.codegen(&cfo, false);
+    defer res.deinit();
 
-    try cfo.finalize();
-
-    const fun1 = cfo.get_ptr(func1addr, BFunc);
-    const fun2 = cfo.get_ptr(func2addr, BFunc);
+    const fun1 = try res.get_ptr("adder", BFunc);
+    const fun2 = try res.get_ptr("multiplier", BFunc);
     try expect(usize, 210, fun1(100, 10));
     try expect(usize, 1000, fun2(100, 10));
 }
@@ -434,17 +414,17 @@ test "call near" {
         \\func twokube
         \\  %x = arg
         \\  %y = arg
-        \\  %xx = call 0 %x
-        \\  %yy = call 0 %y
+        \\  %xx = call kuben %x
+        \\  %yy = call kuben %y
         \\  %summa = add %xx %yy
         \\  ret %summa
         \\end
     );
     defer res.deinit();
 
-    const fun1 = res.get_ptr("kuben", AFunc).?;
+    const fun1 = try res.get_ptr("kuben", AFunc);
     try expect(usize, 1000000, fun1(100));
 
-    const fun2 = res.get_ptr("twokube", BFunc).?;
+    const fun2 = try res.get_ptr("twokube", BFunc);
     try expect(usize, 1008, fun2(2, 10));
 }

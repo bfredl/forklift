@@ -134,6 +134,7 @@ fn require(val: anytype, what: []const u8) ParseError!@TypeOf(val.?) {
 }
 
 pub fn parse(self: *Self, cfo: *CFO) !void {
+    // small init size on purpose: must allow reallocations in place
     var flir = try FLIR.init(4, self.allocator);
     defer flir.deinit();
     while (self.nonws()) |_| {
@@ -378,8 +379,9 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
 
             return try f.ir.call(f.curnode, .syscall, sysnum);
         } else if (mem.eql(u8, kw, "call")) {
-            // TODO: obviously should be a function name
-            const off = self.num() orelse return error.ParseError;
+            const name = try require(self.keyword(), "name");
+            const off = self.objs.get(name) orelse return error.ParseError;
+
             const constoff = try f.ir.const_uint(off);
             try self.parse_args(f);
             return try f.ir.call(f.curnode, .near, constoff);
