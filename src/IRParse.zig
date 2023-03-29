@@ -133,7 +133,7 @@ fn require(val: anytype, what: []const u8) ParseError!@TypeOf(val.?) {
     };
 }
 
-pub fn parse(self: *Self, cfo: *CFO) !void {
+pub fn parse(self: *Self, cfo: *CFO, dbg: bool) !void {
     // small init size on purpose: must allow reallocations in place
     var flir = try FLIR.init(4, self.allocator);
     defer flir.deinit();
@@ -146,6 +146,7 @@ pub fn parse(self: *Self, cfo: *CFO) !void {
         }
 
         try flir.test_analysis(true);
+        if (dbg) flir.debug_print();
         item.value_ptr.* = try flir.codegen(cfo, false);
         flir.reinit();
     }

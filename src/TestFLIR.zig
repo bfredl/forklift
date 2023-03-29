@@ -41,9 +41,17 @@ const Res = struct {
 };
 
 pub fn parse_multi(ir: []const u8) !Res {
+    return parse_multi_impl(ir, false);
+}
+
+pub fn parse_multi_dbg(ir: []const u8) !Res {
+    return parse_multi_impl(ir, true);
+}
+
+pub fn parse_multi_impl(ir: []const u8, dbg: bool) !Res {
     var parser = IRParse.init(ir, test_allocator);
     var cfo = try CFO.init(test_allocator);
-    parser.parse(&cfo) catch |e| {
+    parser.parse(&cfo, dbg) catch |e| {
         print("fail at {}\n", .{parser.pos});
         return e;
     };
@@ -427,4 +435,29 @@ test "call near" {
 
     const fun2 = try res.get_ptr("twokube", BFunc);
     try expect(usize, 1008, fun2(2, 10));
+}
+
+test "swap simple" {
+    var res = try parse_multi_dbg(
+        \\func diff
+        \\  %x = arg
+        \\  %y = arg
+        \\  %d = sub %x %y
+        \\  ret %d
+        \\end
+        \\
+        \\func antidiff
+        \\  %x = arg
+        \\  %y = arg
+        \\  %ad = call diff %y %x
+        \\  ret %ad
+        \\end
+    );
+    defer res.deinit();
+
+    const fun1 = try res.get_ptr("antidiff", BFunc);
+    try expect(usize, 30, fun1(70, 100));
+
+    const fun2 = try res.get_ptr("diff", BFunc);
+    try expect(usize, 40, fun2(50, 10));
 }
