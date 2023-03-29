@@ -3,6 +3,9 @@ pos: usize = 0,
 lnum: u32 = 0,
 lpos: usize = 0,
 
+objs: std.StringHashMap(u32),
+allocator: Allocator,
+
 const FLIR = @import("./FLIR.zig");
 const CFO = @import("./CFO.zig");
 const Self = @This();
@@ -15,8 +18,16 @@ const meta = std.meta;
 
 const Allocator = mem.Allocator;
 
-pub fn init(str: []const u8) Self {
-    return .{ .str = str };
+pub fn init(str: []const u8, allocator: Allocator) Self {
+    return .{
+        .str = str,
+        .allocator = allocator,
+        .objs = @TypeOf(init(str, allocator).objs).init(allocator),
+    };
+}
+
+pub fn to_map(self: Self) std.StringHashMap(u32) {
+    return self.objs;
 }
 
 fn nonws(self: *Self) ?u8 {
@@ -122,19 +133,35 @@ fn require(val: anytype, what: []const u8) ParseError!@TypeOf(val.?) {
     };
 }
 
-pub fn parse_func(self: *Self, flir: *FLIR, allocator: Allocator) !void {
+pub fn parse(self: *Self, cfo: *CFO) !void {
+    var flir = try FLIR.init(4, self.allocator);
+    defer flir.deinit();
+    while (self.nonws()) |_| {
+        const name = try self.parse_func(&flir);
+        const item = try self.objs.getOrPut(name);
+        if (item.found_existing) {
+            print("duplicate function {s}!\n", .{name});
+            return error.ParseError;
+        }
+
+        try flir.test_analysis(true);
+        item.value_ptr.* = try flir.codegen(cfo, false);
+        flir.reinit();
+    }
+}
+
+pub fn parse_func(self: *Self, flir: *FLIR) ![]const u8 {
     const kw = self.keyword() orelse return error.ParseError;
     if (!mem.eql(u8, kw, "func")) {
         return error.ParseError;
     }
     const name = try require(self.keyword(), "name");
     try self.lbrk();
-    _ = name;
 
     var func: Func = .{
         .ir = flir,
-        .refs = std.StringHashMap(u16).init(allocator),
-        .labels = std.StringHashMap(u16).init(allocator),
+        .refs = std.StringHashMap(u16).init(self.allocator),
+        .labels = std.StringHashMap(u16).init(self.allocator),
     };
     defer func.refs.deinit();
     defer func.labels.deinit();
@@ -144,6 +171,8 @@ pub fn parse_func(self: *Self, flir: *FLIR, allocator: Allocator) !void {
         if (!try self.stmt(&func)) break;
         try self.lbrk();
     }
+    try self.lbrk();
+    return name;
 }
 
 const Func = struct {

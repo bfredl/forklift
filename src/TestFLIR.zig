@@ -9,8 +9,8 @@ const IRParse = @import("./IRParse.zig");
 const test_allocator = std.testing.allocator;
 
 pub fn parse(self: *FLIR, ir: []const u8) !void {
-    var parser = IRParse.init(ir);
-    parser.parse_func(self, test_allocator) catch |e| {
+    var parser = IRParse.init(ir, test_allocator);
+    _ = parser.parse_func(self) catch |e| {
         print("fail at {}\n", .{parser.pos});
         return e;
     };
@@ -33,6 +33,32 @@ pub fn parse_test(ir: []const u8) !CFO {
     try parse(&self, ir);
 
     return analyze_generate(&self);
+}
+
+const Res = struct {
+    cfo: CFO,
+    objs: std.StringHashMap(u32),
+
+    pub fn get_ptr(self: *Res, name: []const u8, comptime T: type) ?T {
+        const addr = self.objs.get(name) orelse return null;
+        return self.cfo.get_ptr(addr, T);
+    }
+
+    pub fn deinit(self: *Res) void {
+        self.cfo.deinit();
+        self.objs.deinit();
+    }
+};
+
+pub fn parse_multi(ir: []const u8) !Res {
+    var parser = IRParse.init(ir, test_allocator);
+    var cfo = try CFO.init(test_allocator);
+    parser.parse(&cfo) catch |e| {
+        print("fail at {}\n", .{parser.pos});
+        return e;
+    };
+    try cfo.finalize();
+    return Res{ .cfo = cfo, .objs = parser.to_map() };
 }
 
 pub fn expect(comptime T: type, x: T, y: T) !void {
@@ -397,26 +423,14 @@ test "multi function" {
 }
 
 test "call near" {
-    var cfo = try CFO.init(test_allocator);
-    defer cfo.deinit();
-    var self = try FLIR.init(4, test_allocator);
-    defer self.deinit();
-
-    try parse(&self,
+    var res = try parse_multi(
         \\func kuben
         \\  %x = arg
         \\  %prod = mul %x %x
         \\  %prod2 = mul %prod %x
         \\  ret %prod2
         \\end
-    );
-    try self.test_analysis(true);
-    const func1addr = try self.codegen(&cfo, false);
-    // TODO: add an actual symbol table
-    try expect(u32, func1addr, 0);
-
-    self.reinit();
-    try parse(&self,
+        \\
         \\func twokube
         \\  %x = arg
         \\  %y = arg
@@ -426,15 +440,11 @@ test "call near" {
         \\  ret %summa
         \\end
     );
-    try self.test_analysis(true);
-    const func2addr = try self.codegen(&cfo, false);
+    defer res.deinit();
 
-    try cfo.finalize();
-
-    const fun1 = cfo.get_ptr(func1addr, AFunc);
+    const fun1 = res.get_ptr("kuben", AFunc).?;
     try expect(usize, 1000000, fun1(100));
 
-    // known failure for a bit
-    const fun2 = cfo.get_ptr(func2addr, BFunc);
+    const fun2 = res.get_ptr("twokube", BFunc).?;
     try expect(usize, 1008, fun2(2, 10));
 }

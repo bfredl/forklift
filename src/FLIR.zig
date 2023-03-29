@@ -7,7 +7,6 @@ const print = std.debug.print;
 const CFO = @import("./CFO.zig");
 const SSA_GVN = @import("./SSA_GVN.zig");
 const builtin = @import("builtin");
-const fieldInfo = std.meta.fieldInfo;
 
 const options = if (!builtin.is_test) &@import("root").options else null;
 
@@ -453,7 +452,7 @@ pub fn init(n: u16, allocator: Allocator) !Self {
     return Self{
         .a = allocator,
         .n = try ArrayList(Node).initCapacity(allocator, n),
-        .vregs = fieldInfo(Self, .vregs).type.init(allocator),
+        .vregs = @TypeOf(@as(Self, undefined).vregs).init(allocator),
         .blkorder = ArrayList(u16).init(allocator),
         .preorder = ArrayList(u16).init(allocator),
         .refs = try ArrayList(u16).initCapacity(allocator, 4 * n),
