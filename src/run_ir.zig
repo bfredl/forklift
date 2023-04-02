@@ -30,7 +30,7 @@ pub var options = struct {
     dbg_trap: bool = false,
 }{};
 
-pub fn main() !void {
+pub fn unmain() !void {
     const argv = std.os.argv;
     if (argv.len < 2) return usage();
     var nextarg: u8 = 1;
@@ -75,9 +75,9 @@ pub fn main() !void {
         return e;
     };
 
-    if (options.dbg_raw_ir) ir.debug_print();
+    // if (options.dbg_raw_ir) ir.debug_print();
     try ir.test_analysis(true);
-    if (options.dbg_analysed_ir) ir.debug_print();
+    // if (options.dbg_analysed_ir) ir.debug_print();
 
     if (options.dbg_vregs) ir.print_intervals();
 
@@ -88,11 +88,15 @@ pub fn main() !void {
 
     _ = try @import("./codegen.zig").codegen(&ir, &cfo, options.dbg_disasm);
     try cfo.finalize();
-    if (options.dbg_disasm) try cfo.dbg_nasm(allocator);
+    // if (options.dbg_disasm) try cfo.dbg_nasm(allocator);
 
     if (inbuf) |b| {
         const SFunc = *const fn (arg1: [*]u8, arg2: usize) callconv(.C) usize;
         const fun = cfo.get_ptr(0, SFunc);
         print("res: {}\n", .{fun(b.ptr, b.len)});
     }
+}
+
+pub fn main() void {
+    unmain() catch unreachable;
 }

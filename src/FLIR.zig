@@ -1414,7 +1414,7 @@ pub fn resolve_phi(self: *Self) !void {
                     mem.swap(Inst, before, after);
                 }
                 if (self.conflict(before, after)) {
-                    self.debug_print();
+                    // self.debug_print();
                     print("cycles detected: {} {}\n", .{ p1.ref, p2.ref });
                     return error.FLIRError;
                 }
@@ -1459,7 +1459,7 @@ pub fn ins_iterator(self: *Self, first_blk: u16) InsIterator {
 pub fn test_analysis(self: *Self, comptime check: bool) !void {
     if (check) {
         self.check_ir_valid() catch |err| {
-            self.debug_print();
+            // self.debug_print();
             return err;
         };
     }

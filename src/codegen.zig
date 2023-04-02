@@ -339,7 +339,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     try movmcs(cfo, dest, src);
                 },
                 .variable, .putvar => {
-                    print("unhandled tag: {}\n", .{i.tag});
+                    print("unhandled tag: {}\n", .{@enumToInt(i.tag)});
                     return error.FLIRError;
                 },
             }
