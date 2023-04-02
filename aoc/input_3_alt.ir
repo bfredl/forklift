@@ -1,0 +1,22 @@
+func returner
+  var %rowlen
+  var %ipos
+  var %xpos
+  var %ypos
+  var %retval
+  %data = arg
+  %len = arg
+  %ipos := 0
+  %rowlen := 0
+  %buf = alloc 8
+:loopen
+  %char = load byte [%data %rowlen]
+  je %char 10 :foundlen
+:
+  %rowlen := add %rowlen 1
+  jmp :loopen
+:foundlen
+  %halflen = shr %rowlen 1
+  %xpos := 0
+end
+
