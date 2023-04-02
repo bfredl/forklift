@@ -68,9 +68,9 @@ pub fn main() !void {
 
     var ir = try FLIR.init(32, allocator);
     defer ir.deinit();
-    var parser = IRParse.init(buf);
+    var parser = IRParse.init(buf, allocator);
     // try parser.fd_objs.put("count", map_count);
-    parser.parse_func(&ir, allocator) catch |e| {
+    _ = parser.parse_func(&ir) catch |e| {
         print("error at pos {}:{} (byte {} of {})\n", .{ parser.lnum + 1, 1 + parser.pos - parser.lpos, parser.pos, buf.len });
         return e;
     };
