@@ -43,7 +43,7 @@ nvar: u16 = 0,
 // variables 2.0: virtual registero
 // vregs is any result which is live outside of its defining node, that's it.
 nvreg: u16 = 0,
-vregs: ArrayList(struct { ref: u16, live_in: u64 = 0 }),
+vregs: ArrayList(struct { ref: u16, live_in: u64 = 0, conflicts: u16 = 0 }),
 
 // 8-byte slots in stack frame
 nslots: u8 = 0,
@@ -93,6 +93,9 @@ pub const EMPTY: Inst = .{ .tag = .empty, .op1 = 0, .op2 = 0 };
 
 // amd64 ABI
 
+// really 14 usable, but let's keep simple by not renumbering ipregs
+pub const n_ipreg = 16;
+
 // Args: used used both for incoming args and nested calls (including syscalls)
 pub const argregs: [6]IPReg = .{ .rdi, .rsi, .rdx, .rcx, .r8, .r9 };
 pub const ret_reg: IPReg = .rax;
@@ -100,10 +103,10 @@ pub const ret_reg: IPReg = .rax;
 // canonical order of callee saved registers. nsave>0 means
 // the first nsave items needs to be saved and restored
 pub const callee_saved: [5]IPReg = .{ .rbx, .r12, .r13, .r14, .r15 };
-pub const unsaved: [9]IPReg = .{ .rax, .rcx, .rdx, .rsi, .rdi, .r8, .r9, .r10, .r11 };
+pub const call_unsaved: [9]IPReg = .{ .rax, .rcx, .rdx, .rsi, .rdi, .r8, .r9, .r10, .r11 };
 
 // excludes: stack reg, frame reg
-const reg_order: [14]IPReg = unsaved ++ callee_saved;
+const reg_order: [14]IPReg = call_unsaved ++ callee_saved;
 
 pub const BLK_SIZE = 4;
 pub const BLK_SHIFT = 2;
@@ -188,11 +191,9 @@ pub const Inst = struct {
         killed: bool = false, // if false after calc_use, a non-vreg is never used
         is_vreg: bool = false, // if true: vreg_scratch is a vreg number. otherwise it is free real (scratch) estate
 
-        // if true: live range intersects a call
-        // TODO: this presupposed one hard-coded callconv per FLIR
-        // ideally there should be a bitmask encoded with all ipregs that are
-        // blocked for this live range.
-        call_overlap: bool = false,
+        // if true: vregs_scratch encodes a bitset of conflicting regs.
+        // for a vreg, this is always false, but check vregs[v].conflicts
+        conflicts: bool = false,
     } = .{},
 
     pub fn vreg(self: Inst) ?u16 {
@@ -937,6 +938,15 @@ pub fn calc_use(self: *Self) !void {
         }
     }
 
+    const call_clobber_mask = mask: {
+        var mask: u16 = 0;
+        for (call_unsaved) |r| {
+            const rflag = (@as(u16, 1) << @intCast(u4, r.id()));
+            mask |= rflag;
+        }
+        break :mask mask;
+    };
+
     // step 2: process the dominator tree backwards (flattened works fine) to
     // progagate uses to predecessors
     {
@@ -957,7 +967,9 @@ pub fn calc_use(self: *Self) !void {
             // print("LIVEUT {}: {x} (dvs {})\n", .{ ni, live, @popCount(live) });
 
             var neg_counter: u16 = 0;
-            var last_call: u16 = 0;
+            var last_clobber: [n_ipreg]u16 = .{0} ** n_ipreg;
+
+            var blk_has_clobber: bool = false;
 
             var cur_blk: ?u16 = n.lastblk;
             while (cur_blk) |blk| {
@@ -972,11 +984,22 @@ pub fn calc_use(self: *Self) !void {
                         live &= ~(@as(usize, 1) << @intCast(u6, vreg));
                     } else {
                         if (i.vreg_scratch != NoRef) {
-                            // negative counter: is the last_call _before_ the kill position
-                            if (i.vreg_scratch < last_call) {
-                                i.f.call_overlap = true;
+                            if (blk_has_clobber) { // quick skipahead when no clobbers
+                                var conflicts: u16 = 0;
+                                for (0..n_ipreg) |r| {
+                                    // negative counter: is the last_clobber _before_ the kill position
+                                    if (i.vreg_scratch < last_clobber[r]) {
+                                        const rflag = (@as(u16, 1) << @intCast(u4, r));
+                                        conflicts |= rflag;
+                                    }
+                                }
+                                if (conflicts != 0) {
+                                    i.f.conflicts = true;
+                                }
+                                i.vreg_scratch = conflicts;
+                            } else {
+                                i.vreg_scratch = 0;
                             }
-                            i.vreg_scratch = NoRef; // reinit scratch space
                         }
                     }
 
@@ -992,16 +1015,29 @@ pub fn calc_use(self: *Self) !void {
                         }
                     }
 
+                    // registers clobbered by this instruction
+                    // TOOO: or having it as a fixed input, which is not ALWAYS a clobber
+                    // (like two shr intructions in a row sharing the same ecx input)
+                    var clobber_mask: u16 = 0;
+
                     // call: result not considered live.
                     // arguments are handled in callarg and are also not conflicting
                     if (i.tag == .call) {
-                        last_call = neg_counter;
+                        clobber_mask |= call_clobber_mask;
+                    }
+
+                    if (clobber_mask != 0) {
+                        blk_has_clobber = true; // quick skipahead
                         for (self.vregs.items, 0..) |*v, vi| {
                             const iflag = (@as(usize, 1) << @intCast(u6, vi));
                             if (live & iflag != 0) {
-                                const def = self.iref(v.ref).?;
-                                // TODO: misses not yet marked loop live vars (see TODO below)
-                                def.f.call_overlap = true;
+                                v.conflicts |= clobber_mask;
+                            }
+                        }
+                        for (0..n_ipreg) |r| {
+                            const rflag = (@as(usize, 1) << @intCast(u6, r));
+                            if ((clobber_mask & rflag) != 0) {
+                                last_clobber[r] = neg_counter;
                             }
                         }
                     }
@@ -1246,7 +1282,7 @@ pub fn scan_alloc(self: *Self) !void {
     for (self.n.items) |*n| {
         var it = self.ins_iterator(n.firstblk);
         // registers currently free.
-        var free_regs_ip: [16]bool = .{true} ** 16;
+        var free_regs_ip: [n_ipreg]bool = .{true} ** n_ipreg;
         var free_regs_avx: [16]bool = .{true} ** 16;
 
         free_regs_ip[IPReg.rsp.id()] = false;
@@ -1315,14 +1351,15 @@ pub fn scan_alloc(self: *Self) !void {
             var reg_kind: MCKind = if (is_avx) .vfreg else .ipreg;
 
             mem.copy(bool, &usable_regs, free_regs);
-            if (i.f.call_overlap) {
-                for (unsaved) |c| { // clobbered regs
-                    usable_regs[c.id()] = false;
-                }
+            var conflicts: u16 = 0;
+            if (i.f.conflicts) {
+                conflicts |= i.vreg_scratch;
             }
 
             if (i.vreg()) |vreg| {
-                const imask = self.vregs.items[vreg].live_in;
+                const v = self.vregs.items[vreg];
+                const imask = v.live_in;
+                conflicts |= v.conflicts; // fixed reg conflicts
                 for (self.vregs.items) |vref| {
                     const vr = self.iref(vref.ref).?;
                     if (vr.mckind != reg_kind) continue;
@@ -1330,6 +1367,15 @@ pub fn scan_alloc(self: *Self) !void {
                         // mckind checked above
                         usable_regs[vr.mcidx] = false;
                         break;
+                    }
+                }
+            }
+
+            if (conflicts != 0) {
+                for (0..n_ipreg) |r| {
+                    const rflag = (@as(usize, 1) << @intCast(u6, r));
+                    if ((conflicts & rflag) != 0) {
+                        usable_regs[r] = false;
                     }
                 }
             }

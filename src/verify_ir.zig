@@ -218,10 +218,14 @@ pub fn print_blk(self: *FLIR, firstblk: u16) void {
             }
         }
         print_mcval(i);
-        if (i.vreg()) |_| {
+        var v_conflict = false;
+        if (i.vreg()) |v| {
+            if (self.vregs.items[v].conflicts != 0) {
+                v_conflict = true;
+            }
             print(" *", .{});
         }
-        if (i.f.call_overlap) {
+        if (i.f.conflicts or v_conflict) {
             print(" !", .{});
         }
         if (i.tag == .putphi) {
