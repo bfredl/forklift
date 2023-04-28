@@ -8,7 +8,6 @@ pub fn build(b: *std.Build) void {
         .root_source_file = .{ .path = "src/run_ir.zig" },
         .optimize = opt,
     });
-    exe_ir.install();
     const install_ir = b.addInstallArtifact(exe_ir);
     ir.dependOn(&install_ir.step);
 
