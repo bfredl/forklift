@@ -145,7 +145,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
 
     const target = cfo.get_target();
     try cfo.enter();
-    for (FLIR.callee_saved[0..self.nsave]) |reg| {
+    for (FLIR.ABI.callee_saved[0..self.nsave]) |reg| {
         try cfo.push(r(reg));
     }
     const stacksize = 8 * @as(i32, self.nslots);
@@ -178,7 +178,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                 // work is done by putphi
                 .phi => {},
                 .arg => {
-                    const src = FLIR.argregs[i.op1];
+                    const src = FLIR.ABI.argregs[i.op1];
                     const dst = i.ipval() orelse return error.FLIRError;
                     try mcmovreg(cfo, dst, src);
                 },
@@ -363,7 +363,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
     var isave = self.nsave;
     while (isave > 0) {
         isave -= 1;
-        try cfo.pop(r(FLIR.callee_saved[isave]));
+        try cfo.pop(r(FLIR.ABI.callee_saved[isave]));
     }
     try cfo.leave();
     try cfo.ret();
