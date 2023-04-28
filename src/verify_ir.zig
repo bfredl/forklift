@@ -231,10 +231,11 @@ pub fn print_blk(self: *FLIR, firstblk: u16) void {
         if (i.tag == .putphi) {
             if (self.ipreg(i.op2)) |reg| {
                 const regsrc = self.ipreg(i.op1);
+                const tag = @tagName(CFO.IPReg.from(reg));
                 if (regsrc == null or regsrc == reg) {
-                    print(" [{s}] ", .{@tagName(reg)});
+                    print(" [{s}] ", .{tag});
                 } else {
-                    print(" [{s} <- {s}] ", .{ @tagName(reg), @tagName(regsrc.?) });
+                    print(" [{s} <- {s}] ", .{ tag, @tagName(CFO.IPReg.from(regsrc.?)) });
                 }
             }
         }

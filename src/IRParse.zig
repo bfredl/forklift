@@ -8,6 +8,7 @@ allocator: Allocator,
 
 const FLIR = @import("./FLIR.zig");
 const CFO = @import("./CFO.zig");
+const common = @import("./common.zig");
 const Self = @This();
 const std = @import("std");
 const print = std.debug.print;
@@ -316,7 +317,7 @@ pub fn call_arg(self: *Self, f: *Func) ParseError!?u16 {
 
 pub fn typename(self: *Self) ParseError!?FLIR.SpecType {
     const kw = self.keyword() orelse return null;
-    if (meta.stringToEnum(CFO.ISize, kw)) |size| {
+    if (meta.stringToEnum(common.ISize, kw)) |size| {
         return .{ .intptr = size };
     } else if (meta.stringToEnum(CFO.FMode, kw)) |mode| {
         return .{ .avxval = mode };

@@ -14,6 +14,9 @@ const print = std.debug.print;
 
 const page_size = std.mem.page_size;
 
+const common = @import("./common.zig");
+const ISize = common.ISize;
+
 code: ArrayListAligned(u8, page_size),
 
 /// offset of each encoded instruction. Might not be needed
@@ -49,21 +52,29 @@ pub const IPReg = enum(u4) {
     r14,
     r15,
 
-    pub fn id(self: @This()) u4 {
+    pub fn id(self: IPReg) u4 {
         return @enumToInt(self);
     }
 
-    pub fn lowId(self: @This()) u3 {
+    pub fn into(self: IPReg) common.IPReg {
+        return @intToEnum(common.IPReg, self.id());
+    }
+
+    pub fn from(self: common.IPReg) IPReg {
+        return @intToEnum(IPReg, self.id());
+    }
+
+    pub fn lowId(self: IPReg) u3 {
         return @truncate(u3, @enumToInt(self));
     }
 
-    pub fn ext(self: @This()) bool {
+    pub fn ext(self: IPReg) bool {
         return @enumToInt(self) >= 0x08;
     }
 
     // if register would confilct with AH,BH,CH,DH in byte mode
     // force a REX byte to avoid it.
-    pub fn highlike(self: @This()) bool {
+    pub fn highlike(self: IPReg) bool {
         return IPReg.rsp.id() <= self.id() and self.id() < IPReg.r8.id();
     }
 };
@@ -135,14 +146,6 @@ pub const Cond = enum(u4) {
     pub fn off(self: @This()) u8 {
         return @as(u8, @enumToInt(self));
     }
-};
-
-// size for integer operations
-pub const ISize = enum(u2) {
-    byte,
-    word,
-    dword,
-    quadword,
 };
 
 pub const VCmpOp = enum(u5) {
@@ -849,8 +852,8 @@ pub fn vmovdqumr(self: *Self, wide: bool, dst: EAddr, src: u4) !void {
     try self.vop_i_rm(0x7f, wide, .F3, src, 0, dst);
 }
 
-pub fn vaddi(self: *Self, wide: bool, imode: IMode, dst: u4, src1: u4, src2: u4) !void {
-    const op = if (imode == .q) 0xD4 else (0xFC + imode.off());
+pub fn vaddi(self: *Self, wide: bool, imode: ISize, dst: u4, src1: u4, src2: u4) !void {
+    const op = if (imode == .quadword) 0xD4 else (0xFC + @as(u8, @enumToInt(imode)));
     try self.vop_i_rr(op, wide, .h66, dst, src1, src2);
 }
 

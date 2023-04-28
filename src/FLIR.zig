@@ -4,6 +4,7 @@ const mem = std.mem;
 const Allocator = mem.Allocator;
 const Self = @This();
 const print = std.debug.print;
+const common = @import("./common.zig");
 const CFO = @import("./CFO.zig");
 const SSA_GVN = @import("./SSA_GVN.zig");
 const builtin = @import("builtin");
@@ -17,11 +18,12 @@ pub usingnamespace @import("./verify_ir.zig");
 const ArrayList = std.ArrayList;
 const assert = std.debug.assert;
 
-const IPReg = CFO.IPReg;
+const IPReg = common.IPReg;
+const ISize = common.ISize;
+
 const VMathOp = CFO.VMathOp;
 const VCmpOp = CFO.VCmpOp;
 const FMode = CFO.FMode;
-const ISize = CFO.ISize;
 
 a: Allocator,
 // TODO: unmanage all these:
@@ -96,14 +98,23 @@ pub const EMPTY: Inst = .{ .tag = .empty, .op1 = 0, .op2 = 0 };
 // really 14 usable, but let's keep simple by not renumbering ipregs
 pub const n_ipreg = 16;
 
+// erase(xregs: [N]CFO.IPReg) [N]IPReg
+pub fn erase(xregs: anytype) [xregs.len]IPReg {
+    var r: [xregs.len]IPReg = undefined;
+    for (xregs, 0..) |x, i| {
+        r[i] = x.into();
+    }
+    return r;
+}
+
 // Args: used used both for incoming args and nested calls (including syscalls)
-pub const argregs: [6]IPReg = .{ .rdi, .rsi, .rdx, .rcx, .r8, .r9 };
-pub const ret_reg: IPReg = .rax;
+pub const argregs = erase([6]CFO.IPReg{ .rdi, .rsi, .rdx, .rcx, .r8, .r9 });
+pub const ret_reg: IPReg = CFO.IPReg.rax.into();
 
 // canonical order of callee saved registers. nsave>0 means
 // the first nsave items needs to be saved and restored
-pub const callee_saved: [5]IPReg = .{ .rbx, .r12, .r13, .r14, .r15 };
-pub const call_unsaved: [9]IPReg = .{ .rax, .rcx, .rdx, .rsi, .rdi, .r8, .r9, .r10, .r11 };
+pub const callee_saved = erase([5]CFO.IPReg{ .rbx, .r12, .r13, .r14, .r15 });
+pub const call_unsaved = erase([9]CFO.IPReg{ .rax, .rcx, .rdx, .rsi, .rdi, .r8, .r9, .r10, .r11 });
 
 // excludes: stack reg, frame reg
 const reg_order: [14]IPReg = call_unsaved ++ callee_saved;
@@ -1285,9 +1296,10 @@ pub fn scan_alloc(self: *Self) !void {
         var free_regs_ip: [n_ipreg]bool = .{true} ** n_ipreg;
         var free_regs_avx: [16]bool = .{true} ** 16;
 
-        free_regs_ip[IPReg.rsp.id()] = false;
+        // registers not in reg_order will never be used, make this more explicit?
+        // free_regs_ip[IPReg.rsp.id()] = false;
         // just say NO to -fomiting the framepointer!
-        free_regs_ip[IPReg.rbp.id()] = false;
+        // free_regs_ip[IPReg.rbp.id()] = false;
 
         // any vreg which is "live in" should already be allocated. mark these as non-free
         for (self.vregs.items, 0..) |vref, vi| {
