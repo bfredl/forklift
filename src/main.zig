@@ -55,24 +55,6 @@ pub fn main() !void {
     try cfo.leave();
     try cfo.ret();
 
-    const start_parse = cfo.get_target();
-    var flir = try FLIR.init(0, allocator);
-    defer flir.deinit();
-
-    try flir.loop_start();
-    _ = try parse.parse(&flir, "xi = xi + yi;");
-    try flir.loop_end();
-    flir.live(true);
-    _ = try flir.scanreg(true);
-    flir.debug_print(false);
-
-    try cfo.enter();
-    _ = try flir.codegen(&cfo, true);
-    try cfo.leave();
-    try cfo.ret();
-
-    try cfo.dbg_nasm(allocator);
-
     const start_simd = cfo.get_target();
     try cfo.enter();
     try cfo.arit(.xor, idx, idx);
@@ -114,14 +96,14 @@ pub fn main() !void {
     defer OSHA.clear();
 
     const scalar_add = cfo.get_ptr(start, *const fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
-    const parse_add = cfo.get_ptr(start_parse, *const fn (arg1: [*]f64, arg2: [*]f64, arg3: ?[*]f64, arg3: u64) callconv(.C) void);
+    // const parse_add = cfo.get_ptr(start_parse, *const fn (arg1: [*]f64, arg2: [*]f64, arg3: ?[*]f64, arg3: u64) callconv(.C) void);
     const simd_add = cfo.get_ptr(start_simd, *const fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
     const simd2_add = cfo.get_ptr(start_simd2, *const fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
 
     var timer = try std.time.Timer.start();
     i = 0;
     while (i < 10) : (i += 1) {
-        parse_add(arr1.ptr, arr2.ptr, null, size);
+        // parse_add(arr1.ptr, arr2.ptr, null, size);
         const tid1p = timer.lap();
         scalar_add(arr1.ptr, arr2.ptr, size);
         const tid1 = timer.lap();

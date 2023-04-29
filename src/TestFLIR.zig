@@ -1,5 +1,6 @@
 const FLIR = @import("./FLIR.zig");
 const CFO = @import("./CFO.zig");
+const codegen = @import("./codegen.zig");
 const print = std.debug.print;
 
 const std = @import("std");
@@ -215,7 +216,7 @@ test "diamond cfg" {
 
     try self.ret(end, v);
 
-    try self.test_analysis(true);
+    try self.test_analysis(FLIR.X86_64ABI, true);
 }
 
 test "maybe_split" {
@@ -233,10 +234,10 @@ test "maybe_split" {
     const pos = 1; // TODO: get("%c")
     const new_pos = try self.maybe_split(pos);
     try std.testing.expectEqual(self.iref(new_pos).?.tag, .empty);
-    try self.test_analysis(true);
+    try self.test_analysis(FLIR.X86_64ABI, true);
     var cfo = try CFO.init(test_allocator);
     defer cfo.deinit();
-    _ = try self.codegen(&cfo, false);
+    _ = try codegen.codegen(&self, &cfo, false);
     try cfo.finalize();
     const fun = cfo.get_ptr(0, AFunc);
     try expect(usize, 12, fun(11));
@@ -411,7 +412,7 @@ test "multi function" {
 }
 
 test "call near" {
-    var res = try parse_multi(
+    var res = try parse_multi_dbg(
         \\func kuben
         \\  %x = arg
         \\  %prod = mul %x %x

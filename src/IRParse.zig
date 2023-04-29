@@ -7,6 +7,7 @@ objs: std.StringHashMap(u32),
 allocator: Allocator,
 
 const FLIR = @import("./FLIR.zig");
+const codegen = @import("./codegen.zig");
 const CFO = @import("./CFO.zig");
 const common = @import("./common.zig");
 const Self = @This();
@@ -146,9 +147,9 @@ pub fn parse(self: *Self, cfo: *CFO, dbg: bool) !void {
             return error.ParseError;
         }
 
-        try flir.test_analysis(true);
+        try flir.test_analysis(FLIR.X86_64ABI, true);
         if (dbg) flir.debug_print();
-        item.value_ptr.* = try flir.codegen(cfo, false);
+        item.value_ptr.* = try codegen.codegen(&flir, cfo, false);
         flir.reinit();
     }
 }
