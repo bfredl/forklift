@@ -3,20 +3,26 @@ const mem = std.mem;
 const FLIR = @import("./FLIR.zig");
 const bpf = @import("./bpf.zig");
 const print = std.debug.print;
+const IPReg = common.IPReg;
 const Inst = FLIR.Inst;
 const uv = FLIR.uv;
 const linux = std.os.linux;
 const BPF = linux.BPF;
-const IPReg = BPF.Insn.Reg;
+const Reg = BPF.Insn.Reg;
 const Allocator = mem.Allocator;
 const fd_t = linux.fd_t;
+
+const common = @import("./common.zig");
+fn r(reg: IPReg) Reg {
+    return @intToEnum(Reg, reg.id());
+}
 
 const ArrayList = std.ArrayList;
 
 const Insn = BPF.Insn;
 const I = Insn;
 
-const Code = ArrayList(Insn);
+pub const Code = ArrayList(Insn);
 
 const builtin = @import("builtin");
 const options = if (!builtin.is_test) &@import("root").options else null;
@@ -66,7 +72,7 @@ pub fn slotoff(slotid: anytype) i16 {
 }
 
 pub fn ld_map_fd(code: *Code, reg: IPReg, map_fd: fd_t, spec: u8) !void {
-    var insn = I.ld_map_fd1(reg, map_fd);
+    var insn = I.ld_map_fd1(r(reg), map_fd);
     if (spec == 1) { // BPF_PSEUDO_MAP_VALUE
         insn.src = BPF.PSEUDO_MAP_VALUE;
     } else {
@@ -84,30 +90,35 @@ pub fn jeq(code: *Code, src: IPReg, dst: anytype) !u32 {
 }
 
 fn mov(code: *Code, dst: IPReg, src: anytype) !void {
-    try put(code, I.mov(dst, src));
+    try put(code, I.mov(r(dst), src));
 }
+
+const r0 = @intToEnum(common.IPReg, 0);
 
 fn regmovmc(code: *Code, dst: IPReg, src: Inst) !void {
     switch (src.mckind) {
-        .frameslot => try put(code, I.ldx(.double_word, dst, .r10, -8 * @as(i16, src.mcidx))),
+        .frameslot => try put(code, I.ldx(.double_word, r(dst), .r10, -8 * @as(i16, src.mcidx))),
         .ipreg => {
             const reg = @intToEnum(IPReg, src.mcidx);
-            if (dst != reg) try mov(code, dst, reg);
+            if (dst != reg) try mov(code, dst, r(reg));
         },
-        .constant => {
-            if (src.tag != .constant) return error.TheDinnerConversationIsLively;
-            try mov(code, dst, src.op1);
-        },
+        // .constant => {
+        //     if (src.tag != .constant) return error.TheDinnerConversationIsLively;
+        //     try mov(code, dst, src.op1);
+        // },
         .fused => {
             if (src.tag != .alloc) return error.BBB_BBB;
             try mov(code, dst, .r10);
-            try put(code, I.add(dst, slotoff(src.op1)));
+            try put(code, I.add(r(dst), slotoff(src.op1)));
         },
         else => return error.AAA_AA_A,
     }
 }
 
 fn regjmpmc(code: *Code, op: Insn.JmpOp, dst: IPReg, src: Inst) !u32 {
+    _ = dst;
+    _ = op;
+    _ = code;
     switch (src.mckind) {
         .frameslot => {
             unreachable;
@@ -118,13 +129,13 @@ fn regjmpmc(code: *Code, op: Insn.JmpOp, dst: IPReg, src: Inst) !u32 {
             // if (dst != reg) try self.mov(dst, reg);
             unreachable;
         },
-        .constant => {
-            if (src.tag != .constant) return error.TheDinnerConversationIsLively;
-            const pos = get_target(code);
-            var inst = I.jmp(op, dst, src.op1, 0x7FFF);
-            try put(code, inst);
-            return pos;
-        },
+        // .constant => {
+        //     if (src.tag != .constant) return error.TheDinnerConversationIsLively;
+        //     const pos = get_target(code);
+        //     var inst = I.jmp(op, dst, src.op1, 0x7FFF);
+        //     try put(code, inst);
+        //     return pos;
+        // },
         .fused => {
             unreachable;
         },
@@ -157,10 +168,10 @@ fn regaritmc(code: *Code, op: BPF.AluOp, dst: IPReg, i: Inst) !void {
 fn mcmovreg(code: *Code, dst: Inst, src: IPReg) !void {
     if (dst.mckind.unallocated()) return;
     switch (dst.mckind) {
-        .frameslot => try put(code, I.stx(.double_word, .r10, slotoff(dst.mcidx), src)),
+        .frameslot => try put(code, I.stx(.double_word, .r10, slotoff(dst.mcidx), r(src))),
         .ipreg => {
             const reg = @intToEnum(IPReg, dst.mcidx);
-            if (reg != src) try mov(code, reg, src);
+            if (reg != src) try mov(code, reg, r(src));
         },
         else => return error.AAA_AA_A,
     }
@@ -184,20 +195,20 @@ fn mcmovi(code: *Code, i: Inst) !void {
 }
 
 fn stx(code: *Code, dst: EAddr, src: IPReg) !void {
-    try put(code, I.stx(.double_word, @intToEnum(IPReg, dst.reg), dst.off, src));
+    try put(code, I.stx(.double_word, @intToEnum(Reg, dst.reg), dst.off, r(src)));
 }
 
 fn st(code: *Code, dst: EAddr, src: anytype) !void {
     // TODO: AAAA wrong size
-    try put(code, I.st(.double_word, @intToEnum(IPReg, dst.reg), dst.off, src));
+    try put(code, I.st(.double_word, @intToEnum(Reg, dst.reg), dst.off, src));
 }
 
 fn addrmovmc(code: *Code, dst: EAddr, src: Inst) !void {
     switch (src.mckind) {
-        .constant => {
-            if (src.tag != .constant) unreachable;
-            try st(code, dst, src.op1);
-        },
+        // .constant => {
+        //     if (src.tag != .constant) unreachable;
+        //     try st(code, dst, src.op1);
+        // },
         .ipreg => {
             try stx(code, dst, @intToEnum(IPReg, src.mcidx));
         },
@@ -206,7 +217,7 @@ fn addrmovmc(code: *Code, dst: EAddr, src: Inst) !void {
 }
 
 fn regmovaddr(code: *Code, dst: IPReg, src: EAddr) !void {
-    try put(code, I.ldx(.double_word, dst, @intToEnum(IPReg, src.reg), src.off));
+    try put(code, I.ldx(.double_word, r(dst), @intToEnum(Reg, src.reg), src.off));
 }
 
 // TODO: obviously better handling of scratch register
@@ -240,26 +251,25 @@ fn movmcs(code: *Code, dst: Inst, src: Inst, scratch: IPReg) !void {
 // }
 
 pub fn codegen(self: *FLIR, code: *Code) !u32 {
-    var labels = try self.a.alloc(u32, self.dfs.items.len);
-    var targets = try self.a.alloc([2]u32, self.dfs.items.len);
+    var labels = try self.a.alloc(u32, self.n.items.len);
+    var targets = try self.a.alloc([2]u32, self.n.items.len);
 
-    const color_map = self.a.alloc(u8, self.n_ins()) catch @panic("OOM in debug_print");
-    defer self.a.free(color_map);
-    mem.set(u8, color_map, 0);
-    var last_color: u8 = 0;
+    // const color_map = self.a.alloc(u8, self.n_ins()) catch @panic("OOM in debug_print");
+    // defer self.a.free(color_map);
+    // mem.set(u8, color_map, 0);
+    // var last_color: u8 = 0;
 
     defer self.a.free(labels);
     defer self.a.free(targets);
-    mem.set(u32, labels, 0);
-    mem.set([2]u32, targets, .{ 0, 0 });
+    @memset(labels, 0);
+    @memset(targets, .{ 0, 0 });
 
     const target = get_target(code);
 
     for (self.n.items, 0..) |*n, ni| {
-        if ((n.dfnum == 0 or n.npred == 0) and ni > 0) {
+        if ((n.dfnum == 0 or n.is_empty) and ni > 0) {
             // non-entry block not reached by df search is dead.
             // TODO: these should already been cleaned up at this point
-            // TODO: n.npred explicitly being set to 0 is a hack!
             continue;
         }
         labels[ni] = get_target(code);
@@ -279,127 +289,126 @@ pub fn codegen(self: *FLIR, code: *Code) !u32 {
         }
         var default_branch: u8 = 0;
 
-        var cur_blk: ?u16 = n.firstblk;
-        // var ea_fused: Self.EAddr = undefined;
-        var fused_inst: ?*Inst = null;
-        while (cur_blk) |blk| {
-            var b = &self.b.items[blk];
-            for (b.i, 0..) |*i, ii| {
-                if (i.tag == .empty) continue;
+        var it = self.ins_iterator(n.firstblk);
+        while (it.next()) |item| {
+            const i = item.i;
 
-                if (@TypeOf(options) != @TypeOf(null) and options.dbg_disasm_ir) {
-                    FLIR.print_insn(FLIR.toref(blk, uv(ii)), i.*, color_map, &last_color);
-                    print("\n", .{});
-                }
+            if (@TypeOf(options) != @TypeOf(null) and options.dbg_disasm_ir) {
+                // FLIR.print_insn(FLIR.toref(blk, uv(ii)), i.*, color_map, &last_color);
+                print("guuuh\n", .{});
+            }
 
-                var was_fused: bool = false;
-                switch (i.tag) {
-                    // empty doesn't flush fused value
-                    .empty => continue,
-                    .ret => try regmovmc(code, .r0, self.iref(i.op1).?.*),
-                    .iop => {
-                        const dst = i.ipreg() orelse .r0;
-                        try regmovmc(code, dst, self.iref(i.op1).?.*);
-                        try regaritmc(code, @intToEnum(BPF.AluOp, i.spec), dst, self.iref(i.op2).?.*);
-                        try mcmovreg(code, i.*, dst); // elided if dst is register
-                        unreachable;
-                    },
-                    .constant => try mcmovi(code, i.*),
-                    .icmp => {
-                        const firstop = self.iref(i.op1).?.ipreg() orelse .r0;
-                        var spec = @intToEnum(Insn.JmpOp, i.spec);
-                        var taken: u1 = 1;
+            switch (i.tag) {
+                // empty doesn't flush fused value
+                .empty => continue,
+                // work is done by putphi
+                .phi => {},
+                .ret => try regmovmc(code, r0, self.iref(i.op1).?.*),
+                .ibinop => {
+                    const dst = i.ipreg() orelse r0;
+                    try regmovmc(code, dst, self.iref(i.op1).?.*);
+                    // try regaritmc(code, @intToEnum(BPF.AluOp, i.spec), dst, self.iref(i.op2).?.*);
+                    try mcmovreg(code, i.*, dst); // elided if dst is register
+                    unreachable;
+                },
+                .icmp => {
+                    const firstop = self.iref(i.op1).?.ipreg() orelse r0;
+                    var spec = @intToEnum(Insn.JmpOp, i.spec);
+                    var taken: u1 = 1;
 
-                        // TODO: this should have been optimized earlier!
-                        if (n.s[1] == fallthru and n.s[0] != 0) {
-                            if (spec == .jeq) {
-                                spec = .jne;
-                            } else {
-                                unreachable;
-                            }
-                            default_branch = 1;
-                            taken = 0;
-                        }
-
-                        const pos = try regjmpmc(code, spec, firstop, self.iref(i.op2).?.*);
-                        targets[ni][taken] = pos;
-                    },
-                    .putphi => {
-                        // TODO: actually check for parallell-move conflicts
-                        // either here or as an extra deconstruction step
-                        try movmcs(code, self.iref(i.op2).?.*, self.iref(i.op1).?.*, .r0);
-                    },
-                    .load => {
-                        // TODO: spill spall supllit?
-                        const addr = self.iref(i.op1).?.*;
-                        const off = @intCast(i16, i.op2);
-                        const eaddr: EAddr = (try get_eaddr(self, addr, false)).with_off(off);
-                        const dst = i.ipreg() orelse .r0;
-                        try regmovaddr(code, dst, eaddr);
-                        try mcmovreg(code, i.*, dst); // elided if dst is register
-                    },
-                    .lea => {
-                        // TODO: keep track of lifetime extensions of fused values somewhere
-                        if (i.mckind == .fused) {
-                            was_fused = true;
+                    // TODO: this should have been optimized earlier!
+                    if (n.s[1] == fallthru and n.s[0] != 0) {
+                        if (spec == .jeq) {
+                            spec = .jne;
                         } else {
                             unreachable;
                         }
-                    },
-                    .store => {
-                        const addr = self.iref(i.op1).?.*;
-                        const eaddr: EAddr = try get_eaddr(self, addr, true);
-                        const val = self.iref(i.op2).?;
-                        try addrmovmc(code, eaddr, val.*);
-                    },
-                    .load_map => {
-                        const reg = if (i.mckind == .ipreg) @intToEnum(IPReg, i.mcidx) else .r0;
-                        try ld_map_fd(code, reg, i.op1, i.spec);
-                        try mcmovreg(code, i.*, reg);
-                    },
-                    .alloc => {},
-                    .call => {
-                        try regmovmc(code, .r1, self.iref(i.op1).?.*);
-                        try regmovmc(code, .r2, self.iref(i.op2).?.*);
-                        const nexti = self.next_inst(blk, ii);
-                        if (nexti) |iarg| {
-                            if (iarg.tag == .callarg) {
-                                try regmovmc(code, .r3, self.iref(iarg.op1).?.*);
-                                if (iarg.op2 != FLIR.NoRef) {
-                                    try regmovmc(code, .r4, self.iref(iarg.op2).?.*);
-                                }
-                            }
-                        }
-                        try put(code, I.call(@intToEnum(BPF.Helper, i.spec)));
-                        try mcmovreg(code, i.*, .r0);
-                    },
-                    .xadd => {
-                        const dest = self.iref(i.op1).?.*;
-                        const dest_addr = try get_eaddr(self, dest, true);
-                        const src = self.iref(i.op2).?.*;
-                        // TODO: regalloc should alloc even a constant
-                        const sreg = if (src.mckind == .ipreg) @intToEnum(IPReg, src.mcidx) else .r0;
-                        try regmovmc(code, sreg, src);
-                        var insn = I.xadd(@intToEnum(IPReg, dest_addr.reg), sreg);
-                        // TODO: if this works, upstream!
-                        insn.off = dest_addr.off;
-                        try put(code, insn);
-                    },
-                    .callarg => {
-                        // already handled in .call
-                    },
-                    .arg => {
-                        if (i.op1 != 0) unreachable;
-                        try mcmovreg(code, i.*, .r1);
-                    },
-                    else => {
-                        print("TEG! {}\n", .{i.tag});
+                        default_branch = 1;
+                        taken = 0;
+                    }
+
+                    const pos = try regjmpmc(code, spec, firstop, self.iref(i.op2).?.*);
+                    targets[ni][taken] = pos;
+                },
+                .putphi => {
+                    // TODO: actually check for parallell-move conflicts
+                    // either here or as an extra deconstruction step
+                    try movmcs(code, self.iref(i.op2).?.*, self.iref(i.op1).?.*, r0);
+                },
+                .load => {
+                    // TODO: spill spall supllit?
+                    const addr = self.iref(i.op1).?.*;
+                    const off = @intCast(i16, i.op2);
+                    const eaddr: EAddr = (try get_eaddr(self, addr, false)).with_off(off);
+                    const dst = i.ipreg() orelse r0;
+                    try regmovaddr(code, dst, eaddr);
+                    try mcmovreg(code, i.*, dst); // elided if dst is register
+                },
+                .lea => {
+                    // TODO: keep track of lifetime extensions of fused values somewhere
+                    if (i.mckind == .fused) {
+                        // pass
+                    } else {
                         unreachable;
-                    },
-                }
-                fused_inst = if (was_fused) i else null;
+                    }
+                },
+                .store => {
+                    const addr = self.iref(i.op1).?.*;
+                    const eaddr: EAddr = try get_eaddr(self, addr, true);
+                    const val = self.iref(i.op2).?;
+                    try addrmovmc(code, eaddr, val.*);
+                },
+                .bpf_load_map => {
+                    const reg = if (i.mckind == .ipreg) @intToEnum(IPReg, i.mcidx) else r0;
+                    try ld_map_fd(code, reg, i.op1, i.spec);
+                    try mcmovreg(code, i.*, reg);
+                },
+                .alloc => {},
+                .callarg => {
+                    unreachable;
+                },
+                .call => {
+                    //try regmovmc(code, .r1, self.iref(i.op1).?.*);
+                    //try regmovmc(code, .r2, self.iref(i.op2).?.*);
+                    // if (nexti) |iarg| {
+                    //     if (iarg.tag == .callarg) {
+                    //         try regmovmc(code, .r3, self.iref(iarg.op1).?.*);
+                    //         if (iarg.op2 != FLIR.NoRef) {
+                    //             try regmovmc(code, .r4, self.iref(iarg.op2).?.*);
+                    //         }
+                    //     }
+                    // }
+                    try put(code, I.call(@intToEnum(BPF.Helper, i.spec)));
+                },
+                .copy => {
+                    // TODO: the .r0 is a crime
+                    try movmcs(code, i.*, self.iref(i.op1).?.*, r0);
+                },
+                .xadd => {
+                    const dest = self.iref(i.op1).?.*;
+                    const dest_addr = try get_eaddr(self, dest, true);
+                    const src = self.iref(i.op2).?.*;
+                    // TODO: regalloc should alloc even a constant
+                    const sreg = if (src.mckind == .ipreg) @intToEnum(IPReg, src.mcidx) else r0;
+                    try regmovmc(code, sreg, src);
+                    var insn = I.xadd(@intToEnum(Reg, dest_addr.reg), r(sreg));
+                    // TODO: if this works, upstream!
+                    insn.off = dest_addr.off;
+                    try put(code, insn);
+                },
+                .arg => {
+                    if (i.op1 != 0) unreachable;
+                    try mcmovreg(code, i.*, @intToEnum(IPReg, 1));
+                },
+                .vmath, .vcmpf => {
+                    print("platform unsupported: {}\n", .{i.tag});
+                    return error.FLIRError;
+                },
+                .variable, .putvar => {
+                    print("unhandled tag: {}\n", .{i.tag});
+                    return error.FLIRError;
+                },
             }
-            cur_blk = b.next();
         }
 
         if (n.s[default_branch] != fallthru and n.s[default_branch] != 0) {

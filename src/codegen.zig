@@ -347,7 +347,11 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     const dest = i.ipval() orelse return error.FLIRError;
                     try movmcs(cfo, dest, src);
                 },
-                .variable, .putvar => {
+                .bpf_load_map => {
+                    print("platform unsupported: {}\n", .{i.tag});
+                    return error.FLIRError;
+                },
+                .variable, .putvar, .xadd => {
                     print("unhandled tag: {}\n", .{i.tag});
                     return error.FLIRError;
                 },

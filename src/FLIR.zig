@@ -103,7 +103,7 @@ pub const n_ipreg = 16;
 pub fn erase(xregs: anytype) [xregs.len]IPReg {
     var r: [xregs.len]IPReg = undefined;
     for (xregs, 0..) |x, i| {
-        r[i] = x.into();
+        r[i] = @intToEnum(IPReg, @enumToInt(x));
     }
     return r;
 }
@@ -121,6 +121,21 @@ pub const X86_64ABI = struct {
 
     // excludes: stack reg, frame reg (just say NO to -fomiting the framepointer!)
     const reg_order: [14]IPReg = call_unsaved ++ callee_saved;
+};
+
+pub const BPF_ABI = struct {
+    const Reg = std.os.linux.BPF.Insn.Reg;
+    // Args: used used both for incoming args and nested calls (including syscalls)
+    pub const argregs = erase([5]Reg{ .r1, .r2, .r3, .r4, .r5 });
+    pub const ret_reg: IPReg = @intToEnum(IPReg, 0);
+
+    // canonical order of callee saved registers. nsave>0 means
+    // the first nsave items needs to be saved and restored
+    pub const callee_saved = erase([4]Reg{ .r6, .r7, .r8, .r9 });
+    pub const call_unsaved = erase([6]Reg{ .r0, .r1, .r2, .r3, .r4, .r5 });
+
+    // excludes: r10 (immutable frame pointer)
+    const reg_order: [10]IPReg = call_unsaved ++ callee_saved;
 };
 
 pub const BLK_SIZE = 4;
@@ -276,6 +291,8 @@ pub const Inst = struct {
             .ret => null,
             .call => .intptr,
             .callarg => null,
+            .bpf_load_map => .intptr,
+            .xadd => null,
         };
     }
 
@@ -307,6 +324,8 @@ pub const Inst = struct {
             .callarg => 1,
             .call => 0, // could be for funptr/dynamic syscall?
             .alloc => 0,
+            .bpf_load_map => 0,
+            .xadd => 2, // TODO: atomic instruction group
         };
     }
 
@@ -386,6 +405,8 @@ pub const Tag = enum(u8) {
     ret,
     call,
     callarg,
+    bpf_load_map,
+    xadd,
 };
 
 pub const IntBinOp = enum(u6) {
@@ -1209,7 +1230,7 @@ fn renumber(self: *Self, firstblk: u16, from: u16, to: u16) void {
 // reuses op1 if it is from the same block and we are the last user
 pub fn trivial_alloc(self: *Self) !void {
     // TRRICKY: start with the ABI arg registers, and just skip as many args as we have
-    const regs: [8]IPReg = .{ .rdi, .rsi, .rdx, .rcx, .r8, .r9, .r10, .r11 };
+    const regs: [8]IPReg = undefined;
     var used: usize = self.narg;
     var avxused: u8 = 0;
     for (self.n.items) |*n| {
