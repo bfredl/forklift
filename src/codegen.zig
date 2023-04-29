@@ -138,8 +138,8 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
     var targets = try self.a.alloc([2]u32, self.n.items.len);
     defer self.a.free(labels);
     defer self.a.free(targets);
-    mem.set(u32, labels, 0);
-    mem.set([2]u32, targets, .{ 0, 0 });
+    @memset(labels, 0);
+    @memset(targets, .{ 0, 0 });
 
     cfo.long_jump_mode = true; // TODO: as an option
 

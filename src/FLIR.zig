@@ -867,10 +867,10 @@ pub fn rpo_visit(self: *Self, node: u16) !?u16 {
 pub fn reorder_nodes(self: *Self) !void {
     const newlink = try self.a.alloc(u16, self.n.items.len);
     defer self.a.free(newlink);
-    mem.set(u16, newlink, NoRef);
+    @memset(newlink, NoRef);
     const oldlink = try self.a.alloc(u16, self.n.items.len);
     defer self.a.free(oldlink);
-    mem.set(u16, oldlink, NoRef);
+    @memset(oldlink, NoRef);
     var newpos: u16 = 0;
 
     for (self.blkorder.items) |old_ni| {
@@ -1197,8 +1197,8 @@ pub fn maybe_split(self: *Self, after: u16) !u16 {
     }
 
     if (r.idx < BLK_SIZE - 1) {
-        mem.copy(Inst, newblk.i[r.idx + 1 ..], blk.i[r.idx + 1 ..]);
-        mem.set(Inst, blk.i[r.idx + 1 ..], EMPTY);
+        @memcpy(newblk.i[r.idx + 1 ..], blk.i[r.idx + 1 ..]);
+        @memset(blk.i[r.idx + 1 ..], EMPTY);
         for (r.idx + 1..BLK_SIZE) |i| {
             self.renumber(blkid, toref(r.block, uv(i)), toref(blkid, uv(i)));
             if (newblk.i[i].vreg()) |vreg| {
@@ -1364,7 +1364,7 @@ pub fn scan_alloc(self: *Self) !void {
             var free_regs = if (is_avx) &free_regs_avx else &free_regs_ip;
             var reg_kind: MCKind = if (is_avx) .vfreg else .ipreg;
 
-            mem.copy(bool, &usable_regs, free_regs);
+            @memcpy(&usable_regs, free_regs);
             var conflicts: u16 = 0;
             if (i.f.conflicts) {
                 conflicts |= i.vreg_scratch;

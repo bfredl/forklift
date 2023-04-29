@@ -15,7 +15,7 @@ vardef: []u16,
 pub fn ssa_gvn(flir: *FLIR) !void {
     const vardef = try flir.a.alloc(u16, flir.n.items.len * flir.nvar);
     defer flir.a.free(vardef);
-    std.mem.set(u16, vardef, FLIR.NoRef);
+    @memset(vardef, FLIR.NoRef);
 
     const self: Self = .{ .f = flir, .vardef = vardef };
     try self.ssa();

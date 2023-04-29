@@ -59,7 +59,7 @@ pub fn get_jmp_or_last(self: *FLIR, n: *FLIR.Node) !?Tag {
 pub fn check_ir_valid(self: *FLIR) !void {
     const reached = try self.a.alloc(bool, self.n.items.len);
     defer self.a.free(reached);
-    mem.set(bool, reached, false);
+    @memset(reached, false);
 
     var worklist = ArrayList(u16).init(self.a);
     defer worklist.deinit();
