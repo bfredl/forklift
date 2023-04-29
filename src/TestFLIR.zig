@@ -412,7 +412,7 @@ test "multi function" {
 }
 
 test "call near" {
-    var res = try parse_multi_dbg(
+    var res = try parse_multi(
         \\func kuben
         \\  %x = arg
         \\  %prod = mul %x %x

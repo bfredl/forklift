@@ -8,7 +8,6 @@ const page_allocator = std.heap.page_allocator;
 const ArrayListAligned = std.ArrayListAligned;
 
 const builtin = @import("builtin");
-const s2 = builtin.zig_backend != .stage1;
 const ArrayList = std.ArrayList;
 const print = std.debug.print;
 
@@ -407,9 +406,7 @@ pub fn modRmEA(self: *Self, reg_or_opx: u3, ea: EAddr) !void {
         // rip+off32
         try self.wd(ea.offset - (@bitCast(i32, self.get_target()) + 4));
     } else if (mod != 0b00) {
-        // TODO: stage2
-        // try if (offset8) |off| self.wbi(off) else self.wd(ea.offset);
-        if (offset8) |off| (try self.wbi(off)) else (try self.wd(ea.offset));
+        try if (offset8) |off| self.wbi(off) else self.wd(ea.offset);
     }
 }
 
