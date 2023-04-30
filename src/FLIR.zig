@@ -353,6 +353,7 @@ pub const IPMCVal = union(enum) {
     ipreg: IPReg,
     constval: u64, // bitcast to i64 for signed
     frameslot: u8,
+    // frameslot_ptr: u8,
 
     // TODO: this is not a builtin? (or maybe meta)
     pub fn as_ipreg(self: @This()) ?IPReg {

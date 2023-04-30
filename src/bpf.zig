@@ -128,7 +128,7 @@ test "write" {
     var data = std.ArrayList(u8).init(std.testing.allocator);
     defer data.deinit();
     try dump(data.writer(), insn[0..]);
-    std.debug.print("\n{s}\n", .{data.items});
+    // std.debug.print("\n{s}\n", .{data.items});
     try std.testing.expectEqualSlices(u8,
         \\  0: b7 0 0  +0   +0 MOV64 r0, 0
         \\  1: 95 0 0  +0   +0 EXIT

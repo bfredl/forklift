@@ -17,9 +17,10 @@ pub fn parse(self: *FLIR, ir: []const u8) !void {
 
 test "rong" {
     var ir = try FLIR.init(8, test_allocator);
+    defer ir.deinit();
     try parse(&ir,
         \\ func returner
-        \\ ret 0
+        \\ ret 5
         \\ end
     );
     var code = codegen_bpf.Code.init(test_allocator);
@@ -30,5 +31,10 @@ test "rong" {
     var data = std.ArrayList(u8).init(std.testing.allocator);
     defer data.deinit();
     try bpf.dump(data.writer(), code.items);
-    std.debug.print("\n{s}\n", .{data.items});
+    // std.debug.print("\n{s}\n", .{data.items});
+    try std.testing.expectEqualSlices(u8,
+        \\  0: b7 0 0  +0   +5 MOV64 r0, 5
+        \\  1: 95 0 0  +0   +0 EXIT
+        \\
+    , data.items);
 }
