@@ -237,7 +237,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     const lhs = self.ipreg(i.op1) orelse return error.SpillError;
                     const rhs = self.ipval(i.op2) orelse return error.FLIRError;
                     try regaritmc(cfo, .cmp, lhs, rhs);
-                    cond = @intToEnum(CFO.Cond, i.spec);
+                    cond = @intToEnum(FLIR.IntCond, i.spec).asCFOCond();
                 },
                 .putphi => {
                     // TODO: actually check for parallell-move conflicts

@@ -194,7 +194,7 @@ test "diamond cfg" {
     // const const_0 = try self.const_int(0);
     const const_42 = try self.const_int(42);
     try self.putvar(start, v, const_42);
-    _ = try self.icmp(start, .l, arg1, v);
+    _ = try self.icmp(start, .lt, arg1, v);
 
     const left = try self.addNode();
     self.n.items[start].s[0] = left;

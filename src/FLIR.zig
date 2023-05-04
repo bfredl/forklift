@@ -8,6 +8,7 @@ const common = @import("./common.zig");
 const CFO = @import("./CFO.zig");
 const SSA_GVN = @import("./SSA_GVN.zig");
 const builtin = @import("builtin");
+const BPF = std.os.linux.BPF;
 
 const options = if (!builtin.is_test) &@import("root").options else null;
 
@@ -124,7 +125,7 @@ pub const X86_64ABI = struct {
 };
 
 pub const BPF_ABI = struct {
-    const Reg = std.os.linux.BPF.Insn.Reg;
+    const Reg = BPF.Insn.Reg;
     // Args: used used both for incoming args and nested calls (including syscalls)
     pub const argregs = erase([5]Reg{ .r1, .r2, .r3, .r4, .r5 });
     pub const ret_reg: IPReg = @intToEnum(IPReg, 0);
@@ -356,7 +357,7 @@ pub const IPMCVal = union(enum) {
     // frameslot_ptr: u8,
 
     // TODO: this is not a builtin? (or maybe meta)
-    pub fn as_ipreg(self: @This()) ?IPReg {
+    pub fn as_ipreg(self: IPMCVal) ?IPReg {
         return switch (self) {
             .ipreg => |reg| reg,
             else => null,
@@ -421,7 +422,7 @@ pub const IntBinOp = enum(u6) {
     sar,
     shr,
 
-    pub fn asAOP(self: @This()) ?CFO.AOp {
+    pub fn asAOP(self: IntBinOp) ?CFO.AOp {
         return switch (self) {
             .add => .add,
             .sub => .sub,
@@ -432,12 +433,85 @@ pub const IntBinOp = enum(u6) {
         };
     }
 
-    pub fn asShift(self: @This()) ?CFO.ShiftOp {
+    pub fn asShift(self: IntBinOp) ?CFO.ShiftOp {
         return switch (self) {
             .shl => .hl,
             .sar => .ar,
             .shr => .hr,
             else => null,
+        };
+    }
+
+    pub fn asBpfAluOp(self: IntBinOp) ?BPF.Insn.AluOp {
+        return switch (self) {
+            .add => .add,
+            .sub => .sub,
+            .mul => .mul,
+            .@"or" => .alu_or,
+            .@"and" => .alu_and,
+            .xor => .xor,
+            .shl => .lsh,
+            .sar => .arsh,
+            .shr => .rsh,
+        };
+    }
+};
+
+pub const IntCond = enum(u6) {
+    eq,
+    neq,
+    gt,
+    ge,
+    lt,
+    le,
+    a, // above: unsigned greather than
+    na,
+    b, // beloved: unsigned less than
+    nb,
+
+    pub fn asCFOCond(self: IntCond) ?CFO.Cond {
+        return switch (self) {
+            .eq => .e,
+            .neq => .ne,
+            .gt => .g,
+            .ge => .nl,
+            .lt => .l,
+            .le => .ng,
+            .a => .a,
+            .na => .na,
+            .b => .b,
+            .nb => .nb,
+        };
+    }
+
+    pub fn asBpfJmpOp(self: IntCond) ?BPF.Insn.JmpOp {
+        return switch (self) {
+            .eq => .jeq,
+            .neq => .jne,
+            .gt => .jgt,
+            .ge => .jge,
+            .lt => .jlt,
+            .le => .jle,
+            else => null,
+        };
+    }
+
+    pub fn off(self: IntCond) u6 {
+        return @enumToInt(self);
+    }
+
+    pub fn invert(self: IntCond) IntCond {
+        return switch (self) {
+            .eq => .neq,
+            .neq => .eq,
+            .gt => .le,
+            .ge => .lt,
+            .lt => .ge,
+            .le => .gt,
+            .a => .na,
+            .na => .a,
+            .b => .nb,
+            .nb => .b,
         };
     }
 };
@@ -474,7 +548,7 @@ pub const MCKind = enum(u8) {
     // example "lea" and then "store", or "load" and then ibinop/vmath
     fused,
 
-    pub fn unallocated(self: @This()) bool {
+    pub fn unallocated(self: MCKind) bool {
         return switch (self) {
             .unallocated_raw => true,
             .unallocated_ipreghint => true,
@@ -689,7 +763,7 @@ pub fn ibinop(self: *Self, node: u16, op: IntBinOp, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .ibinop, .spec = @enumToInt(op), .op1 = op1, .op2 = op2 });
 }
 
-pub fn icmp(self: *Self, node: u16, cond: CFO.Cond, op1: u16, op2: u16) !u16 {
+pub fn icmp(self: *Self, node: u16, cond: IntCond, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .icmp, .spec = cond.off(), .op1 = op1, .op2 = op2 });
 }
 

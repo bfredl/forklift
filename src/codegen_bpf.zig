@@ -109,53 +109,26 @@ fn regmovmc(code: *Code, dst: IPReg, src: IPMCVal) !void {
     // },
 }
 
-fn regjmpmc(code: *Code, op: Insn.JmpOp, dst: IPReg, src: Inst) !u32 {
+fn regjmpmc(code: *Code, op: Insn.JmpOp, dst: IPReg, src: IPMCVal) !u32 {
     _ = dst;
     _ = op;
-    _ = code;
-    switch (src.mckind) {
-        .frameslot => {
-            unreachable;
-            // try put(code, I.ldx(.double_word, dst, .r10, -8 * @as(i16, src.mcidx))),
-        },
-        .ipreg => {
-            // const reg = @intToEnum(IPReg, src.mcidx);
-            // if (dst != reg) try self.mov(dst, reg);
-            unreachable;
-        },
-        // .constant => {
-        //     if (src.tag != .constant) return error.TheDinnerConversationIsLively;
-        //     const pos = get_target(code);
+    const pos = get_target(code);
+    switch (src) {
+        .frameslot => return error.FLIRError,
+        .ipreg => |_| unreachable,
+        // TODO: FLIR.ABI needs to encode constraints like "imm which fits in a i32"
+        .constval => |_| unreachable,
         //     var inst = I.jmp(op, dst, src.op1, 0x7FFF);
-        //     try put(code, inst);
-        //     return pos;
-        // },
-        .fused => {
-            unreachable;
-        },
-        else => return error.AAA_AA_A,
     }
+    return pos;
 }
 
-// TODO: not implemented!
-fn regaritmc(code: *Code, op: BPF.AluOp, dst: IPReg, i: Inst) !void {
-    _ = code;
-    _ = op;
-    _ = dst;
-    switch (i.mckind) {
-        //.frameslot => try aritrm(code, op, dst, Self.a(.rbp).o(-8 * @as(i32, i.mcidx))),
-        .frameslot => @panic("le panik"),
-        .ipreg => {
-            // const reg = @intToEnum(IPReg, i.mcidx);
-            // try arit(code, op, dst, reg);
-            @panic("what..");
-        },
-        .fused => {
-            if (i.tag != .constant) return error.GetLostHeIsNeverComingBack;
-            // try aritri(code, op, dst, i.op1); // TODO: proper constval
-
-        },
-        else => return error.AAA_AA_A,
+fn regaritmc(code: *Code, op: Insn.AluOp, dst: IPReg, src: IPMCVal) !void {
+    switch (src) {
+        .frameslot => return error.FLIRError,
+        .ipreg => |reg| try put(code, I.alu(64, op, r(dst), r(reg))),
+        // TODO: FLIR.ABI needs to encode constraints like "imm which fits in a i32"
+        .constval => |c| try put(code, I.alu(64, op, r(dst), @intCast(i32, c))),
     }
 }
 
@@ -291,28 +264,30 @@ pub fn codegen(self: *FLIR, code: *Code) !u32 {
                 .phi => {},
                 .ret => try regmovmc(code, r0, self.ipval(i.op1).?),
                 .ibinop => {
-                    const dst = i.ipreg() orelse r0;
-                    try regmovmc(code, dst, self.ipval(i.op1).?);
-                    // try regaritmc(code, @intToEnum(BPF.AluOp, i.spec), dst, self.iref(i.op2).?.*);
+                    const dst = i.ipreg() orelse return error.FLIRError;
+                    const op = @intToEnum(FLIR.IntBinOp, i.spec).asBpfAluOp() orelse return error.FLIRError;
+                    const op1 = self.ipval(i.op1).?;
+                    const op2 = self.ipval(i.op2).?;
+                    try regmovmc(code, dst, op1);
+                    try regaritmc(code, op, dst, op2);
                     unreachable;
                 },
                 .icmp => {
-                    const firstop = self.iref(i.op1).?.ipreg() orelse r0;
-                    var spec = @intToEnum(Insn.JmpOp, i.spec);
+                    const op1 = i.ipreg() orelse return error.FLIRError;
+                    const op2 = self.ipval(i.op2).?;
+                    var spec = @intToEnum(FLIR.IntCond, i.spec);
                     var taken: u1 = 1;
 
                     // TODO: this should have been optimized earlier!
                     if (n.s[1] == fallthru and n.s[0] != 0) {
-                        if (spec == .jeq) {
-                            spec = .jne;
-                        } else {
-                            unreachable;
-                        }
+                        spec = spec.invert();
                         default_branch = 1;
                         taken = 0;
                     }
 
-                    const pos = try regjmpmc(code, spec, firstop, self.iref(i.op2).?.*);
+                    const op = spec.asBpfJmpOp() orelse return error.FLIRError;
+
+                    const pos = try regjmpmc(code, op, op1, op2);
                     targets[ni][taken] = pos;
                 },
                 .putphi => {

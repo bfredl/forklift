@@ -15,7 +15,6 @@ const std = @import("std");
 const print = std.debug.print;
 const mem = std.mem;
 const ParseError = error{ ParseError, OutOfMemory, FLIRError };
-const Cond = CFO.Cond;
 const meta = std.meta;
 
 const Allocator = mem.Allocator;
@@ -208,11 +207,11 @@ fn get_label(f: *Func, name: []const u8, allow_existing: bool) ParseError!u16 {
     return item.value_ptr.*;
 }
 
-const jmpmap = std.ComptimeStringMap(Cond, .{
-    .{ "je", .e },
-    .{ "jne", .ne },
-    .{ "jl", .l },
-    .{ "jge", .nl },
+const jmpmap = std.ComptimeStringMap(FLIR.IntCond, .{
+    .{ "je", .eq },
+    .{ "jne", .neq },
+    .{ "jl", .lt },
+    .{ "jge", .ge },
     .{ "ja", .a },
     .{ "jna", .na },
 });
