@@ -76,7 +76,7 @@ pub fn main() !void {
     };
 
     if (options.dbg_raw_ir) ir.debug_print();
-    try ir.test_analysis(true);
+    try ir.test_analysis(FLIR.X86_64ABI, true);
     if (options.dbg_analysed_ir) ir.debug_print();
 
     if (options.dbg_vregs) ir.print_intervals();
