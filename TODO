@@ -1,31 +1,26 @@
 - port "delete unused critical node" from Eiri
 - calls:
-  - make FLIR entirely "post call-convention".
-  - All info of (1) args (2) clobbers (3) return register(s?) should be encoded
-  into relevant instructions.
-  - vregs+temps then both need bitsets for all clobbered regs, not just "overlaps a call" bit
-   - free bonus: handle constrained instructions like "shr reg, ECX" properly
-
-  - make ParseIR handle multiple functions seamlessly
+  - vregs+temps now have for all clobbered regs, not just "overlaps a call" bit but we need to use it
+   - for syscalls: much fewer clobbers
+   - handle constrained instructions like "shr reg, ECX" properly (note: input-constraint is not a clobber, but it works as a zero-order approx)
 
 - FIXME: general paralell move handling. paralell moves currently needs to be handled:
   - block of putphi instructions
   - block of callarg instructions
   - block of arg instructions (we shouldn't need to do swaps here, but why not support to)
 
-- strech: make FLIR.zig ABI general. all ABI info should be on self.abi field
-  (enum desicions between amd64, aarch64 and EBPF are fine for now)
+- make FLIR.zig ABI general. likely stub out some AArch64 stuff already to expose x86-isms
+  (BPF is much limited in what code we actually will compile with iti)
 
 - regalloc:
  - implement dummy "spill everything!" allocator just to test spill code in isolation
 
  -implement liveness interval spliting:
-   - implement block-splitting to insert insns in the middle of a node [DONE]
-   - "%b = copy %a" instruction [-]
-     - for node-locals, rename all %a to %b later in the node
-     - for vregs: introduce some kind of vreg-to-ref table per node?
- - mostly following "Linear Scan Register Allocation on SSA Form"; Wimmer, Franz; 2010
-   - [DONE] allocation when no spilling is needed
+ - reference: "Linear Scan Register Allocation on SSA Form"; Wimmer, Franz; 2010
+ - [DONE] allocation when no spilling is needed
+ - decide how do do spills:
+   - in advance as part of instruction selection (keeping pressure)
+   - in the midle
  - consider "call near" test case as of 638022887f2f060ecf6eb0aacf211f93a05ed89a:
         \\func twokube
         \\  %x = arg
@@ -43,7 +38,8 @@
  - follow up project: attempt to generalize reverse-mode linear scan to general (at least reducible) CFG:s.
   (only worth it if the struct/algo becomes simpler than
 
-Long term: integrate codebase completely with EIRI. Try zig package manager and see make Eiri depend on FLIR
+WIP: integrate codebase completely with EIRI.
+Try zig package manager and see make Eiri depend on FLIR!
 
 pub fn vmovdq_vg(self: *Self, quad: bool, dst: u4, src: IPReg) !void {
     try self.new_inst(@returnAddress());
