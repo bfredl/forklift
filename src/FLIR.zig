@@ -206,6 +206,18 @@ test "sizey" {
     assert(@sizeOf(Block) <= 64);
 }
 
+fn ipreg_flag(reg: u4) u16 {
+    return @as(u16, 1) << reg;
+}
+
+fn vreg_flag(reg: u6) u64 {
+    return @as(u64, 1) << reg;
+}
+
+fn node_flag(node: u6) u64 {
+    return @as(u64, 1) << node;
+}
+
 pub const Inst = struct {
     tag: Tag,
     spec: u8 = 0,
@@ -1077,7 +1089,7 @@ pub fn calc_use(self: *Self) !void {
                     const i = &b.i[idx];
 
                     if (i.vreg()) |vreg| {
-                        live &= ~(@as(usize, 1) << @intCast(u6, vreg));
+                        live &= ~vreg_flag(@intCast(u6, vreg));
                     } else {
                         if (i.vreg_scratch != NoRef) {
                             if (blk_has_clobber) { // quick skipahead when no clobbers
@@ -1085,8 +1097,7 @@ pub fn calc_use(self: *Self) !void {
                                 for (0..n_ipreg) |r| {
                                     // negative counter: is the last_clobber _before_ the kill position
                                     if (i.vreg_scratch < last_clobber[r]) {
-                                        const rflag = (@as(u16, 1) << @intCast(u4, r));
-                                        conflicts |= rflag;
+                                        conflicts |= ipreg_flag(@intCast(u4, r));
                                     }
                                 }
                                 if (conflicts != 0) {
@@ -1102,7 +1113,7 @@ pub fn calc_use(self: *Self) !void {
                     for (i.ops(false)) |op| {
                         if (self.iref(op)) |ref| {
                             if (ref.vreg()) |vreg| {
-                                live |= (@as(usize, 1) << @intCast(u6, vreg));
+                                live |= vreg_flag(@intCast(u6, vreg));
                             } else {
                                 if (ref.vreg_scratch == NoRef) {
                                     ref.vreg_scratch = neg_counter;
@@ -1125,14 +1136,12 @@ pub fn calc_use(self: *Self) !void {
                     if (clobber_mask != 0) {
                         blk_has_clobber = true; // quick skipahead
                         for (self.vregs.items, 0..) |*v, vi| {
-                            const iflag = (@as(usize, 1) << @intCast(u6, vi));
-                            if (live & iflag != 0) {
+                            if (live & vreg_flag(@intCast(u6, vi)) != 0) {
                                 v.conflicts |= clobber_mask;
                             }
                         }
                         for (0..n_ipreg) |r| {
-                            const rflag = (@as(usize, 1) << @intCast(u6, r));
-                            if ((clobber_mask & rflag) != 0) {
+                            if ((clobber_mask & ipreg_flag(@intCast(u4, r))) != 0) {
                                 last_clobber[r] = neg_counter;
                             }
                         }
@@ -1150,11 +1159,11 @@ pub fn calc_use(self: *Self) !void {
                 // TODO: if there was a call anywhere in the loop
                 // propagate call clobbers onto the loop invariant vregs
                 if (self.n.items.len > 64) unreachable;
-                var loop_set: u64 = @as(u64, 1) << @intCast(u6, ni);
+                var loop_set: u64 = node_flag(@intCast(u6, ni));
                 for (ni + 1..self.n.items.len) |ch_i| {
                     const ch_n = &self.n.items[ch_i];
-                    const ch_loop: u64 = @as(u64, 1) << @intCast(u6, ch_i);
-                    if (((@as(u64, 1) << @intCast(u6, ch_n.loop)) & loop_set) != 0) {
+                    const ch_loop: u64 = node_flag(@intCast(u6, ch_i));
+                    if ((node_flag(@intCast(u6, ch_n.loop)) & loop_set) != 0) {
                         if (ch_n.is_header) {
                             loop_set |= ch_loop;
                         }
@@ -1169,11 +1178,10 @@ pub fn calc_use(self: *Self) !void {
     }
 
     for (self.n.items, 0..) |*n, ni| {
-        const node_bit = (@as(u64, 1) << @intCast(u6, ni));
+        // transpose the node.live_in[vreg] bitfield into vreg.live_in[node] bitfield
         for (self.vregs.items, 0..) |*v, vi| {
-            const vref_bit = (@as(u64, 1) << @intCast(u6, vi));
-            if ((n.live_in & vref_bit) != 0) {
-                v.live_in |= node_bit;
+            if ((n.live_in & vreg_flag(@intCast(u6, vi))) != 0) {
+                v.live_in |= node_flag(@intCast(u6, ni));
             }
         }
 
@@ -1194,7 +1202,7 @@ pub fn calc_use(self: *Self) !void {
                     var kill: bool = false;
                     if (self.iref(op)) |ref| {
                         if (ref.vreg()) |vreg| {
-                            const bit = (@as(u64, 1) << @intCast(u6, vreg));
+                            const bit = vreg_flag(@intCast(u6, vreg));
                             if ((killed & bit) != 0) {
                                 killed = killed & ~bit;
                                 kill = true;
@@ -1377,7 +1385,7 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
         // any vreg which is "live in" should already be allocated. mark these as non-free
         for (self.vregs.items, 0..) |vref, vi| {
             const vr = self.iref(vref.ref).?;
-            const flag = @as(u64, 1) << @intCast(u6, vi);
+            const flag = vreg_flag(@intCast(u6, vi));
             if ((flag & n.live_in) != 0) {
                 if (vr.mckind == .ipreg) free_regs_ip[vr.mcidx] = false;
                 if (vr.mckind == .vfreg) free_regs_avx[vr.mcidx] = false;
@@ -1453,8 +1461,7 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
 
             if (conflicts != 0) {
                 for (0..n_ipreg) |r| {
-                    const rflag = (@as(usize, 1) << @intCast(u6, r));
-                    if ((conflicts & rflag) != 0) {
+                    if ((conflicts & ipreg_flag(@intCast(u4, r))) != 0) {
                         usable_regs[r] = false;
                     }
                 }
@@ -1541,8 +1548,7 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
 
     var mask: u16 = 0;
     for (ABI.call_unsaved) |r| {
-        const rflag = (@as(u16, 1) << @intCast(u4, r.id()));
-        mask |= rflag;
+        mask |= ipreg_flag(r.id());
     }
     self.call_clobber_mask = mask;
 }
@@ -1595,6 +1601,39 @@ pub fn conflict(self: *Self, before: *Inst, after: *Inst) bool {
     return false;
 }
 
+fn mov_dest(self: *Self, i: *Inst) ?IPMCVal {
+    switch (i.tag) {
+        .putphi => self.ipval(i.op2),
+        .callarg => i.ipval(),
+        else => null,
+    }
+}
+
+// Resolve a block of parallel moves. Currently supported:
+// callarg instruction: source in i.op1, destination in i.ipval()
+// putphi instruction: source in i.op1, destination in i.op2 (the phi instruction)
+pub fn resolve_parallel_moves(self: *Self, start: InsIterator, tag: Tag) !void {
+    var read: u16 = 0;
+    var written: u16 = 0;
+    _ = read;
+    _ = written;
+
+    var iter = start;
+    while (iter.next()) |item| {
+        const i = item.i;
+        if (i.tag != tag) break;
+        // TODO: something like IPMCVal.undef for an explicit undefined value (discard the move)
+        const src = self.ipval(i.op1) orelse return error.FLIRError;
+        const dest = self.mov_dest(i);
+        _ = dest;
+        // if (src == dest) pretend nothing happened
+        switch (src) {
+            .ipreg => |reg| reg,
+            else => unreachable,
+        }
+    }
+}
+
 const InsIterator = struct {
     self: *Self,
     cur_blk: u16,
@@ -1639,12 +1678,12 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
 
     try self.reorder_nodes();
     if (check) try self.check_ir_valid();
+
     try SSA_GVN.ssa_gvn(self);
     if (check) try self.check_ir_valid();
 
-    if (check) try self.check_ir_valid();
     try self.calc_use();
-
+    if (check) try self.check_ir_valid();
     if (check) try self.check_vregs();
 
     try self.scan_alloc(ABI);
