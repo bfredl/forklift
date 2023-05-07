@@ -1737,9 +1737,3 @@ pub fn empty(self: *Self, ni: u16, allow_succ: bool) bool {
     assert(node.s[1] == 0);
     return true;
 }
-
-// force tests to run:
-test {
-    std.testing.refAllDecls(@import("./TestFLIR.zig"));
-    std.testing.refAllDecls(@import("./TestAOC.zig"));
-}

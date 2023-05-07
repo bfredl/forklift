@@ -1,12 +1,12 @@
-const FLIR = @import("./FLIR.zig");
-const CFO = @import("./CFO.zig");
-const codegen = @import("./codegen.zig");
+const forklift = @import("forklift");
+const FLIR = forklift.FLIR;
+const CFO = forklift.CFO;
+const IRParse = forklift.IRParse;
 const print = std.debug.print;
 
 const std = @import("std");
 const os = std.os;
 
-const IRParse = @import("./IRParse.zig");
 const test_allocator = std.testing.allocator;
 
 pub fn parse(self: *FLIR, ir: []const u8) !void {
@@ -237,7 +237,7 @@ test "maybe_split" {
     try self.test_analysis(FLIR.X86_64ABI, true);
     var cfo = try CFO.init(test_allocator);
     defer cfo.deinit();
-    _ = try codegen.codegen(&self, &cfo, false);
+    _ = try forklift.codegen_x86_64(&self, &cfo, false);
     try cfo.finalize();
     const fun = cfo.get_ptr(0, AFunc);
     try expect(usize, 12, fun(11));

@@ -1,4 +1,4 @@
-const testutil = @import("./TestFLIR.zig");
+const testutil = @import("./flir.zig");
 const parse_test = testutil.parse_test;
 const expect = testutil.expect;
 

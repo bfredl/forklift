@@ -1,8 +1,8 @@
-const FLIR = @import("./FLIR.zig");
+const forklift = @import("forklift");
+const FLIR = forklift.FLIR;
 const print = std.debug.print;
-const IRParse = @import("./IRParse.zig");
-const codegen_bpf = @import("./codegen_bpf.zig");
-const bpf = @import("./bpf.zig");
+const IRParse = forklift.IRParse;
+const codegen_bpf = forklift.codegen_bpf;
 
 const std = @import("std");
 const test_allocator = std.testing.allocator;
@@ -23,14 +23,14 @@ test "rong" {
         \\ ret 5
         \\ end
     );
-    var code = codegen_bpf.Code.init(test_allocator);
+    var code = forklift.BPFCode.init(test_allocator);
     defer code.deinit();
     try ir.test_analysis(FLIR.BPF_ABI, true);
-    _ = try codegen_bpf.codegen(&ir, &code);
+    _ = try codegen_bpf(&ir, &code);
 
     var data = std.ArrayList(u8).init(std.testing.allocator);
     defer data.deinit();
-    try bpf.dump(data.writer(), code.items);
+    try forklift.dump_bpf(data.writer(), code.items);
     // std.debug.print("\n{s}\n", .{data.items});
     try std.testing.expectEqualSlices(u8,
         \\  0: b7 0 0  +0   +5 MOV64 r0, 5

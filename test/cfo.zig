@@ -1,10 +1,28 @@
 const std = @import("std");
-const Self = @import("./CFO.zig");
+const Self = @import("forklift").CFO;
 
 const test_allocator = std.testing.allocator;
 const expectEqual = std.testing.expectEqual;
 const a = Self.a;
 const bo = Self.bo;
+
+pub fn test_call2(self: *Self, arg1: usize, arg2: usize) !usize {
+    try self.finalize();
+    const FunPtr = *const fn (arg1: usize, arg2: usize) callconv(.C) usize;
+    return self.get_ptr(0, FunPtr)(arg1, arg2);
+}
+
+pub fn test_call2f64(self: *Self, arg1: f64, arg2: f64) !f64 {
+    try self.finalize();
+    const FunPtr = *const fn (arg1: f64, arg2: f64) callconv(.C) f64;
+    return self.get_ptr(0, FunPtr)(arg1, arg2);
+}
+
+pub fn test_call2x(self: *Self, comptime T: type, arg1: anytype, arg2: anytype) !T {
+    try self.finalize();
+    const FunPtr = *const fn (arg1: @TypeOf(arg1), arg2: @TypeOf(arg2)) callconv(.C) T;
+    return self.get_ptr(0, FunPtr)(arg1, arg2);
+}
 
 test "return first argument" {
     var cfo = try Self.init(test_allocator);
@@ -12,7 +30,7 @@ test "return first argument" {
 
     try cfo.mov(.rax, .rdi);
     try cfo.ret();
-    try expectEqual(@as(usize, 4), try cfo.test_call2(4, 10));
+    try expectEqual(@as(usize, 4), try test_call2(&cfo, 4, 10));
 }
 
 test "return second argument" {
@@ -21,7 +39,7 @@ test "return second argument" {
 
     try cfo.mov(.rax, .rsi);
     try cfo.ret();
-    try expectEqual(@as(usize, 10), try cfo.test_call2(4, 10));
+    try expectEqual(@as(usize, 10), try test_call2(&cfo, 4, 10));
 }
 
 test "read/write first arg as 64-bit pointer" {
@@ -33,7 +51,7 @@ test "read/write first arg as 64-bit pointer" {
     try cfo.ret();
 
     var someint: u64 = 33;
-    var retval = try cfo.test_call2(@ptrToInt(&someint), 10);
+    var retval = try test_call2(&cfo, @ptrToInt(&someint), 10);
     try expectEqual(@as(usize, 33), retval);
     try expectEqual(@as(usize, 10), someint);
 }
@@ -47,7 +65,7 @@ test "read/write first arg as 64-bit pointer with offsett" {
     try cfo.ret();
 
     var someint: [2]u64 = .{ 33, 45 };
-    var retval = try cfo.test_call2(@ptrToInt(&someint) - 8, 79);
+    var retval = try test_call2(&cfo, @ptrToInt(&someint) - 8, 79);
     try expectEqual(@as(usize, 33), retval);
     try expectEqual(@as(usize, 33), someint[0]);
     try expectEqual(@as(usize, 79), someint[1]);
@@ -110,7 +128,7 @@ test "return intermediate value" {
     try cfo.movri(.rax, 1337);
     try cfo.ret();
 
-    var retval = try cfo.test_call2(7, 8);
+    var retval = try test_call2(&cfo, 7, 8);
     try expectEqual(@as(usize, 1337), retval);
 }
 
@@ -123,7 +141,7 @@ test "write intermediate value to 64-bit pointer" {
 
     var someint: u64 = 33;
 
-    _ = try cfo.test_call2(@ptrToInt(&someint), 8);
+    _ = try test_call2(&cfo, @ptrToInt(&someint), 8);
     try expectEqual(@as(usize, 586), someint);
 }
 
@@ -142,7 +160,7 @@ test "use r12 for base address" {
 
     var someint: u64 = 33;
 
-    _ = try cfo.test_call2(@ptrToInt(&someint), 8);
+    _ = try test_call2(&cfo, @ptrToInt(&someint), 8);
     try expectEqual(@as(usize, 389), someint);
 }
 
@@ -154,7 +172,7 @@ test "add arguments" {
     try cfo.arit(.add, .rax, .rsi);
     try cfo.ret();
 
-    var retval = try cfo.test_call2(1002, 560);
+    var retval = try test_call2(&cfo, 1002, 560);
     try expectEqual(@as(usize, 1562), retval);
 }
 
@@ -165,7 +183,7 @@ test "add arguments using lea" {
     try cfo.lea(.rax, Self.bi(.rdi, .rsi));
     try cfo.ret();
 
-    var retval = try cfo.test_call2(736, 121);
+    var retval = try test_call2(&cfo, 736, 121);
     try expectEqual(@as(usize, 857), retval);
 }
 
@@ -176,7 +194,7 @@ test "add scaled arguments using lea" {
     try cfo.lea(.rax, Self.qi(.rdi, .rsi));
     try cfo.ret();
 
-    var retval = try cfo.test_call2(736, 121);
+    var retval = try test_call2(&cfo, 736, 121);
     try expectEqual(@as(usize, 1704), retval);
 }
 
@@ -188,7 +206,7 @@ test "subtract arguments" {
     try cfo.arit(.sub, .rax, .rsi);
     try cfo.ret();
 
-    var retval = try cfo.test_call2(1002, 560);
+    var retval = try test_call2(&cfo, 1002, 560);
     try expectEqual(@as(usize, 442), retval);
 }
 
@@ -200,7 +218,7 @@ test "add imm8 to argument" {
     try cfo.aritri(.add, .rax, 64);
     try cfo.ret();
 
-    var retval = try cfo.test_call2(120, 9204);
+    var retval = try test_call2(&cfo, 120, 9204);
     try expectEqual(@as(usize, 184), retval);
 }
 
@@ -212,7 +230,7 @@ test "add immediate to argument" {
     try cfo.aritri(.add, .rax, 137);
     try cfo.ret();
 
-    var retval = try cfo.test_call2(100, 560);
+    var retval = try test_call2(&cfo, 100, 560);
     try expectEqual(@as(usize, 237), retval);
 }
 
@@ -227,10 +245,10 @@ test "get the maximum of two args" {
     try cfo.set_target(jump);
     try cfo.ret();
 
-    var retval = try cfo.test_call2(1002, 560);
+    var retval = try test_call2(&cfo, 1002, 560);
     try expectEqual(@as(usize, 1002), retval);
 
-    retval = try cfo.test_call2(460, 902);
+    retval = try test_call2(&cfo, 460, 902);
     try expectEqual(@as(usize, 902), retval);
 }
 
@@ -246,10 +264,10 @@ test "jump backwards in a loop" {
     try cfo.jbck(.ne, loop);
     try cfo.ret();
 
-    var retval = try cfo.test_call2(10, 560);
+    var retval = try test_call2(&cfo, 10, 560);
     try expectEqual(@as(usize, 55), retval);
 
-    retval = try cfo.test_call2(20, 560);
+    retval = try test_call2(&cfo, 20, 560);
     try expectEqual(@as(usize, 210), retval);
 }
 
@@ -262,7 +280,7 @@ test "push/pop" {
     try cfo.mov(.rax, .r13);
 
     try cfo.ret();
-    var retval = try cfo.test_call2(9009, 560);
+    var retval = try test_call2(&cfo, 9009, 560);
     try expectEqual(@as(usize, 9009), retval);
 }
 
@@ -273,7 +291,7 @@ test "add scalar double" {
     try cfo.vmathf(.add, .sd, 0, 0, 1);
     try cfo.ret();
 
-    var retval = try cfo.test_call2f64(2.0, 0.5);
+    var retval = try test_call2f64(&cfo, 2.0, 0.5);
     try expectEqual(@as(f64, 2.5), retval);
 }
 
@@ -284,10 +302,10 @@ test "max of scalar double" {
     try cfo.vmathf(.max, .sd, 0, 0, 1);
     try cfo.ret();
 
-    var retval = try cfo.test_call2f64(2.0, 5.5);
+    var retval = try test_call2f64(&cfo, 2.0, 5.5);
     try expectEqual(@as(f64, 5.5), retval);
 
-    retval = try cfo.test_call2f64(10.0, 8.5);
+    retval = try test_call2f64(&cfo, 10.0, 8.5);
     try expectEqual(@as(f64, 10.0), retval);
 }
 
@@ -298,7 +316,7 @@ test "move scalar double" {
     try cfo.vmovf(.sd, 0, 1);
     try cfo.ret();
 
-    var retval = try cfo.test_call2f64(22.0, 0.75);
+    var retval = try test_call2f64(&cfo, 22.0, 0.75);
     try expectEqual(@as(f64, 0.75), retval);
 }
 
@@ -314,7 +332,7 @@ test "read/write scalar double" {
 
     var thefloat: f64 = 13.5;
 
-    var retval = try cfo.test_call2x(f64, &thefloat, @as(f64, 0.25));
+    var retval = try test_call2x(&cfo, f64, &thefloat, @as(f64, 0.25));
     try expectEqual(@as(f64, 13.5), retval);
     try expectEqual(@as(f64, 0.25), thefloat);
 }
@@ -330,7 +348,7 @@ test "read/write aligned double vector" {
 
     var thevec: [4]f64 align(32) = .{ 13.5, 25.125, 4552.0, -50.5 };
 
-    try cfo.test_call2x(void, &thevec, @as(u64, 0));
+    try test_call2x(&cfo, void, &thevec, @as(u64, 0));
     try expectEqual(@as(f64, 182.25), thevec[0]);
     try expectEqual(@as(f64, 2550.25), thevec[3]);
 }
@@ -345,7 +363,7 @@ test "add scalar double from memory" {
 
     var thefloat: f64 = 6.5;
 
-    var retval = try cfo.test_call2x(f64, &thefloat, @as(f64, 0.125));
+    var retval = try test_call2x(&cfo, f64, &thefloat, @as(f64, 0.125));
     try expectEqual(@as(f64, 6.625), retval);
     try expectEqual(@as(f64, 6.5), thefloat);
 }
@@ -357,7 +375,7 @@ test "shlx (shift left)" {
     try cfo.sx(.hl, .rax, .rdi, .rsi);
     try cfo.ret();
 
-    var retval = try cfo.test_call2(17, 3);
+    var retval = try test_call2(&cfo, 17, 3);
     try expectEqual(@as(usize, 136), retval);
 }
 
@@ -374,7 +392,7 @@ test "indirect call" {
     try cfo.call_ptr(.r10);
     try cfo.ret();
 
-    var retval = try cfo.test_call2(@ptrToInt(&multiplier), 14);
+    var retval = try test_call2(&cfo, @ptrToInt(&multiplier), 14);
 
     try expectEqual(@as(usize, 147), retval);
 }
@@ -392,7 +410,7 @@ test "direct call" {
     try cfo.maybe_call_rel_abs(@ptrCast(*const u8, &multiplier)) orelse return error.BadDirections;
     try cfo.ret();
 
-    var retval = try cfo.test_call2(4, 1337);
+    var retval = try test_call2(&cfo, 4, 1337);
     try expectEqual(@as(usize, 47), retval);
 }
 

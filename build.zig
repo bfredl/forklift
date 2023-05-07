@@ -11,28 +11,18 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(exe_ir);
     ir.dependOn(&exe_ir.step);
 
-    if (false) {
-        var exe = b.addExecutable(.{
-            .name = "operator",
-            .root_source_file = .{ .path = "src/main.zig" },
-            .optimize = opt,
-        });
-        exe.install();
+    const forklift = b.createModule(.{
+        .source_file = .{ .path = "src/forklift.zig" },
+    });
 
-        var exe_parse = b.addExecutable("parse", "src/parse.zig");
-        exe_parse.install();
+    const cfo_test = b.addTest(.{
+        .root_source_file = .{ .path = "test/all.zig" },
+        .optimize = opt,
+    });
 
-        const operate = b.step("operate", "operate the forklift");
-        const run = exe.run();
-        run.step.dependOn(b.getInstallStep());
-        operate.dependOn(&run.step);
+    cfo_test.addModule("forklift", forklift);
 
-        var exe_looptest = b.addExecutable("loop_test", "src/loop_test.zig");
-        exe_looptest.install();
-
-        const loop_test = b.step("loop_test", "loop_test the forklift");
-        const run_looptest = exe_looptest.run();
-        run_looptest.step.dependOn(b.getInstallStep());
-        loop_test.dependOn(&run_looptest.step);
-    }
+    const run = b.addRunArtifact(cfo_test);
+    const test_step = b.step("test", "Check it!");
+    test_step.dependOn(&run.step);
 }

@@ -926,26 +926,3 @@ pub fn lookup(self: *Self, addr: usize) usize {
     }
     return addr;
 }
-
-pub fn test_call2(self: *Self, arg1: usize, arg2: usize) !usize {
-    try self.finalize();
-    const FunPtr = *const fn (arg1: usize, arg2: usize) callconv(.C) usize;
-    return self.get_ptr(0, FunPtr)(arg1, arg2);
-}
-
-pub fn test_call2f64(self: *Self, arg1: f64, arg2: f64) !f64 {
-    try self.finalize();
-    const FunPtr = *const fn (arg1: f64, arg2: f64) callconv(.C) f64;
-    return self.get_ptr(0, FunPtr)(arg1, arg2);
-}
-
-pub fn test_call2x(self: *Self, comptime T: type, arg1: anytype, arg2: anytype) !T {
-    try self.finalize();
-    const FunPtr = *const fn (arg1: @TypeOf(arg1), arg2: @TypeOf(arg2)) callconv(.C) T;
-    return self.get_ptr(0, FunPtr)(arg1, arg2);
-}
-
-// force tests to run:
-test {
-    std.testing.refAllDecls(@import("./TestCFO.zig"));
-}

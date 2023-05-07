@@ -3,7 +3,7 @@ const linux = std.os.linux;
 const BPF = linux.BPF;
 const Insn = BPF.Insn;
 
-pub fn dump(w: anytype, code: []const Insn) !void {
+pub fn dump_bpf(w: anytype, code: []const Insn) !void {
     for (code, 0..) |*i, ni| {
         try dump_ins(w, i.*, ni);
     }
@@ -127,7 +127,7 @@ test "write" {
 
     var data = std.ArrayList(u8).init(std.testing.allocator);
     defer data.deinit();
-    try dump(data.writer(), insn[0..]);
+    try dump_bpf(data.writer(), insn[0..]);
     // std.debug.print("\n{s}\n", .{data.items});
     try std.testing.expectEqualSlices(u8,
         \\  0: b7 0 0  +0   +0 MOV64 r0, 0
