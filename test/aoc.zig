@@ -257,7 +257,7 @@ test "scorer" {
 }
 
 // aoc 2022 3
-test "scorer" {
+test "scorer 3" {
     var cfo = try parse_test(
         \\func finder
         \\  var %rowlen

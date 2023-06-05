@@ -3,6 +3,7 @@ const FLIR = forklift.FLIR;
 const print = std.debug.print;
 const IRParse = forklift.IRParse;
 const codegen_bpf = forklift.codegen_bpf;
+const bpf_rt = forklift.bpf_rt;
 
 const std = @import("std");
 const test_allocator = std.testing.allocator;
@@ -37,4 +38,24 @@ test "rong" {
         \\  1: 95 0 0  +0   +0 EXIT
         \\
     , data.items);
+}
+
+test "run simple" {
+    var ir = try FLIR.init(8, test_allocator);
+    defer ir.deinit();
+    try parse(&ir,
+        \\ func returner
+        \\ ret 5
+        \\ end
+    );
+    var code = forklift.BPFCode.init(test_allocator);
+    defer code.deinit();
+    try ir.test_analysis(FLIR.BPF_ABI, true);
+    _ = try codegen_bpf(&ir, &code);
+    try forklift.dump_bpf(std.io.getStdErr().writer(), code.items);
+
+    const prog_fd = try bpf_rt.prog_load_test(.socket_filter, code.items, "MIT");
+    print("the prog: {}\n", .{prog_fd});
+    const ret = try bpf_rt.prog_test_run(prog_fd, "dumm data mycket dumm");
+    try std.testing.expectEqual(ret, 5);
 }
