@@ -54,8 +54,10 @@ test "run simple" {
     _ = try codegen_bpf(&ir, &code);
     try forklift.dump_bpf(std.io.getStdErr().writer(), code.items);
 
-    const prog_fd = try bpf_rt.prog_load_test(.socket_filter, code.items, "MIT");
+    const BPF_F_SLEEPABLE = (1 << 4);
+
+    const prog_fd = try bpf_rt.prog_load_test(.syscall, code.items, "MIT", BPF_F_SLEEPABLE);
     print("the prog: {}\n", .{prog_fd});
-    const ret = try bpf_rt.prog_test_run(prog_fd, "dumm data mycket dumm");
+    const ret = try bpf_rt.prog_test_run(prog_fd, null);
     try std.testing.expectEqual(ret, 5);
 }
