@@ -9,7 +9,7 @@ var the_cfo: ?*CFO = null;
 fn sigHandler(sig: i32, info: *const os.siginfo_t, ctx_ptr: ?*const anyopaque) callconv(.C) void {
     const s = io.getStdErr().writer();
 
-    const addr = @ptrToInt(info.fields.sigfault.addr);
+    const addr = @intFromPtr(info.fields.sigfault.addr);
 
     // TODO: this reimplements quite a bit of os.debug
     // ideally we should be able to do some pre-processing

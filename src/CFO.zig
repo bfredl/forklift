@@ -52,23 +52,23 @@ pub const IPReg = enum(u4) {
     r15,
 
     pub fn id(self: IPReg) u4 {
-        return @enumToInt(self);
+        return @intFromEnum(self);
     }
 
     pub fn into(self: IPReg) common.IPReg {
-        return @intToEnum(common.IPReg, self.id());
+        return @enumFromInt(common.IPReg, self.id());
     }
 
     pub fn from(self: common.IPReg) IPReg {
-        return @intToEnum(IPReg, self.id());
+        return @enumFromInt(IPReg, self.id());
     }
 
     pub fn lowId(self: IPReg) u3 {
-        return @truncate(u3, @enumToInt(self));
+        return @truncate(u3, @intFromEnum(self));
     }
 
     pub fn ext(self: IPReg) bool {
-        return @enumToInt(self) >= 0x08;
+        return @intFromEnum(self) >= 0x08;
     }
 
     // if register would confilct with AH,BH,CH,DH in byte mode
@@ -89,11 +89,11 @@ pub const AOp = enum(u3) {
     cmp,
 
     fn off(self: @This()) u8 {
-        return @as(u8, @enumToInt(self)) * 8;
+        return @as(u8, @intFromEnum(self)) * 8;
     }
 
     pub fn opx(self: @This()) u3 {
-        return @enumToInt(self);
+        return @intFromEnum(self);
     }
 };
 
@@ -104,7 +104,7 @@ pub const ShiftOp = enum {
     const al = .hl; // arithmically left, same as logically left
     //
     pub fn to_pp(self: @This()) PP {
-        return @intToEnum(PP, @enumToInt(self) + 1);
+        return @enumFromInt(PP, @intFromEnum(self) + 1);
     }
 
     pub fn to_rm(self: @This()) u3 {
@@ -143,7 +143,7 @@ pub const Cond = enum(u4) {
     pub const ge = C.nl;
     pub const le = C.ng;
     pub fn off(self: @This()) u8 {
-        return @as(u8, @enumToInt(self));
+        return @as(u8, @intFromEnum(self));
     }
 };
 
@@ -181,7 +181,7 @@ pub const VCmpOp = enum(u5) {
     gt_oq,
     true_us,
     pub fn val(self: @This()) u5 {
-        return @as(u5, @enumToInt(self));
+        return @as(u5, @intFromEnum(self));
     }
 };
 
@@ -191,7 +191,7 @@ const PP = enum(u2) {
     F3,
     F2,
     fn val(self: @This()) u8 {
-        return @as(u8, @enumToInt(self));
+        return @as(u8, @intFromEnum(self));
     }
 };
 
@@ -205,11 +205,11 @@ pub const FMode = enum(u3) {
     pd4,
 
     fn pp(self: @This()) PP {
-        return @intToEnum(PP, @truncate(u2, @enumToInt(self)));
+        return @enumFromInt(PP, @truncate(u2, @intFromEnum(self)));
     }
 
     fn l(self: @This()) bool {
-        return @enumToInt(self) >= 4;
+        return @intFromEnum(self) >= 4;
     }
 
     fn scalar(self: @This()) bool {
@@ -217,7 +217,7 @@ pub const FMode = enum(u3) {
     }
 
     fn double(self: @This()) bool {
-        return @truncate(u1, @enumToInt(self)) == 1;
+        return @truncate(u1, @intFromEnum(self)) == 1;
     }
 };
 
@@ -226,7 +226,7 @@ const MM = enum(u5) {
     h0F38 = 2,
     h0F3A = 3,
     fn val(self: @This()) u8 {
-        return @as(u8, @enumToInt(self));
+        return @as(u8, @intFromEnum(self));
     }
 };
 
@@ -238,7 +238,7 @@ pub const IMode = enum(u2) {
     q,
 
     fn off(self: @This()) u8 {
-        return @as(u8, @enumToInt(self));
+        return @as(u8, @intFromEnum(self));
     }
 };
 
@@ -251,7 +251,7 @@ pub const VMathOp = enum(u3) {
     max = 7,
 
     pub fn off(self: @This()) u8 {
-        return @as(u8, @enumToInt(self));
+        return @as(u8, @intFromEnum(self));
     }
 };
 
@@ -411,20 +411,20 @@ pub fn modRmEA(self: *Self, reg_or_opx: u3, ea: EAddr) !void {
 }
 
 pub fn tibflag(comptime T: type, flag: bool) u8 {
-    return @as(T, @boolToInt(!flag));
+    return @as(T, @intFromBool(!flag));
 }
 
 // Note: implements inversion of r, vvvv
 pub fn vex2(self: *Self, r: bool, vv: u4, l: bool, pp: PP) !void {
     try self.wb(0xC5);
-    try self.wb(tibflag(u8, r) << 7 | @as(u8, ~vv) << 3 | @as(u8, @boolToInt(l)) << 2 | pp.val());
+    try self.wb(tibflag(u8, r) << 7 | @as(u8, ~vv) << 3 | @as(u8, @intFromBool(l)) << 2 | pp.val());
 }
 
 // Note: implements inversion of wrxb, vvvv
 pub fn vex3(self: *Self, w: bool, r: bool, x: bool, b: bool, mm: MM, vv: u4, l: bool, pp: PP) !void {
     try self.wb(0xC4);
     try self.wb(tibflag(u8, r) << 7 | tibflag(u8, x) << 6 | tibflag(u8, b) << 5 | mm.val());
-    try self.wb(tibflag(u8, w) << 7 | @as(u8, ~vv) << 3 | @as(u8, @boolToInt(l)) << 2 | pp.val());
+    try self.wb(tibflag(u8, w) << 7 | @as(u8, ~vv) << 3 | @as(u8, @intFromBool(l)) << 2 | pp.val());
 }
 
 pub fn vex0fwig(self: *Self, r: bool, x: bool, b: bool, vv: u4, l: bool, pp: PP) !void {
@@ -479,9 +479,9 @@ pub fn call_rel(self: *Self, addr: u32) !void {
 
 pub fn maybe_call_rel_abs(self: *Self, addr: *const u8) !?void {
     // TRICKY: this assumes code won't move.
-    const rel_pos = @ptrToInt(self.code.items.ptr) + self.get_target() + 5;
+    const rel_pos = @intFromPtr(self.code.items.ptr) + self.get_target() + 5;
     // This should be safe if we stay in USER space (0 <= intptr < 2**47)
-    const diff = @intCast(isize, @ptrToInt(addr)) - @intCast(isize, rel_pos);
+    const diff = @intCast(isize, @intFromPtr(addr)) - @intCast(isize, rel_pos);
     const short_diff = @truncate(i32, diff);
     if (diff != short_diff) return null;
 
@@ -850,7 +850,7 @@ pub fn vmovdqumr(self: *Self, wide: bool, dst: EAddr, src: u4) !void {
 }
 
 pub fn vaddi(self: *Self, wide: bool, imode: ISize, dst: u4, src1: u4, src2: u4) !void {
-    const op = if (imode == .quadword) 0xD4 else (0xFC + @as(u8, @enumToInt(imode)));
+    const op = if (imode == .quadword) 0xD4 else (0xFC + @as(u8, @intFromEnum(imode)));
     try self.vop_i_rr(op, wide, .h66, dst, src1, src2);
 }
 
@@ -914,7 +914,7 @@ pub fn dbg_test(self: *Self) !void {
 }
 
 pub fn lookup(self: *Self, addr: usize) usize {
-    const startaddr: usize = @ptrToInt(self.code.items.ptr);
+    const startaddr: usize = @intFromPtr(self.code.items.ptr);
     const endaddr: usize = startaddr + self.code.items.len;
     if (startaddr <= addr and addr < endaddr) {
         const off = addr - startaddr;

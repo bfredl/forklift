@@ -15,7 +15,7 @@ const IPMCVal = FLIR.IPMCVal;
 
 const common = @import("./common.zig");
 fn r(reg: IPReg) Reg {
-    return @intToEnum(Reg, reg.id());
+    return @enumFromInt(Reg, reg.id());
 }
 
 const ArrayList = std.ArrayList;
@@ -94,7 +94,7 @@ fn mov(code: *Code, dst: IPReg, src: anytype) !void {
     try put(code, I.mov(r(dst), src));
 }
 
-const r0 = @intToEnum(common.IPReg, 0);
+const r0 = @enumFromInt(common.IPReg, 0);
 
 fn regmovmc(code: *Code, dst: IPReg, src: IPMCVal) !void {
     switch (src) {
@@ -148,7 +148,7 @@ fn mcmovi(code: *Code, i: Inst) !void {
             try mcmovreg(code, i, .r0);
         },
         .ipreg => {
-            const reg = @intToEnum(IPReg, i.mcidx);
+            const reg = @enumFromInt(IPReg, i.mcidx);
             try mov(code, reg, i.op1);
         },
         .fused => {}, // let user lookup value
@@ -158,12 +158,12 @@ fn mcmovi(code: *Code, i: Inst) !void {
 }
 
 fn stx(code: *Code, dst: EAddr, src: IPReg) !void {
-    try put(code, I.stx(.double_word, @intToEnum(Reg, dst.reg), dst.off, r(src)));
+    try put(code, I.stx(.double_word, @enumFromInt(Reg, dst.reg), dst.off, r(src)));
 }
 
 fn st(code: *Code, dst: EAddr, src: anytype) !void {
     // TODO: AAAA wrong size
-    try put(code, I.st(.double_word, @intToEnum(Reg, dst.reg), dst.off, src));
+    try put(code, I.st(.double_word, @enumFromInt(Reg, dst.reg), dst.off, src));
 }
 
 fn addrmovmc(code: *Code, dst: EAddr, src: Inst) !void {
@@ -173,14 +173,14 @@ fn addrmovmc(code: *Code, dst: EAddr, src: Inst) !void {
         //     try st(code, dst, src.op1);
         // },
         .ipreg => {
-            try stx(code, dst, @intToEnum(IPReg, src.mcidx));
+            try stx(code, dst, @enumFromInt(IPReg, src.mcidx));
         },
         else => unreachable,
     }
 }
 
 fn regmovaddr(code: *Code, dst: IPReg, src: EAddr, size: common.ISize) !void {
-    try put(code, I.ldx(size, r(dst), @intToEnum(Reg, src.reg), src.off));
+    try put(code, I.ldx(size, r(dst), @enumFromInt(Reg, src.reg), src.off));
 }
 
 fn movmcs(code: *Code, dst: IPMCVal, src: IPMCVal) !void {
@@ -265,7 +265,7 @@ pub fn codegen(self: *FLIR, code: *Code) !u32 {
                 .ret => try regmovmc(code, r0, self.ipval(i.op1).?),
                 .ibinop => {
                     const dst = i.ipreg() orelse return error.FLIRError;
-                    const op = @intToEnum(FLIR.IntBinOp, i.spec).asBpfAluOp() orelse return error.FLIRError;
+                    const op = @enumFromInt(FLIR.IntBinOp, i.spec).asBpfAluOp() orelse return error.FLIRError;
                     const op1 = self.ipval(i.op1).?;
                     const op2 = self.ipval(i.op2).?;
                     try regmovmc(code, dst, op1);
@@ -275,7 +275,7 @@ pub fn codegen(self: *FLIR, code: *Code) !u32 {
                 .icmp => {
                     const op1 = i.ipreg() orelse return error.FLIRError;
                     const op2 = self.ipval(i.op2).?;
-                    var spec = @intToEnum(FLIR.IntCond, i.spec);
+                    var spec = @enumFromInt(FLIR.IntCond, i.spec);
                     var taken: u1 = 1;
 
                     // TODO: this should have been optimized earlier!
@@ -324,7 +324,7 @@ pub fn codegen(self: *FLIR, code: *Code) !u32 {
                     try addrmovmc(code, eaddr, val.*);
                 },
                 .bpf_load_map => {
-                    const reg = if (i.mckind == .ipreg) @intToEnum(IPReg, i.mcidx) else r0;
+                    const reg = if (i.mckind == .ipreg) @enumFromInt(IPReg, i.mcidx) else r0;
                     try ld_map_fd(code, reg, i.op1, i.spec);
                     try mcmovreg(code, i.ipval().?, reg);
                 },
@@ -343,7 +343,7 @@ pub fn codegen(self: *FLIR, code: *Code) !u32 {
                     //         }
                     //     }
                     // }
-                    try put(code, I.call(@intToEnum(BPF.Helper, i.spec)));
+                    try put(code, I.call(@enumFromInt(BPF.Helper, i.spec)));
                 },
                 .copy => {
                     try movmcs(code, i.ipval().?, self.ipval(i.op1).?);
@@ -358,14 +358,14 @@ pub fn codegen(self: *FLIR, code: *Code) !u32 {
                         else => r0,
                     };
                     try regmovmc(code, sreg, src);
-                    var insn = I.xadd(@intToEnum(Reg, dest_addr.reg), r(sreg));
+                    var insn = I.xadd(@enumFromInt(Reg, dest_addr.reg), r(sreg));
                     // TODO: if this works, upstream!
                     insn.off = dest_addr.off;
                     try put(code, insn);
                 },
                 .arg => {
                     if (i.op1 != 0) unreachable;
-                    try mcmovreg(code, i.ipval().?, @intToEnum(IPReg, 1));
+                    try mcmovreg(code, i.ipval().?, @enumFromInt(IPReg, 1));
                 },
                 .vmath, .vcmpf => {
                     print("platform unsupported: {}\n", .{i.tag});

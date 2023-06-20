@@ -13,7 +13,7 @@ const EAddr = CFO.EAddr;
 
 const common = @import("./common.zig");
 fn r(reg: IPReg) CFO.IPReg {
-    return @intToEnum(CFO.IPReg, reg.id());
+    return @enumFromInt(CFO.IPReg, reg.id());
 }
 
 fn slotoff(slotid: anytype) i32 {
@@ -193,7 +193,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     const lhs = self.ipval(i.op1) orelse return error.FLIRError;
                     const rhs = self.ipval(i.op2) orelse return error.FLIRError;
                     const dst = i.ipreg() orelse return error.SpillError;
-                    const op = @intToEnum(FLIR.IntBinOp, i.spec);
+                    const op = @enumFromInt(FLIR.IntBinOp, i.spec);
 
                     if (op.asAOP()) |aop| {
                         // TODO: fugly: remove once we have constraint handling in regalloc
@@ -237,7 +237,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     const lhs = self.ipreg(i.op1) orelse return error.SpillError;
                     const rhs = self.ipval(i.op2) orelse return error.FLIRError;
                     try regaritmc(cfo, .cmp, lhs, rhs);
-                    cond = @intToEnum(FLIR.IntCond, i.spec).asCFOCond();
+                    cond = @enumFromInt(FLIR.IntCond, i.spec).asCFOCond();
                 },
                 .putphi => {
                     // TODO: actually check for parallell-move conflicts
@@ -328,7 +328,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     try regmovmc(cfo, i.ipreg().?, self.ipval(i.op1).?);
                 },
                 .call => {
-                    const kind = @intToEnum(FLIR.CallKind, i.spec);
+                    const kind = @enumFromInt(FLIR.CallKind, i.spec);
                     switch (kind) {
                         .syscall => {
                             try regmovmc(cfo, CFO.IPReg.rax.into(), self.ipval(i.op1).?);

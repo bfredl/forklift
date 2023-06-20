@@ -108,7 +108,7 @@ pub fn dump_ins(w: anytype, i: BPF.Insn, ni: usize) !void {
             if (h == BPF.EXIT) {
                 try w.print("EXIT", .{});
             } else if (h == BPF.CALL) {
-                try w.print("CALL ${s}", .{@tagName(@intToEnum(BPF.Helper, i.imm))});
+                try w.print("CALL ${s}", .{@tagName(@enumFromInt(BPF.Helper, i.imm))});
             } else {
                 try w.print("{s} r{}, ", .{ jmpspec, i.dst });
                 if (i.code & BPF.X == BPF.X) try w.print("r{}", .{i.src}) else try w.print("{}", .{i.imm});
@@ -140,7 +140,7 @@ pub fn prog_test_run(
     attr.test_run.prog_fd = prog;
     attr.test_run.repeat = 1;
 
-    attr.test_run.data_in = @ptrToInt(data_in.ptr);
+    attr.test_run.data_in = @intFromPtr(data_in.ptr);
     attr.test_run.data_size_in = data_in.len;
 
     attr.test_run.ctx_in = &(u8[1]{0} ** 192);

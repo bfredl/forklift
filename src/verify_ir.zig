@@ -204,9 +204,9 @@ pub fn print_blk(self: *FLIR, firstblk: u16) void {
         } else if (i.tag == .vcmpf) {
             print(".{s}", .{@tagName(i.vcmpop())});
         } else if (i.tag == .ibinop) {
-            print(".{s}", .{@tagName(@intToEnum(FLIR.IntBinOp, i.spec))});
+            print(".{s}", .{@tagName(@enumFromInt(FLIR.IntBinOp, i.spec))});
         } else if (i.tag == .icmp) {
-            print(".{s}", .{@tagName(@intToEnum(CFO.Cond, i.spec))});
+            print(".{s}", .{@tagName(@enumFromInt(CFO.Cond, i.spec))});
         } else if (i.tag == .putphi) {
             print(" %{} <-", .{i.op2});
         }
@@ -261,7 +261,7 @@ fn print_mcval(i: FLIR.Inst) void {
     }
     switch (i.mckind) {
         .frameslot => print(" [rbp-8*{}]", .{i.mcidx}),
-        .ipreg => print(" ${s}", .{@tagName(@intToEnum(CFO.IPReg, i.mcidx))}),
+        .ipreg => print(" ${s}", .{@tagName(@enumFromInt(CFO.IPReg, i.mcidx))}),
         .vfreg => print(" $ymm{}", .{i.mcidx}),
         else => {
             if (i.tag == .load or i.tag == .phi or i.tag == .arg) {

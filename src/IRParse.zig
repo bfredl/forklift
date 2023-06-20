@@ -375,7 +375,7 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
                 print("unknown syscall: '{s}'\n", .{name});
                 return error.ParseError;
             };
-            const sysnum = try f.ir.const_int(@intCast(i32, @enumToInt(syscall)));
+            const sysnum = try f.ir.const_int(@intCast(i32, @intFromEnum(syscall)));
 
             try self.parse_args(f);
 

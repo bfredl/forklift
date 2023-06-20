@@ -11,6 +11,6 @@ pub const ISize = enum(u2) {
 pub const IPReg = enum(u4) {
     _,
     pub fn id(self: IPReg) u4 {
-        return @enumToInt(self);
+        return @intFromEnum(self);
     }
 };

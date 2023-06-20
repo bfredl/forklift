@@ -104,7 +104,7 @@ pub const n_ipreg = 16;
 pub fn erase(xregs: anytype) [xregs.len]IPReg {
     var r: [xregs.len]IPReg = undefined;
     for (xregs, 0..) |x, i| {
-        r[i] = @intToEnum(IPReg, @enumToInt(x));
+        r[i] = @enumFromInt(IPReg, @intFromEnum(x));
     }
     return r;
 }
@@ -128,7 +128,7 @@ pub const BPF_ABI = struct {
     const Reg = BPF.Insn.Reg;
     // Args: used used both for incoming args and nested calls (including syscalls)
     pub const argregs = erase([5]Reg{ .r1, .r2, .r3, .r4, .r5 });
-    pub const ret_reg: IPReg = @intToEnum(IPReg, 0);
+    pub const ret_reg: IPReg = @enumFromInt(IPReg, 0);
 
     // canonical order of callee saved registers. nsave>0 means
     // the first nsave items needs to be saved and restored
@@ -162,7 +162,7 @@ pub const ValType = enum(u4) {
     avxval,
 
     pub fn spec(self: @This()) u4 {
-        return @enumToInt(self);
+        return @intFromEnum(self);
     }
 };
 
@@ -174,19 +174,19 @@ pub const SpecType = union(ValType) {
     avxval: FMode,
     const INT_SPEC_OFF: u4 = 8;
     pub fn val_type(self: @This()) ValType {
-        return if (@enumToInt(self) >= INT_SPEC_OFF) .intptr else .avxval;
+        return if (@intFromEnum(self) >= INT_SPEC_OFF) .intptr else .avxval;
     }
     pub fn from(val: u8) SpecType {
         if (val >= INT_SPEC_OFF) {
-            return .{ .intptr = @intToEnum(ISize, val - INT_SPEC_OFF) };
+            return .{ .intptr = @enumFromInt(ISize, val - INT_SPEC_OFF) };
         } else {
-            return .{ .avxval = @intToEnum(FMode, val) };
+            return .{ .avxval = @enumFromInt(FMode, val) };
         }
     }
     pub fn into(self: SpecType) u5 {
         return switch (self) {
-            .intptr => |i| INT_SPEC_OFF + @enumToInt(i),
-            .avxval => |a| @enumToInt(a),
+            .intptr => |i| INT_SPEC_OFF + @intFromEnum(i),
+            .avxval => |a| @intFromEnum(a),
         };
     }
 };
@@ -272,16 +272,16 @@ pub const Inst = struct {
     }
 
     pub fn vmathop(self: Inst) VMathOp {
-        return @intToEnum(VMathOp, self.low_spec());
+        return @enumFromInt(VMathOp, self.low_spec());
     }
 
     pub fn vcmpop(self: Inst) VCmpOp {
-        return @intToEnum(VCmpOp, self.low_spec());
+        return @enumFromInt(VCmpOp, self.low_spec());
     }
 
     // only valid for op instructions. otherwise use mem_type
     pub fn fmode_op(self: Inst) FMode {
-        return @intToEnum(FMode, self.high_spec());
+        return @enumFromInt(FMode, self.high_spec());
     }
 
     pub fn res_type(inst: Inst) ?ValType {
@@ -343,12 +343,12 @@ pub const Inst = struct {
     }
 
     pub fn ops(i: *Inst, rw: bool) []u16 {
-        assert(@ptrToInt(&i.op2) - @ptrToInt(&i.op1) == @sizeOf(u16));
+        assert(@intFromPtr(&i.op2) - @intFromPtr(&i.op1) == @sizeOf(u16));
         return @ptrCast([*]u16, &i.op1)[0..i.n_op(rw)];
     }
 
     pub fn ipreg(i: Inst) ?IPReg {
-        return if (i.mckind == .ipreg) @intToEnum(IPReg, i.mcidx) else null;
+        return if (i.mckind == .ipreg) @enumFromInt(IPReg, i.mcidx) else null;
     }
 
     pub fn avxreg(i: Inst) ?u4 {
@@ -509,7 +509,7 @@ pub const IntCond = enum(u6) {
     }
 
     pub fn off(self: IntCond) u6 {
-        return @enumToInt(self);
+        return @intFromEnum(self);
     }
 
     pub fn invert(self: IntCond) IntCond {
@@ -652,11 +652,11 @@ fn sphigh(high: u3, low: u5) u8 {
 }
 
 pub fn vmathspec(vop: VMathOp, fmode: FMode) u8 {
-    return sphigh(@enumToInt(fmode), @intCast(u5, vop.off()));
+    return sphigh(@intFromEnum(fmode), @intCast(u5, vop.off()));
 }
 
 pub fn vcmpfspec(vcmp: VCmpOp, fmode: FMode) u8 {
-    return sphigh(@enumToInt(fmode), vcmp.val());
+    return sphigh(@intFromEnum(fmode), vcmp.val());
 }
 
 pub fn addNode(self: *Self) !u16 {
@@ -772,7 +772,7 @@ pub fn vcmpf(self: *Self, node: u16, vop: VCmpOp, fmode: FMode, op1: u16, op2: u
 }
 
 pub fn ibinop(self: *Self, node: u16, op: IntBinOp, op1: u16, op2: u16) !u16 {
-    return self.addInst(node, .{ .tag = .ibinop, .spec = @enumToInt(op), .op1 = op1, .op2 = op2 });
+    return self.addInst(node, .{ .tag = .ibinop, .spec = @intFromEnum(op), .op1 = op1, .op2 = op2 });
 }
 
 pub fn icmp(self: *Self, node: u16, cond: IntCond, op1: u16, op2: u16) !u16 {
@@ -799,7 +799,7 @@ pub fn callarg(self: *Self, node: u16, num: u8, ref: u16) !void {
 pub fn call(self: *Self, node: u16, kind: CallKind, num: u16) !u16 {
     const c = try self.addInst(node, .{
         .tag = .call,
-        .spec = @enumToInt(kind),
+        .spec = @intFromEnum(kind),
         .op1 = num,
         .op2 = NoRef,
     });
@@ -1528,11 +1528,11 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
                     if (num >= ABI.argregs.len) return error.FLIRError;
                     // TODO: floatarg
                     i.mckind = .ipreg;
-                    i.mcidx = @enumToInt(ABI.argregs[num]);
+                    i.mcidx = @intFromEnum(ABI.argregs[num]);
                 },
                 .call => {
                     i.mckind = .ipreg;
-                    i.mcidx = @enumToInt(ABI.ret_reg);
+                    i.mcidx = @intFromEnum(ABI.ret_reg);
                 },
                 .arg => {
                     if (i.op1 >= ABI.argregs.len) return error.ARA;
