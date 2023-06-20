@@ -179,8 +179,8 @@ fn addrmovmc(code: *Code, dst: EAddr, src: Inst) !void {
     }
 }
 
-fn regmovaddr(code: *Code, dst: IPReg, src: EAddr) !void {
-    try put(code, I.ldx(.double_word, r(dst), @intToEnum(Reg, src.reg), src.off));
+fn regmovaddr(code: *Code, dst: IPReg, src: EAddr, size: common.ISize) !void {
+    try put(code, I.ldx(size, r(dst), @intToEnum(Reg, src.reg), src.off));
 }
 
 fn movmcs(code: *Code, dst: IPMCVal, src: IPMCVal) !void {
@@ -297,10 +297,16 @@ pub fn codegen(self: *FLIR, code: *Code) !u32 {
                 .load => {
                     // TODO: spill spall supllit?
                     const addr = self.iref(i.op1).?.*;
-                    const off = @intCast(i16, i.op2);
-                    const eaddr: EAddr = (try get_eaddr(self, addr, false)).with_off(off);
+                    const off = off_val: {
+                        switch (self.ipval(i.op2).?) {
+                            .constval => |c| break :off_val c,
+                            else => return error.FLIRError,
+                        }
+                    };
+
+                    const eaddr: EAddr = (try get_eaddr(self, addr, false)).with_off(@intCast(i16, off));
                     const dst = i.ipreg() orelse r0;
-                    try regmovaddr(code, dst, eaddr);
+                    try regmovaddr(code, dst, eaddr.i.mem_type());
                     try mcmovreg(code, i.ipval().?, dst); // elided if dst is register
                 },
                 .lea => {
