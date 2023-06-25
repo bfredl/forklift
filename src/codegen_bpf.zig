@@ -15,7 +15,7 @@ const IPMCVal = FLIR.IPMCVal;
 
 const common = @import("./common.zig");
 fn r(reg: IPReg) Reg {
-    return @enumFromInt(Reg, reg.id());
+    return @enumFromInt(reg.id());
 }
 
 const ArrayList = std.ArrayList;
@@ -40,10 +40,10 @@ fn get_eaddr(self: *FLIR, i: FLIR.Inst, comptime may_lea: bool) !EAddr {
     if (may_lea and i.tag == .lea) {
         const base = self.iref(i.op1).?.*;
         const baseval = try get_eaddr(self, base, false);
-        const off = @bitCast(i16, i.op2);
+        const off: i16 = @bitCast(i.op2);
         return baseval.with_off(off);
     } else if (i.mckind == .ipreg) {
-        return .{ .reg = @intCast(u4, i.mcidx), .off = 0 };
+        return .{ .reg = @intCast(i.mcidx), .off = 0 };
     } else if (i.tag == .alloc) {
         return .{ .reg = 10, .off = slotoff(i.op1) };
     } else {
@@ -52,12 +52,12 @@ fn get_eaddr(self: *FLIR, i: FLIR.Inst, comptime may_lea: bool) !EAddr {
 }
 
 pub fn get_target(code: *Code) u32 {
-    return @intCast(u32, code.items.len);
+    return @intCast(code.items.len);
 }
 
 pub fn set_target(code: *Code, pos: u32) void {
     var off = get_target(code) - (pos + 1);
-    code.items[pos].off = @intCast(i16, off);
+    code.items[pos].off = @intCast(off);
 }
 
 pub fn put(code: *Code, insn: Insn) !void {
@@ -69,7 +69,7 @@ pub fn put(code: *Code, insn: Insn) !void {
 }
 
 pub fn slotoff(slotid: anytype) i16 {
-    return -8 * (1 + @intCast(i16, slotid));
+    return -8 * (1 + @as(i16, @intCast(slotid)));
 }
 
 pub fn ld_map_fd(code: *Code, reg: IPReg, map_fd: fd_t, spec: u8) !void {
@@ -94,13 +94,13 @@ fn mov(code: *Code, dst: IPReg, src: anytype) !void {
     try put(code, I.mov(r(dst), src));
 }
 
-const r0 = @enumFromInt(common.IPReg, 0);
+const r0: common.IPReg = @enumFromInt(0);
 
 fn regmovmc(code: *Code, dst: IPReg, src: IPMCVal) !void {
     switch (src) {
         .frameslot => |f| try put(code, I.ldx(.double_word, r(dst), .r10, slotoff(f))),
         .ipreg => |reg| if (dst != reg) try mov(code, dst, r(reg)),
-        .constval => |c| try mov(code, dst, @intCast(i32, c)),
+        .constval => |c| try mov(code, dst, @as(i32, @intCast(c))),
     }
     // .fused => {
     //     if (src.tag != .alloc) return error.BBB_BBB;
@@ -128,7 +128,7 @@ fn regaritmc(code: *Code, op: Insn.AluOp, dst: IPReg, src: IPMCVal) !void {
         .frameslot => return error.FLIRError,
         .ipreg => |reg| try put(code, I.alu(64, op, r(dst), r(reg))),
         // TODO: FLIR.ABI needs to encode constraints like "imm which fits in a i32"
-        .constval => |c| try put(code, I.alu(64, op, r(dst), @intCast(i32, c))),
+        .constval => |c| try put(code, I.alu(64, op, r(dst), @as(i32, @intCast(c)))),
     }
 }
 
@@ -148,7 +148,7 @@ fn mcmovi(code: *Code, i: Inst) !void {
             try mcmovreg(code, i, .r0);
         },
         .ipreg => {
-            const reg = @enumFromInt(IPReg, i.mcidx);
+            const reg: IPReg = @enumFromInt(i.mcidx);
             try mov(code, reg, i.op1);
         },
         .fused => {}, // let user lookup value
@@ -158,12 +158,12 @@ fn mcmovi(code: *Code, i: Inst) !void {
 }
 
 fn stx(code: *Code, dst: EAddr, src: IPReg) !void {
-    try put(code, I.stx(.double_word, @enumFromInt(Reg, dst.reg), dst.off, r(src)));
+    try put(code, I.stx(.double_word, @enumFromInt(dst.reg), dst.off, r(src)));
 }
 
 fn st(code: *Code, dst: EAddr, src: anytype) !void {
     // TODO: AAAA wrong size
-    try put(code, I.st(.double_word, @enumFromInt(Reg, dst.reg), dst.off, src));
+    try put(code, I.st(.double_word, @enumFromInt(dst.reg), dst.off, src));
 }
 
 fn addrmovmc(code: *Code, dst: EAddr, src: Inst) !void {
@@ -173,14 +173,18 @@ fn addrmovmc(code: *Code, dst: EAddr, src: Inst) !void {
         //     try st(code, dst, src.op1);
         // },
         .ipreg => {
-            try stx(code, dst, @enumFromInt(IPReg, src.mcidx));
+            try stx(code, dst, @enumFromInt(src.mcidx));
         },
         else => unreachable,
     }
 }
 
 fn regmovaddr(code: *Code, dst: IPReg, src: EAddr, size: common.ISize) !void {
-    try put(code, I.ldx(size, r(dst), @enumFromInt(Reg, src.reg), src.off));
+    const bpfsize: Insn.Size = switch (size) {
+        .dword => .double_word,
+        else => @panic("fill me in"),
+    };
+    try put(code, I.ldx(bpfsize, r(dst), @enumFromInt(src.reg), src.off));
 }
 
 fn movmcs(code: *Code, dst: IPMCVal, src: IPMCVal) !void {
@@ -265,7 +269,7 @@ pub fn codegen(self: *FLIR, code: *Code) !u32 {
                 .ret => try regmovmc(code, r0, self.ipval(i.op1).?),
                 .ibinop => {
                     const dst = i.ipreg() orelse return error.FLIRError;
-                    const op = @enumFromInt(FLIR.IntBinOp, i.spec).asBpfAluOp() orelse return error.FLIRError;
+                    const op = @as(FLIR.IntBinOp, @enumFromInt(i.spec)).asBpfAluOp() orelse return error.FLIRError;
                     const op1 = self.ipval(i.op1).?;
                     const op2 = self.ipval(i.op2).?;
                     try regmovmc(code, dst, op1);
@@ -275,7 +279,7 @@ pub fn codegen(self: *FLIR, code: *Code) !u32 {
                 .icmp => {
                     const op1 = i.ipreg() orelse return error.FLIRError;
                     const op2 = self.ipval(i.op2).?;
-                    var spec = @enumFromInt(FLIR.IntCond, i.spec);
+                    var spec: FLIR.IntCond = @enumFromInt(i.spec);
                     var taken: u1 = 1;
 
                     // TODO: this should have been optimized earlier!
@@ -304,9 +308,9 @@ pub fn codegen(self: *FLIR, code: *Code) !u32 {
                         }
                     };
 
-                    const eaddr: EAddr = (try get_eaddr(self, addr, false)).with_off(@intCast(i16, off));
+                    const eaddr: EAddr = (try get_eaddr(self, addr, false)).with_off(@intCast(off));
                     const dst = i.ipreg() orelse r0;
-                    try regmovaddr(code, dst, eaddr.i.mem_type());
+                    try regmovaddr(code, dst, eaddr, addr.mem_type().intptr);
                     try mcmovreg(code, i.ipval().?, dst); // elided if dst is register
                 },
                 .lea => {
@@ -324,7 +328,7 @@ pub fn codegen(self: *FLIR, code: *Code) !u32 {
                     try addrmovmc(code, eaddr, val.*);
                 },
                 .bpf_load_map => {
-                    const reg = if (i.mckind == .ipreg) @enumFromInt(IPReg, i.mcidx) else r0;
+                    const reg: IPReg = if (i.mckind == .ipreg) @enumFromInt(i.mcidx) else r0;
                     try ld_map_fd(code, reg, i.op1, i.spec);
                     try mcmovreg(code, i.ipval().?, reg);
                 },
@@ -343,7 +347,7 @@ pub fn codegen(self: *FLIR, code: *Code) !u32 {
                     //         }
                     //     }
                     // }
-                    try put(code, I.call(@enumFromInt(BPF.Helper, i.spec)));
+                    try put(code, I.call(@as(BPF.Helper, @enumFromInt(i.spec))));
                 },
                 .copy => {
                     try movmcs(code, i.ipval().?, self.ipval(i.op1).?);
@@ -358,14 +362,14 @@ pub fn codegen(self: *FLIR, code: *Code) !u32 {
                         else => r0,
                     };
                     try regmovmc(code, sreg, src);
-                    var insn = I.xadd(@enumFromInt(Reg, dest_addr.reg), r(sreg));
+                    var insn = I.xadd(@as(Reg, @enumFromInt(dest_addr.reg)), r(sreg));
                     // TODO: if this works, upstream!
                     insn.off = dest_addr.off;
                     try put(code, insn);
                 },
                 .arg => {
                     if (i.op1 != 0) unreachable;
-                    try mcmovreg(code, i.ipval().?, @enumFromInt(IPReg, 1));
+                    try mcmovreg(code, i.ipval().?, @enumFromInt(1));
                 },
                 .vmath, .vcmpf => {
                     print("platform unsupported: {}\n", .{i.tag});

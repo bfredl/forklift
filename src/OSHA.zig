@@ -24,9 +24,9 @@ fn sigHandler(sig: i32, info: *const os.siginfo_t, ctx_ptr: ?*const anyopaque) c
     s.print("\n{s} at address 0x{x}\n\n", .{ desc, addr }) catch unreachable;
     s.print("Do not indulge in stunt driving or horseplay!\n", .{}) catch unreachable;
 
-    const ctx = @ptrCast(*const os.ucontext_t, @alignCast(@alignOf(os.ucontext_t), ctx_ptr));
-    var ip = @intCast(usize, ctx.mcontext.gregs[os.REG.RIP]);
-    const bp = @intCast(usize, ctx.mcontext.gregs[os.REG.RBP]);
+    const ctx: *const os.ucontext_t = @ptrCast(@alignCast(ctx_ptr));
+    var ip: usize = @intCast(ctx.mcontext.gregs[os.REG.RIP]);
+    const bp: usize = @intCast(ctx.mcontext.gregs[os.REG.RBP]);
 
     s.print("RAX {x}\n", .{ctx.mcontext.gregs[os.REG.RAX]}) catch unreachable;
     s.print("RCX {x}\n\n", .{ctx.mcontext.gregs[os.REG.RCX]}) catch unreachable;

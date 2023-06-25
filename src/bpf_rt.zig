@@ -24,7 +24,7 @@ pub fn prog_test_run(
     attr.test_run.prog_fd = prog;
     if (ctx_in) |ctx| {
         attr.test_run.ctx_in = @intFromPtr(ctx.ptr);
-        attr.test_run.ctx_size_in = @intCast(u32, ctx.len);
+        attr.test_run.ctx_size_in = @intCast(ctx.len);
     }
 
     const rc = linux.bpf(.prog_test_run, &attr, @sizeOf(BPF.TestRunAttr));

@@ -23,7 +23,7 @@ pub fn ssa_gvn(flir: *FLIR) !void {
 
 fn ssa(self: Self) !void {
     for (self.f.n.items, 0..) |n, ni| {
-        try self.fill_blk(@intCast(u16, ni), n.firstblk);
+        try self.fill_blk(@intCast(ni), n.firstblk);
     }
 
     // at this point all nodes have been _filled_ but join nodes (npred > 1)
@@ -32,7 +32,7 @@ fn ssa(self: Self) !void {
     while (true) {
         var did_phi: bool = false;
         for (self.f.n.items, 0..) |n, ni| {
-            did_phi = did_phi or try self.resolve_blk(@intCast(u16, ni), n.firstblk);
+            did_phi = did_phi or try self.resolve_blk(@intCast(ni), n.firstblk);
         }
         if (!did_phi) break;
     }

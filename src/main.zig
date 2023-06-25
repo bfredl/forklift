@@ -21,8 +21,8 @@ pub fn main() !void {
     var arr2 = try std.heap.page_allocator.alloc(f64, size);
     var i: usize = 0;
     while (i < size) : (i += 1) {
-        arr1[i] = @floatFromInt(f64, i);
-        arr2[i] = 100000.0 * @floatFromInt(f64, i);
+        arr1[i] = @floatFromInt(i);
+        arr2[i] = 100000.0 * @as(f64, @floatFromInt(i));
     }
 
     const IPReg = CFO.IPReg;

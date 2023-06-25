@@ -305,7 +305,7 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
 
 pub fn call_arg(self: *Self, f: *Func) ParseError!?u16 {
     if (self.num()) |numval| {
-        return try f.ir.const_int(@intCast(i32, numval));
+        return try f.ir.const_int(@intCast(numval));
     } else if (try self.varname()) |src| {
         return f.refs.get(src) orelse {
             print("undefined ref %{s}!\n", .{src});
@@ -375,7 +375,7 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
                 print("unknown syscall: '{s}'\n", .{name});
                 return error.ParseError;
             };
-            const sysnum = try f.ir.const_int(@intCast(i32, @intFromEnum(syscall)));
+            const sysnum = try f.ir.const_int(@intCast(@intFromEnum(syscall)));
 
             try self.parse_args(f);
 
@@ -389,7 +389,7 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
             return try f.ir.call(f.curnode, .near, constoff);
         } else if (mem.eql(u8, kw, "alloc")) {
             const size = self.num() orelse 1;
-            return f.ir.alloc(f.curnode, @intCast(u8, size));
+            return f.ir.alloc(f.curnode, @intCast(size));
         }
         print("NIN: {s}\n", .{kw});
     }

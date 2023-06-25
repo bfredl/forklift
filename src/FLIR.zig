@@ -68,7 +68,7 @@ pub const ConstOff: u16 = 0xFF00;
 pub const VRefOff: u16 = 0xFE00;
 
 pub fn uv(s: usize) u16 {
-    return @intCast(u16, s);
+    return @intCast(s);
 }
 
 pub const Node = struct {
@@ -104,7 +104,7 @@ pub const n_ipreg = 16;
 pub fn erase(xregs: anytype) [xregs.len]IPReg {
     var r: [xregs.len]IPReg = undefined;
     for (xregs, 0..) |x, i| {
-        r[i] = @enumFromInt(IPReg, @intFromEnum(x));
+        r[i] = @enumFromInt(@intFromEnum(x));
     }
     return r;
 }
@@ -128,7 +128,7 @@ pub const BPF_ABI = struct {
     const Reg = BPF.Insn.Reg;
     // Args: used used both for incoming args and nested calls (including syscalls)
     pub const argregs = erase([5]Reg{ .r1, .r2, .r3, .r4, .r5 });
-    pub const ret_reg: IPReg = @enumFromInt(IPReg, 0);
+    pub const ret_reg: IPReg = @enumFromInt(0);
 
     // canonical order of callee saved registers. nsave>0 means
     // the first nsave items needs to be saved and restored
@@ -178,9 +178,9 @@ pub const SpecType = union(ValType) {
     }
     pub fn from(val: u8) SpecType {
         if (val >= INT_SPEC_OFF) {
-            return .{ .intptr = @enumFromInt(ISize, val - INT_SPEC_OFF) };
+            return .{ .intptr = @enumFromInt(val - INT_SPEC_OFF) };
         } else {
-            return .{ .avxval = @enumFromInt(FMode, val) };
+            return .{ .avxval = @enumFromInt(val) };
         }
     }
     pub fn into(self: SpecType) u5 {
@@ -257,31 +257,31 @@ pub const Inst = struct {
     }
 
     pub fn scale(self: Inst) u2 {
-        return @intCast(u2, self.high_spec());
+        return @intCast(self.high_spec());
     }
 
     const LOW_MASK: u8 = (1 << 5) - 1;
     const HIGH_MASK: u8 = ~LOW_MASK;
 
     fn high_spec(self: Inst) u3 {
-        return @intCast(u3, (self.spec & HIGH_MASK) >> 5);
+        return @intCast((self.spec & HIGH_MASK) >> 5);
     }
 
     fn low_spec(self: Inst) u5 {
-        return @intCast(u5, self.spec & LOW_MASK);
+        return @intCast(self.spec & LOW_MASK);
     }
 
     pub fn vmathop(self: Inst) VMathOp {
-        return @enumFromInt(VMathOp, self.low_spec());
+        return @enumFromInt(self.low_spec());
     }
 
     pub fn vcmpop(self: Inst) VCmpOp {
-        return @enumFromInt(VCmpOp, self.low_spec());
+        return @enumFromInt(self.low_spec());
     }
 
     // only valid for op instructions. otherwise use mem_type
     pub fn fmode_op(self: Inst) FMode {
-        return @enumFromInt(FMode, self.high_spec());
+        return @enumFromInt(self.high_spec());
     }
 
     pub fn res_type(inst: Inst) ?ValType {
@@ -344,15 +344,15 @@ pub const Inst = struct {
 
     pub fn ops(i: *Inst, rw: bool) []u16 {
         assert(@intFromPtr(&i.op2) - @intFromPtr(&i.op1) == @sizeOf(u16));
-        return @ptrCast([*]u16, &i.op1)[0..i.n_op(rw)];
+        return @as([*]u16, @ptrCast(&i.op1))[0..i.n_op(rw)];
     }
 
     pub fn ipreg(i: Inst) ?IPReg {
-        return if (i.mckind == .ipreg) @enumFromInt(IPReg, i.mcidx) else null;
+        return if (i.mckind == .ipreg) @as(IPReg, @enumFromInt(i.mcidx)) else null;
     }
 
     pub fn avxreg(i: Inst) ?u4 {
-        return if (i.mckind == .vfreg) @intCast(u4, i.mcidx) else null;
+        return if (i.mckind == .vfreg) @as(u4, @intCast(i.mcidx)) else null;
     }
 
     pub fn ipval(i: Inst) ?IPMCVal {
@@ -593,7 +593,7 @@ pub fn reinit(self: *Self) void {
     // 2. set ArrayList members to empty (but keep existing allocations)
     inline for (info.fields) |field| {
         if (field.default_value) |default_value_ptr| {
-            const default_value = @ptrCast(*align(1) const field.type, default_value_ptr).*;
+            const default_value = @as(*align(1) const field.type, @ptrCast(default_value_ptr)).*;
             @field(self, field.name) = default_value;
         } else if (@typeInfo(field.type) == .Struct) {
             if (@hasField(field.type, "items")) {
@@ -652,7 +652,7 @@ fn sphigh(high: u3, low: u5) u8 {
 }
 
 pub fn vmathspec(vop: VMathOp, fmode: FMode) u8 {
-    return sphigh(@intFromEnum(fmode), @intCast(u5, vop.off()));
+    return sphigh(@intFromEnum(fmode), @intCast(vop.off()));
 }
 
 pub fn vcmpfspec(vcmp: VCmpOp, fmode: FMode) u8 {
@@ -680,7 +680,7 @@ pub fn addInst(self: *Self, node: u16, inst: Inst) !u16 {
     var lastfree: u8 = BLK_SIZE;
     var i: u8 = BLK_SIZE - 1;
     while (true) : (i -= 1) {
-        if (blk.i[@intCast(u8, i)].free()) {
+        if (blk.i[@as(u8, @intCast(i))].free()) {
             lastfree = i;
         } else {
             break;
@@ -713,7 +713,7 @@ pub fn preInst(self: *Self, node: u16, inst: Inst) !u16 {
     var firstfree: i8 = -1;
     for (0..BLK_SIZE) |i| {
         if (blk.i[i].free()) {
-            firstfree = @intCast(i8, i);
+            firstfree = @intCast(i);
         } else {
             break;
         }
@@ -729,7 +729,7 @@ pub fn preInst(self: *Self, node: u16, inst: Inst) !u16 {
         firstfree = BLK_SIZE - 1;
     }
 
-    const free = @intCast(u8, firstfree);
+    const free: u8 = @intCast(firstfree);
 
     blk.i[free] = inst;
     return toref(blkid, free);
@@ -746,7 +746,7 @@ pub fn const_uint(self: *Self, val: u64) !u16 {
 }
 
 pub fn const_int(self: *Self, val: i32) !u16 {
-    return const_uint(self, @bitCast(u32, val));
+    return const_uint(self, @as(u32, @bitCast(val)));
 }
 
 pub fn binop(self: *Self, node: u16, tag: Tag, op1: u16, op2: u16) !u16 {
@@ -882,8 +882,8 @@ pub fn calc_preds(self: *Self) !void {
         const shared = v.s[1] > 0 and v.s[1] == v.s[0];
         if (shared) return error.NotSureAboutThis;
         const split = v.s[1] > 0;
-        try self.predlink(@intCast(u16, i), 0, split);
-        try self.predlink(@intCast(u16, i), 1, split);
+        try self.predlink(@intCast(i), 0, split);
+        try self.predlink(@intCast(i), 1, split);
     }
 }
 
@@ -1089,7 +1089,7 @@ pub fn calc_use(self: *Self) !void {
                     const i = &b.i[idx];
 
                     if (i.vreg()) |vreg| {
-                        live &= ~vreg_flag(@intCast(u6, vreg));
+                        live &= ~vreg_flag(@intCast(vreg));
                     } else {
                         if (i.vreg_scratch != NoRef) {
                             if (blk_has_clobber) { // quick skipahead when no clobbers
@@ -1097,7 +1097,7 @@ pub fn calc_use(self: *Self) !void {
                                 for (0..n_ipreg) |r| {
                                     // negative counter: is the last_clobber _before_ the kill position
                                     if (i.vreg_scratch < last_clobber[r]) {
-                                        conflicts |= ipreg_flag(@intCast(u4, r));
+                                        conflicts |= ipreg_flag(@intCast(r));
                                     }
                                 }
                                 if (conflicts != 0) {
@@ -1113,7 +1113,7 @@ pub fn calc_use(self: *Self) !void {
                     for (i.ops(false)) |op| {
                         if (self.iref(op)) |ref| {
                             if (ref.vreg()) |vreg| {
-                                live |= vreg_flag(@intCast(u6, vreg));
+                                live |= vreg_flag(@intCast(vreg));
                             } else {
                                 if (ref.vreg_scratch == NoRef) {
                                     ref.vreg_scratch = neg_counter;
@@ -1136,12 +1136,12 @@ pub fn calc_use(self: *Self) !void {
                     if (clobber_mask != 0) {
                         blk_has_clobber = true; // quick skipahead
                         for (self.vregs.items, 0..) |*v, vi| {
-                            if (live & vreg_flag(@intCast(u6, vi)) != 0) {
+                            if (live & vreg_flag(@as(u6, @intCast(vi))) != 0) {
                                 v.conflicts |= clobber_mask;
                             }
                         }
                         for (0..n_ipreg) |r| {
-                            if ((clobber_mask & ipreg_flag(@intCast(u4, r))) != 0) {
+                            if ((clobber_mask & ipreg_flag(@intCast(r))) != 0) {
                                 last_clobber[r] = neg_counter;
                             }
                         }
@@ -1159,11 +1159,11 @@ pub fn calc_use(self: *Self) !void {
                 // TODO: if there was a call anywhere in the loop
                 // propagate call clobbers onto the loop invariant vregs
                 if (self.n.items.len > 64) unreachable;
-                var loop_set: u64 = node_flag(@intCast(u6, ni));
+                var loop_set: u64 = node_flag(@intCast(ni));
                 for (ni + 1..self.n.items.len) |ch_i| {
                     const ch_n = &self.n.items[ch_i];
-                    const ch_loop: u64 = node_flag(@intCast(u6, ch_i));
-                    if ((node_flag(@intCast(u6, ch_n.loop)) & loop_set) != 0) {
+                    const ch_loop: u64 = node_flag(@intCast(ch_i));
+                    if ((node_flag(@intCast(ch_n.loop)) & loop_set) != 0) {
                         if (ch_n.is_header) {
                             loop_set |= ch_loop;
                         }
@@ -1180,8 +1180,8 @@ pub fn calc_use(self: *Self) !void {
     for (self.n.items, 0..) |*n, ni| {
         // transpose the node.live_in[vreg] bitfield into vreg.live_in[node] bitfield
         for (self.vregs.items, 0..) |*v, vi| {
-            if ((n.live_in & vreg_flag(@intCast(u6, vi))) != 0) {
-                v.live_in |= node_flag(@intCast(u6, ni));
+            if ((n.live_in & vreg_flag(@intCast(vi))) != 0) {
+                v.live_in |= node_flag(@intCast(ni));
             }
         }
 
@@ -1202,7 +1202,7 @@ pub fn calc_use(self: *Self) !void {
                     var kill: bool = false;
                     if (self.iref(op)) |ref| {
                         if (ref.vreg()) |vreg| {
-                            const bit = vreg_flag(@intCast(u6, vreg));
+                            const bit = vreg_flag(@intCast(vreg));
                             if ((killed & bit) != 0) {
                                 killed = killed & ~bit;
                                 kill = true;
@@ -1385,7 +1385,7 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
         // any vreg which is "live in" should already be allocated. mark these as non-free
         for (self.vregs.items, 0..) |vref, vi| {
             const vr = self.iref(vref.ref).?;
-            const flag = vreg_flag(@intCast(u6, vi));
+            const flag = vreg_flag(@intCast(vi));
             if ((flag & n.live_in) != 0) {
                 if (vr.mckind == .ipreg) free_regs_ip[vr.mcidx] = false;
                 if (vr.mckind == .vfreg) free_regs_avx[vr.mcidx] = false;
@@ -1461,7 +1461,7 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
 
             if (conflicts != 0) {
                 for (0..n_ipreg) |r| {
-                    if ((conflicts & ipreg_flag(@intCast(u4, r))) != 0) {
+                    if ((conflicts & ipreg_flag(@intCast(r))) != 0) {
                         usable_regs[r] = false;
                     }
                 }
@@ -1481,7 +1481,7 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
                 if (is_avx) {
                     for (usable_regs, 0..) |usable, reg| {
                         if (usable) {
-                            chosen_reg = @intCast(u8, reg);
+                            chosen_reg = @as(u8, @intCast(reg)); // TODO remove @as
                             break;
                         }
                     }
@@ -1490,7 +1490,7 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
                         if (usable_regs[reg_try.id()]) {
                             chosen_reg = reg_try.id();
                             if (reg_i > highest_used) {
-                                highest_used = @intCast(u8, reg_i);
+                                highest_used = @intCast(reg_i);
                             }
                             break;
                         }

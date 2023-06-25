@@ -70,7 +70,7 @@ pub fn check_ir_valid(self: *FLIR) !void {
         }
         // TODO: explicit condition for this
         if (self.refs.items.len > 0) {
-            for (self.preds(@intCast(u16, ni))) |pred| {
+            for (self.preds(@intCast(ni))) |pred| {
                 const pn = self.n.items[pred];
                 if (pn.s[0] != ni and pn.s[1] != ni) {
                     return error.InvalidCFG;
@@ -114,7 +114,7 @@ pub fn check_vregs(self: *FLIR) !void {
             // print("BIRTH {}: {x} which is {}\n", .{ ni, born, @popCount(born) });
             var ireg: u16 = 0;
             while (ireg < self.nvreg) : (ireg += 1) {
-                if ((born & (@as(usize, 1) << @intCast(u6, ireg))) != 0) {
+                if ((born & (@as(usize, 1) << @as(u6, @intCast(ireg)))) != 0) {
                     const i = self.vregs.items[ireg].ref;
                     // print(" %{}", .{i});
                     if (self.biref(i).?.n != ni) {
@@ -140,7 +140,7 @@ pub fn debug_print(self: *FLIR) void {
             print(" LIVEIN", .{});
             var ireg: u16 = 0;
             while (ireg < self.nvreg) : (ireg += 1) {
-                const live = (n.live_in & (@as(usize, 1) << @intCast(u6, ireg))) != 0;
+                const live = (n.live_in & (@as(usize, 1) << @as(u6, @intCast(ireg)))) != 0;
                 if (live) {
                     print(" %{}", .{self.vregs.items[ireg].ref});
                 }
@@ -165,7 +165,7 @@ pub fn debug_print(self: *FLIR) void {
                 print("LIVE_OUT:", .{});
                 var ireg: u16 = 0;
                 while (ireg < self.nvreg) : (ireg += 1) {
-                    const live = (live_out & (@as(usize, 1) << @intCast(u6, ireg))) != 0;
+                    const live = (live_out & (@as(usize, 1) << @as(u6, @intCast(ireg)))) != 0;
                     if (live) {
                         print(" %{}", .{self.vregs.items[ireg].ref});
                     }
@@ -204,9 +204,9 @@ pub fn print_blk(self: *FLIR, firstblk: u16) void {
         } else if (i.tag == .vcmpf) {
             print(".{s}", .{@tagName(i.vcmpop())});
         } else if (i.tag == .ibinop) {
-            print(".{s}", .{@tagName(@enumFromInt(FLIR.IntBinOp, i.spec))});
+            print(".{s}", .{@tagName(@as(FLIR.IntBinOp, @enumFromInt(i.spec)))});
         } else if (i.tag == .icmp) {
-            print(".{s}", .{@tagName(@enumFromInt(CFO.Cond, i.spec))});
+            print(".{s}", .{@tagName(@as(CFO.Cond, @enumFromInt(i.spec)))});
         } else if (i.tag == .putphi) {
             print(" %{} <-", .{i.op2});
         }
@@ -261,7 +261,7 @@ fn print_mcval(i: FLIR.Inst) void {
     }
     switch (i.mckind) {
         .frameslot => print(" [rbp-8*{}]", .{i.mcidx}),
-        .ipreg => print(" ${s}", .{@tagName(@enumFromInt(CFO.IPReg, i.mcidx))}),
+        .ipreg => print(" ${s}", .{@tagName(@as(CFO.IPReg, @enumFromInt(i.mcidx)))}),
         .vfreg => print(" $ymm{}", .{i.mcidx}),
         else => {
             if (i.tag == .load or i.tag == .phi or i.tag == .arg) {
@@ -282,7 +282,7 @@ pub fn uses(i: *FLIR.Inst, r: u16) bool {
 
 pub fn print_interval(self: *FLIR, ref: u16) void {
     const b = self.biref(ref).?;
-    const vreg_flag = if (b.i.vreg()) |vreg| @as(u64, 1) << @intCast(u6, vreg) else null;
+    const vreg_flag = if (b.i.vreg()) |vreg| @as(u64, 1) << @as(u6, @intCast(vreg)) else null;
     print("\x1b[4m", .{});
     for (self.n.items, 0..) |n, ni| {
         var live: bool = if (vreg_flag) |f| (f & n.live_in) != 0 else false;

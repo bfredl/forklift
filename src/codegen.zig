@@ -13,11 +13,11 @@ const EAddr = CFO.EAddr;
 
 const common = @import("./common.zig");
 fn r(reg: IPReg) CFO.IPReg {
-    return @enumFromInt(CFO.IPReg, reg.id());
+    return @enumFromInt(reg.id());
 }
 
 fn slotoff(slotid: anytype) i32 {
-    return -8 * (1 + @intCast(i32, slotid));
+    return -8 * (1 + @as(i32, @intCast(slotid)));
 }
 
 fn movri_zero(cfo: *CFO, dst: IPReg, src: i32) !void {
@@ -33,7 +33,7 @@ fn regmovmc(cfo: *CFO, dst: IPReg, src: IPMCVal) !void {
     switch (src) {
         .frameslot => |f| try cfo.movrm(r(dst), CFO.a(.rbp).o(slotoff(f))),
         .ipreg => |reg| if (dst != reg) try cfo.mov(r(dst), r(reg)),
-        .constval => |c| try movri_zero(cfo, dst, @intCast(i32, c)),
+        .constval => |c| try movri_zero(cfo, dst, @intCast(c)),
     }
 }
 
@@ -41,7 +41,7 @@ fn regaritmc(cfo: *CFO, op: CFO.AOp, dst: IPReg, src: IPMCVal) !void {
     switch (src) {
         .frameslot => |f| try cfo.aritrm(op, r(dst), CFO.a(.rbp).o(slotoff(f))),
         .ipreg => |reg| try cfo.arit(op, r(dst), r(reg)),
-        .constval => |c| try cfo.aritri(op, r(dst), @intCast(i32, c)),
+        .constval => |c| try cfo.aritri(op, r(dst), @intCast(c)),
     }
 }
 
@@ -111,7 +111,7 @@ fn get_eaddr_load_or_lea(self: *FLIR, i: Inst) !EAddr {
             eaddr.scale = i.scale();
         },
         .constval => |c| {
-            eaddr = eaddr.o(@intCast(i32, c)); // TODO: scale just disappears??
+            eaddr = eaddr.o(@intCast(c)); // TODO: scale just disappears??
         },
         else => return error.SpillError,
     }
@@ -193,7 +193,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     const lhs = self.ipval(i.op1) orelse return error.FLIRError;
                     const rhs = self.ipval(i.op2) orelse return error.FLIRError;
                     const dst = i.ipreg() orelse return error.SpillError;
-                    const op = @enumFromInt(FLIR.IntBinOp, i.spec);
+                    const op: FLIR.IntBinOp = @enumFromInt(i.spec);
 
                     if (op.asAOP()) |aop| {
                         // TODO: fugly: remove once we have constraint handling in regalloc
@@ -204,7 +204,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                         switch (rhs) {
                             .constval => |c| {
                                 const src = lhs.as_ipreg() orelse return error.SpillError; // TODO: can be mem
-                                try cfo.imulrri(r(dst), r(src), @intCast(i8, c));
+                                try cfo.imulrri(r(dst), r(src), @intCast(c));
                             },
                             .ipreg => if (rhs.as_ipreg()) |rhsreg| {
                                 try regmovmc(cfo, dst, lhs);
@@ -216,7 +216,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                         switch (rhs) {
                             .constval => |c| {
                                 try regmovmc(cfo, dst, lhs);
-                                try cfo.sh_ri(r(dst), sop, @intCast(u8, c));
+                                try cfo.sh_ri(r(dst), sop, @intCast(c));
                             },
                             .ipreg => |src2| {
                                 const src1 = lhs.as_ipreg() orelse src1: {
@@ -237,7 +237,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     const lhs = self.ipreg(i.op1) orelse return error.SpillError;
                     const rhs = self.ipval(i.op2) orelse return error.FLIRError;
                     try regaritmc(cfo, .cmp, lhs, rhs);
-                    cond = @enumFromInt(FLIR.IntCond, i.spec).asCFOCond();
+                    cond = @as(FLIR.IntCond, @enumFromInt(i.spec)).asCFOCond();
                 },
                 .putphi => {
                     // TODO: actually check for parallell-move conflicts
@@ -297,9 +297,9 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                                 .constval => |c| {
                                     switch (size) {
                                         .byte => {
-                                            try cfo.movmi_byte(eaddr, @truncate(u8, c));
+                                            try cfo.movmi_byte(eaddr, @truncate(c));
                                         },
-                                        .quadword => try cfo.movmi(eaddr, @intCast(i32, c)),
+                                        .quadword => try cfo.movmi(eaddr, @intCast(c)),
                                         else => unreachable,
                                     }
                                 },
@@ -328,7 +328,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     try regmovmc(cfo, i.ipreg().?, self.ipval(i.op1).?);
                 },
                 .call => {
-                    const kind = @enumFromInt(FLIR.CallKind, i.spec);
+                    const kind: FLIR.CallKind = @enumFromInt(i.spec);
                     switch (kind) {
                         .syscall => {
                             try regmovmc(cfo, CFO.IPReg.rax.into(), self.ipval(i.op1).?);
@@ -336,7 +336,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                         },
                         .near => {
                             const val = self.constval(i.op1) orelse return error.FLIRError;
-                            try cfo.call_rel(@intCast(u32, val));
+                            try cfo.call_rel(@intCast(val));
                         },
                         else => unreachable,
                     }

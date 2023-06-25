@@ -51,7 +51,7 @@ test "read/write first arg as 64-bit pointer" {
     try cfo.ret();
 
     var someint: u64 = 33;
-    var retval = try test_call2(&cfo, @ptrToInt(&someint), 10);
+    var retval = try test_call2(&cfo, @intFromPtr(&someint), 10);
     try expectEqual(@as(usize, 33), retval);
     try expectEqual(@as(usize, 10), someint);
 }
@@ -65,7 +65,7 @@ test "read/write first arg as 64-bit pointer with offsett" {
     try cfo.ret();
 
     var someint: [2]u64 = .{ 33, 45 };
-    var retval = try test_call2(&cfo, @ptrToInt(&someint) - 8, 79);
+    var retval = try test_call2(&cfo, @intFromPtr(&someint) - 8, 79);
     try expectEqual(@as(usize, 33), retval);
     try expectEqual(@as(usize, 33), someint[0]);
     try expectEqual(@as(usize, 79), someint[1]);
@@ -141,7 +141,7 @@ test "write intermediate value to 64-bit pointer" {
 
     var someint: u64 = 33;
 
-    _ = try test_call2(&cfo, @ptrToInt(&someint), 8);
+    _ = try test_call2(&cfo, @intFromPtr(&someint), 8);
     try expectEqual(@as(usize, 586), someint);
 }
 
@@ -160,7 +160,7 @@ test "use r12 for base address" {
 
     var someint: u64 = 33;
 
-    _ = try test_call2(&cfo, @ptrToInt(&someint), 8);
+    _ = try test_call2(&cfo, @intFromPtr(&someint), 8);
     try expectEqual(@as(usize, 389), someint);
 }
 
@@ -392,7 +392,7 @@ test "indirect call" {
     try cfo.call_ptr(.r10);
     try cfo.ret();
 
-    var retval = try test_call2(&cfo, @ptrToInt(&multiplier), 14);
+    var retval = try test_call2(&cfo, @intFromPtr(&multiplier), 14);
 
     try expectEqual(@as(usize, 147), retval);
 }
@@ -401,13 +401,13 @@ test "direct call" {
     // std.heap.next_mmap_addr_hint = @intToPtr(@TypeOf(std.heap.next_mmap_addr_hint), @ptrToInt(&multiplier) & ~@as(usize, 0x0FFF));
     // std.debug.print("\nBRK: {}\n", .{@intToPtr(*u8, std.os.linux.syscall1(.brk, 0))});
     // Well I made it, despite your directions
-    std.heap.next_mmap_addr_hint = @intToPtr(@TypeOf(std.heap.next_mmap_addr_hint), 0x01000000);
+    std.heap.next_mmap_addr_hint = @as(@TypeOf(std.heap.next_mmap_addr_hint), @ptrFromInt(0x01000000));
     var cfo = try Self.init(test_allocator);
     // std.debug.print("\nyes: {}\nbut: {*}\n", .{ &multiplier, cfo.code.items.ptr });
 
     defer cfo.deinit();
 
-    try cfo.maybe_call_rel_abs(@ptrCast(*const u8, &multiplier)) orelse return error.BadDirections;
+    try cfo.maybe_call_rel_abs(@as(*const u8, @ptrCast(&multiplier))) orelse return error.BadDirections;
     try cfo.ret();
 
     var retval = try test_call2(&cfo, 4, 1337);
@@ -418,7 +418,7 @@ test "local call" {
     // std.heap.next_mmap_addr_hint = @intToPtr(@TypeOf(std.heap.next_mmap_addr_hint), @ptrToInt(&multiplier) & ~@as(usize, 0x0FFF));
     // std.debug.print("\nBRK: {}\n", .{@intToPtr(*u8, std.os.linux.syscall1(.brk, 0))});
     // Well I made it, despite your directions
-    std.heap.next_mmap_addr_hint = @intToPtr(@TypeOf(std.heap.next_mmap_addr_hint), 0x01000000);
+    std.heap.next_mmap_addr_hint = @as(@TypeOf(std.heap.next_mmap_addr_hint), @ptrFromInt(0x01000000));
     var cfo = try Self.init(test_allocator);
     // std.debug.print("\nyes: {}\nbut: {*}\n", .{ &multiplier, cfo.code.items.ptr });
 

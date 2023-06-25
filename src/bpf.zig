@@ -13,7 +13,7 @@ pub fn dump_bpf(w: anytype, code: []const Insn) !void {
 pub fn dump_ins(w: anytype, i: BPF.Insn, ni: usize) !void {
     try w.print("{:03}: {x:0>2} ", .{ ni, i.code });
     try w.print("{x} {x} {x:3} {x:4} ", .{ i.dst, i.src, i.off, i.imm });
-    const grp = switch (@intCast(u3, i.code & 0x07)) {
+    const grp = switch (@as(u3, @intCast(i.code & 0x07))) {
         BPF.LD => "LD",
         BPF.LDX => "LDX",
         BPF.ST => "ST",
@@ -43,7 +43,7 @@ pub fn dump_ins(w: anytype, i: BPF.Insn, ni: usize) !void {
     };
     const siz = i.code & 0x18;
     const mspec = i.code & 0xe0;
-    switch (@intCast(u3, i.code & 0x07)) {
+    switch (@as(u3, @intCast(i.code & 0x07))) {
         BPF.ALU, BPF.ALU64 => {
             try w.print("{s}", .{aluspec});
             if (i.code & 0x07 == BPF.ALU64) try w.print("64", .{});
@@ -108,11 +108,11 @@ pub fn dump_ins(w: anytype, i: BPF.Insn, ni: usize) !void {
             if (h == BPF.EXIT) {
                 try w.print("EXIT", .{});
             } else if (h == BPF.CALL) {
-                try w.print("CALL ${s}", .{@tagName(@enumFromInt(BPF.Helper, i.imm))});
+                try w.print("CALL ${s}", .{@tagName(@as(BPF.Helper, @enumFromInt(i.imm)))});
             } else {
                 try w.print("{s} r{}, ", .{ jmpspec, i.dst });
                 if (i.code & BPF.X == BPF.X) try w.print("r{}", .{i.src}) else try w.print("{}", .{i.imm});
-                try w.print(" => {}", .{@intCast(i32, ni) + i.off + 1});
+                try w.print(" => {}", .{@as(i32, @intCast(ni)) + i.off + 1});
             }
         },
         else => try w.print("{s}.???", .{grp}),

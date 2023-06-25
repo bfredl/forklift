@@ -56,15 +56,15 @@ pub const IPReg = enum(u4) {
     }
 
     pub fn into(self: IPReg) common.IPReg {
-        return @enumFromInt(common.IPReg, self.id());
+        return @enumFromInt(self.id());
     }
 
     pub fn from(self: common.IPReg) IPReg {
-        return @enumFromInt(IPReg, self.id());
+        return @enumFromInt(self.id());
     }
 
     pub fn lowId(self: IPReg) u3 {
-        return @truncate(u3, @intFromEnum(self));
+        return @truncate(@intFromEnum(self));
     }
 
     pub fn ext(self: IPReg) bool {
@@ -104,7 +104,7 @@ pub const ShiftOp = enum {
     const al = .hl; // arithmically left, same as logically left
     //
     pub fn to_pp(self: @This()) PP {
-        return @enumFromInt(PP, @intFromEnum(self) + 1);
+        return @enumFromInt(@intFromEnum(self) + 1);
     }
 
     pub fn to_rm(self: @This()) u3 {
@@ -143,7 +143,7 @@ pub const Cond = enum(u4) {
     pub const ge = C.nl;
     pub const le = C.ng;
     pub fn off(self: @This()) u8 {
-        return @as(u8, @intFromEnum(self));
+        return @intFromEnum(self);
     }
 };
 
@@ -181,7 +181,7 @@ pub const VCmpOp = enum(u5) {
     gt_oq,
     true_us,
     pub fn val(self: @This()) u5 {
-        return @as(u5, @intFromEnum(self));
+        return @intFromEnum(self);
     }
 };
 
@@ -191,7 +191,7 @@ const PP = enum(u2) {
     F3,
     F2,
     fn val(self: @This()) u8 {
-        return @as(u8, @intFromEnum(self));
+        return @intFromEnum(self);
     }
 };
 
@@ -205,7 +205,7 @@ pub const FMode = enum(u3) {
     pd4,
 
     fn pp(self: @This()) PP {
-        return @enumFromInt(PP, @truncate(u2, @intFromEnum(self)));
+        return @enumFromInt(@as(u2, @truncate(@intFromEnum(self))));
     }
 
     fn l(self: @This()) bool {
@@ -217,7 +217,7 @@ pub const FMode = enum(u3) {
     }
 
     fn double(self: @This()) bool {
-        return @truncate(u1, @intFromEnum(self)) == 1;
+        return @as(u1, @truncate(@intFromEnum(self))) == 1;
     }
 };
 
@@ -226,7 +226,7 @@ const MM = enum(u5) {
     h0F38 = 2,
     h0F3A = 3,
     fn val(self: @This()) u8 {
-        return @as(u8, @intFromEnum(self));
+        return @intFromEnum(self);
     }
 };
 
@@ -238,7 +238,7 @@ pub const IMode = enum(u2) {
     q,
 
     fn off(self: @This()) u8 {
-        return @as(u8, @intFromEnum(self));
+        return @intFromEnum(self);
     }
 };
 
@@ -251,7 +251,7 @@ pub const VMathOp = enum(u3) {
     max = 7,
 
     pub fn off(self: @This()) u8 {
-        return @as(u8, @intFromEnum(self));
+        return @intFromEnum(self);
     }
 };
 
@@ -273,7 +273,7 @@ pub fn deinit(self: *Self) void {
 }
 
 fn new_inst(self: *Self, addr: usize) !void {
-    var size = @intCast(u32, self.get_target());
+    var size = @as(u32, @intCast(self.get_target()));
     try self.inst_off.append(size);
     try self.inst_dbg.append(addr);
 }
@@ -284,7 +284,7 @@ pub fn wb(self: *Self, opcode: u8) !void {
 }
 
 pub fn wbi(self: *Self, imm: i8) !void {
-    try self.wb(@bitCast(u8, imm));
+    try self.wb(@as(u8, @bitCast(imm)));
 }
 
 pub fn wd(self: *Self, dword: i32) !void {
@@ -357,7 +357,7 @@ pub fn bo(reg: IPReg, offset: i32) EAddr {
 }
 
 pub fn rel(offset: u32) EAddr {
-    return .{ .base = null, .offset = @bitCast(i32, offset) };
+    return .{ .base = null, .offset = @bitCast(offset) };
 }
 
 // index quadword array
@@ -370,7 +370,7 @@ pub fn bi(base: IPReg, index: IPReg) EAddr {
 }
 
 pub fn maybe_imm8(imm: i32) ?i8 {
-    var imm8 = @truncate(i8, imm);
+    var imm8: i8 = @truncate(imm);
     return if (imm == imm8) imm8 else null;
 }
 
@@ -404,14 +404,14 @@ pub fn modRmEA(self: *Self, reg_or_opx: u3, ea: EAddr) !void {
     }
     if (ea.base == null) {
         // rip+off32
-        try self.wd(ea.offset - (@bitCast(i32, self.get_target()) + 4));
+        try self.wd(ea.offset - (@as(i32, @bitCast(self.get_target())) + 4));
     } else if (mod != 0b00) {
         try if (offset8) |off| self.wbi(off) else self.wd(ea.offset);
     }
 }
 
-pub fn tibflag(comptime T: type, flag: bool) u8 {
-    return @as(T, @intFromBool(!flag));
+pub fn tibflag(comptime T: type, flag: bool) T {
+    return @intFromBool(!flag);
 }
 
 // Note: implements inversion of r, vvvv
@@ -472,7 +472,7 @@ pub fn call_rel(self: *Self, addr: u32) !void {
     try self.new_inst(@returnAddress());
     const rel_pos = self.get_target() + 5;
     // TODO: check bounds
-    const diff = @intCast(i32, addr) - @intCast(i32, rel_pos);
+    const diff = @as(i32, @intCast(addr)) - @as(i32, @intCast(rel_pos));
     try self.wb(0xE8);
     try self.wd(diff);
 }
@@ -481,8 +481,8 @@ pub fn maybe_call_rel_abs(self: *Self, addr: *const u8) !?void {
     // TRICKY: this assumes code won't move.
     const rel_pos = @intFromPtr(self.code.items.ptr) + self.get_target() + 5;
     // This should be safe if we stay in USER space (0 <= intptr < 2**47)
-    const diff = @intCast(isize, @intFromPtr(addr)) - @intCast(isize, rel_pos);
-    const short_diff = @truncate(i32, diff);
+    const diff = @as(isize, @intCast(@intFromPtr(addr))) - @as(isize, @intCast(rel_pos));
+    const short_diff = @as(i32, @truncate(diff));
     if (diff != short_diff) return null;
 
     try self.new_inst(@returnAddress());
@@ -512,7 +512,7 @@ pub fn jfwd(self: *Self, cond: ?Cond) !u32 {
     } else {
         try self.wb(if (long) 0xe9 else 0xeb);
     }
-    var pos = @intCast(u32, self.code.items.len);
+    const pos: u32 = @intCast(self.code.items.len);
     if (long) {
         try self.wd(0x00); // placeholder
     } else {
@@ -530,7 +530,7 @@ pub fn set_target(self: *Self, pos: u32) !void {
         if (off > 0x7f) {
             return error.InvalidNearJump;
         }
-        self.code.items[pos] = @intCast(u8, off);
+        self.code.items[pos] = @as(u8, @intCast(off));
     }
 }
 
@@ -540,18 +540,18 @@ pub fn set_lea_target(self: *Self, pos: u32) void {
 
 pub fn set_lea(self: *Self, pos: u32, target: u32) void {
     var off = target - (pos + 4);
-    self.code.items[pos] = @intCast(u8, off);
+    self.code.items[pos] = @intCast(off);
     std.mem.writeIntLittle(u32, self.code.items[pos..][0..4], off);
 }
 
 pub fn get_target(self: *Self) u32 {
-    return @intCast(u32, self.code.items.len);
+    return @intCast(self.code.items.len);
 }
 
 // .. and back again
 pub fn jbck(self: *Self, cond: ?Cond, target: u32) !void {
     try self.new_inst(@returnAddress());
-    var off = @intCast(i32, target) - (@intCast(i32, self.code.items.len) + 2);
+    var off = @as(i32, @intCast(target)) - (@as(i32, @intCast(self.code.items.len)) + 2);
     if (maybe_imm8(off)) |off8| {
         try self.wb(if (cond) |c| 0x70 + c.off() else 0xEB);
         try self.wbi(off8);
@@ -744,14 +744,14 @@ pub inline fn vop_rr(self: *Self, op: u8, fmode: FMode, dst: u4, src1: u4, src2:
     try self.new_inst(@returnAddress());
     try self.vex0fwig(dst > 7, false, src2 > 7, src1, fmode.l(), fmode.pp());
     try self.wb(op);
-    try self.modRm(0b11, @truncate(u3, dst), @truncate(u3, src2));
+    try self.modRm(0b11, @truncate(dst), @truncate(src2));
 }
 
 pub inline fn vop_rm(self: *Self, op: u8, fmode: FMode, reg: u4, vreg: u4, ea: EAddr) !void {
     try self.new_inst(@returnAddress());
     try self.vex0fwig(reg > 7, ea.x(), ea.b(), vreg, fmode.l(), fmode.pp());
     try self.wb(op);
-    try self.modRmEA(@truncate(u3, reg), ea);
+    try self.modRmEA(@truncate(reg), ea);
 }
 
 // dst[low] = src2[low]; dst[high] = src[high]
@@ -793,7 +793,7 @@ pub fn vbroadcast(self: *Self, fmode: FMode, dst: u4, src: EAddr) !void {
     try self.new_inst(@returnAddress());
     try self.vex3(false, dst > 7, src.x(), src.b(), .h0F38, 0, fmode.l(), .h66);
     try self.wb(if (fmode.double()) 0x19 else 0x18);
-    try self.modRmEA(@truncate(u3, dst), src);
+    try self.modRmEA(@truncate(dst), src);
 }
 
 pub fn vmathf(self: *Self, op: VMathOp, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
@@ -819,14 +819,14 @@ pub inline fn vop_i_rr(self: *Self, op: u8, wide: bool, pp: PP, dst: u4, src1: u
     try self.new_inst(@returnAddress());
     try self.vex0fwig(dst > 7, false, src2 > 7, src1, wide, pp);
     try self.wb(op);
-    try self.modRm(0b11, @truncate(u3, dst), @truncate(u3, src2));
+    try self.modRm(0b11, @truncate(dst), @truncate(src2));
 }
 
 pub inline fn vop_i_rm(self: *Self, op: u8, wide: bool, pp: PP, reg: u4, vreg: u4, ea: EAddr) !void {
     try self.new_inst(@returnAddress());
     try self.vex0fwig(reg > 7, ea.x(), ea.b(), vreg, wide, pp);
     try self.wb(op);
-    try self.modRmEA(@truncate(u3, reg), ea);
+    try self.modRmEA(@truncate(reg), ea);
 }
 
 pub fn vmovdq(self: *Self, wide: bool, dst: u4, src: u4) !void {
@@ -900,7 +900,7 @@ pub fn finalize(self: *Self) !void {
 }
 
 pub fn get_ptr(self: *Self, target: u32, comptime T: type) T {
-    return @ptrCast(T, self.code.items[target..].ptr);
+    return @ptrCast(self.code.items[target..].ptr);
 }
 
 pub fn dbg_test(self: *Self) !void {

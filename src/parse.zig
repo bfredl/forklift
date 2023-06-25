@@ -29,7 +29,7 @@ pub fn num(self: *Self) ?u4 {
     const c = self.nonws() orelse return null;
     if ('0' <= c and c < '9') {
         self.pos += 1;
-        return @intCast(u4, c - '0');
+        return @as(u4, @intCast(c - '0'));
     }
     return null;
 }
