@@ -1553,11 +1553,52 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
     self.call_clobber_mask = mask;
 }
 
+pub fn resolve_movegroup(self: *Self, pos: *const InsIterator) !void {
+    var put_pos = pos.*;
+
+    while (true) {
+        var phi_1 = put_pos;
+        var any_ready = false;
+        while (phi_1.next()) |p1| {
+            const ready = is_ready: {
+                if (self.trivial(p1.i)) {
+                    break :is_ready true;
+                }
+                var phi_2 = phi_1; // starts after phi_1
+                while (phi_2.next()) |p2| {
+                    // print("considering: {} {}\n", .{ p1.ref, p2.ref });
+
+                    const after = p2.i;
+                    if (after.tag != .putphi) continue; // TODO: DO NOT DO THAT
+                    if (self.conflict(p1.i, after)) {
+                        break :is_ready false;
+                    }
+                }
+                break :is_ready true;
+            };
+            if (ready) {
+                // we cannot run out of put_pos as it is a slower (or always equal) iterator
+                mem.swap(Inst, p1.i, put_pos.next().?.i);
+                any_ready = true; // we advanced
+            }
+        }
+        if (!any_ready) {
+            break;
+        }
+    }
+
+    if (put_pos.next()) |_| {
+        std.log.err("TODO: put cycles", .{});
+        return error.FLIRError;
+    }
+}
+
 pub fn resolve_phi(self: *Self) !void {
     for (self.n.items) |*n| {
         // putphi are at the end blocks before a join node, and
         // cannot be in a split node
         if (n.s[1] != 0) continue;
+
         const first_putphi = first: {
             var iter = self.ins_iterator(n.firstblk);
             var peek = iter;
@@ -1569,43 +1610,7 @@ pub fn resolve_phi(self: *Self) !void {
             continue;
         };
 
-        var put_pos = first_putphi;
-
-        while (true) {
-            var phi_1 = put_pos;
-            var any_ready = false;
-            while (phi_1.next()) |p1| {
-                const ready = is_ready: {
-                    if (self.trivial(p1.i)) {
-                        break :is_ready true;
-                    }
-                    var phi_2 = phi_1; // starts after phi_1
-                    while (phi_2.next()) |p2| {
-                        // print("considering: {} {}\n", .{ p1.ref, p2.ref });
-
-                        const after = p2.i;
-                        if (after.tag != .putphi) continue; // TODO: DO NOT DO THAT
-                        if (self.conflict(p1.i, after)) {
-                            break :is_ready false;
-                        }
-                    }
-                    break :is_ready true;
-                };
-                if (ready) {
-                    // we cannot run out of put_pos as it is a slower (or always equal) iterator
-                    mem.swap(Inst, p1.i, put_pos.next().?.i);
-                    any_ready = true; // we advanced
-                }
-            }
-            if (!any_ready) {
-                break;
-            }
-        }
-
-        if (put_pos.next()) |_| {
-            std.log.err("TODO: put cycles", .{});
-            return error.FLIRError;
-        }
+        try self.resolve_movegroup(&first_putphi);
     }
 }
 
