@@ -1569,29 +1569,51 @@ pub fn resolve_phi(self: *Self) !void {
             continue;
         };
 
-        var phi_1 = first_putphi;
-        while (phi_1.next()) |p1| {
-            const before = p1.i;
-            if (before.tag != .putphi) continue;
+        var put_pos = first_putphi;
 
-            var phi_2 = phi_1; // starts after phi_1
-            while (phi_2.next()) |p2| {
-                // print("considering: {} {}\n", .{ p1.ref, p2.ref });
+        while (true) {
+            var phi_1 = put_pos;
+            var any_ready = false;
+            while (phi_1.next()) |p1| {
+                const ready = is_ready: {
+                    if (self.trivial(p1.i)) {
+                        break :is_ready true;
+                    }
+                    var phi_2 = phi_1; // starts after phi_1
+                    while (phi_2.next()) |p2| {
+                        // print("considering: {} {}\n", .{ p1.ref, p2.ref });
 
-                const after = p2.i;
-                if (after.tag != .putphi) continue;
-                if (self.conflict(before, after)) {
-                    // print("DID\n", .{});
-                    mem.swap(Inst, before, after);
-                }
-                if (self.conflict(before, after)) {
-                    self.debug_print();
-                    print("cycles detected: {} {}\n", .{ p1.ref, p2.ref });
-                    return error.FLIRError;
+                        const after = p2.i;
+                        if (after.tag != .putphi) continue; // TODO: DO NOT DO THAT
+                        if (self.conflict(p1.i, after)) {
+                            break :is_ready false;
+                        }
+                    }
+                    break :is_ready true;
+                };
+                if (ready) {
+                    // we cannot run out of put_pos as it is a slower (or always equal) iterator
+                    mem.swap(Inst, p1.i, put_pos.next().?.i);
+                    any_ready = true; // we advanced
                 }
             }
+            if (!any_ready) {
+                break;
+            }
+        }
+
+        if (put_pos.next()) |_| {
+            std.log.err("TODO: put cycles", .{});
+            return error.FLIRError;
         }
     }
+}
+
+pub fn trivial(self: *Self, putphi: *Inst) bool {
+    const written = self.iref(putphi.op2) orelse return false;
+    const read = self.iref(putphi.op1) orelse return false;
+    if (written.mckind == read.mckind and written.mcidx == read.mcidx) return true;
+    return false;
 }
 
 pub fn conflict(self: *Self, before: *Inst, after: *Inst) bool {
