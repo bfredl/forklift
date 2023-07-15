@@ -1553,13 +1553,14 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
     self.call_clobber_mask = mask;
 }
 
-pub fn resolve_movegroup(self: *Self, pos: *const InsIterator) !void {
+pub fn resolve_movegroup(self: *Self, pos: *const InsIterator, tag: Tag) !void {
     var put_pos = pos.*;
 
     while (true) {
         var phi_1 = put_pos;
         var any_ready = false;
         while (phi_1.next()) |p1| {
+            if (p1.i.tag != tag) return; // we're already done
             const ready = is_ready: {
                 if (self.trivial(p1.i)) {
                     break :is_ready true;
@@ -1569,7 +1570,7 @@ pub fn resolve_movegroup(self: *Self, pos: *const InsIterator) !void {
                     // print("considering: {} {}\n", .{ p1.ref, p2.ref });
 
                     const after = p2.i;
-                    if (after.tag != .putphi) continue; // TODO: DO NOT DO THAT
+                    if (after.tag != tag) break;
                     if (self.conflict(p1.i, after)) {
                         break :is_ready false;
                     }
@@ -1587,9 +1588,11 @@ pub fn resolve_movegroup(self: *Self, pos: *const InsIterator) !void {
         }
     }
 
-    if (put_pos.next()) |_| {
-        std.log.err("TODO: put cycles", .{});
-        return error.FLIRError;
+    if (put_pos.next()) |px| {
+        if (px.i.tag != tag) {
+            std.log.err("TODO: put cycles", .{});
+            return error.FLIRError;
+        }
     }
 }
 
@@ -1610,7 +1613,7 @@ pub fn resolve_phi(self: *Self) !void {
             continue;
         };
 
-        try self.resolve_movegroup(&first_putphi);
+        try self.resolve_movegroup(&first_putphi, .putphi);
     }
 }
 
