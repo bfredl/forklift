@@ -1,0 +1,2 @@
+#!/bin/bash
+vmlinux root=/dev/root rootfstype=hostfs init=$PWD/init con0=fd:0,fd:1 con=pts ssl=pts console=tty2 2> zig-cache/vm.log

@@ -1,0 +1,2 @@
+#!/bin/bash
+/home/bfredl/dev/forklift/zig-cache/o/e277d95df3c50768bfde59cffb42cdbc/test --listen=- < /dev/tty0 &> /dev/tty0 
