@@ -15,6 +15,12 @@ pub fn build(b: *std.Build) void {
         .source_file = .{ .path = "src/forklift.zig" },
     });
 
+    const bpf_helper = b.addExecutable(.{
+        .name = "run",
+        .root_source_file = .{ .path = "test/bpf_helper.zig" },
+        .optimize = opt,
+    });
+
     const test_user = b.addTest(.{
         .root_source_file = .{ .path = "test/all_user.zig" },
         .optimize = opt,
@@ -28,7 +34,10 @@ pub fn build(b: *std.Build) void {
         .optimize = opt,
     });
     test_bpf.addModule("forklift", forklift);
-    const run_test_bpf = b.addRunArtifact(test_bpf);
+    std.log.info("odd fellow: {s}", .{test_bpf.out_filename});
+
+    const run_test_bpf = b.addRunArtifact(bpf_helper);
+    run_test_bpf.addArtifactArg(test_bpf);
 
     const test_step = b.step("test", "Check it!");
     test_step.dependOn(&run_test_user.step);
