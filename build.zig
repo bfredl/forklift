@@ -15,14 +15,22 @@ pub fn build(b: *std.Build) void {
         .source_file = .{ .path = "src/forklift.zig" },
     });
 
-    const cfo_test = b.addTest(.{
-        .root_source_file = .{ .path = "test/all.zig" },
+    const test_user = b.addTest(.{
+        .root_source_file = .{ .path = "test/all_user.zig" },
         .optimize = opt,
     });
+    test_user.addModule("forklift", forklift);
+    const run_test_user = b.addRunArtifact(test_user);
 
-    cfo_test.addModule("forklift", forklift);
+    // requires root or virtualization, so separate
+    const test_bpf = b.addTest(.{
+        .root_source_file = .{ .path = "test/bpf.zig" },
+        .optimize = opt,
+    });
+    test_bpf.addModule("forklift", forklift);
+    const run_test_bpf = b.addRunArtifact(test_bpf);
 
-    const run = b.addRunArtifact(cfo_test);
     const test_step = b.step("test", "Check it!");
-    test_step.dependOn(&run.step);
+    test_step.dependOn(&run_test_user.step);
+    test_step.dependOn(&run_test_bpf.step);
 }
