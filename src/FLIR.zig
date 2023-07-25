@@ -1619,7 +1619,7 @@ pub fn resolve_moves(self: *Self) !void {
     }
 }
 
-fn movins_dest(self: *Self, movins: *Inst) !*Inst {
+pub fn movins_dest(self: *Self, movins: *Inst) !*Inst {
     return switch (movins.tag) {
         .putphi => self.iref(movins.op2) orelse return error.FLIRError,
         .callarg => movins,
@@ -1632,6 +1632,15 @@ fn movins_read(self: *Self, movins: *Inst) !?*Inst {
     return switch (movins.tag) {
         .putphi => self.iref(movins.op1),
         .callarg => self.iref(movins.op1),
+        else => error.FLIRError,
+    };
+}
+
+// fubbigt: use IPMCVal even in the analysis stage
+pub fn movins_read2(self: *Self, movins: *Inst) !?IPMCVal {
+    return switch (movins.tag) {
+        .putphi => self.ipval(movins.op1),
+        .callarg => self.ipval(movins.op1),
         else => error.FLIRError,
     };
 }

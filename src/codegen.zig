@@ -239,13 +239,17 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     try regaritmc(cfo, .cmp, lhs, rhs);
                     cond = @as(FLIR.IntCond, @enumFromInt(i.spec)).asCFOCond();
                 },
-                .putphi => {
-                    // TODO: actually check for parallell-move conflicts
+                // parallel move family
+                .putphi, .callarg => {
+                    // TODO: actually check for parallel-move conflicts
                     // either here or as an extra deconstruction step
                     // TODO: phi of avxval
-                    const dest = self.ipval(i.op2) orelse return error.FLIRError;
-                    const src = self.ipval(i.op1) orelse return error.FLIRError;
-                    try movmcs(cfo, dest, src);
+                    const dest = (try self.movins_dest(i)).ipval() orelse return error.FLIRError;
+                    // fubbigt: the idea is than movins_read will return null
+                    // exactly when reading an UNDEF, incase this insn becomes a no-op
+                    if (try self.movins_read2(i)) |src| {
+                        try movmcs(cfo, dest, src);
+                    }
                 },
                 .load => {
                     var eaddr = try get_eaddr_load_or_lea(self, i.*);
@@ -323,9 +327,6 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     const y = self.avxreg(i.op2) orelse return error.FLIRError;
                     const dst = i.avxreg() orelse return error.FLIRError;
                     try cfo.vcmpf(i.vcmpop(), i.fmode_op(), dst, x, y);
-                },
-                .callarg => {
-                    try regmovmc(cfo, i.ipreg().?, self.ipval(i.op1).?);
                 },
                 .call => {
                     const kind: FLIR.CallKind = @enumFromInt(i.spec);
