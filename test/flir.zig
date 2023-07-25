@@ -52,6 +52,8 @@ pub fn parse_multi_dbg(ir: []const u8) !Res {
 pub fn parse_multi_impl(ir: []const u8, dbg: bool) !Res {
     var parser = IRParse.init(ir, test_allocator);
     var cfo = try CFO.init(test_allocator);
+    errdefer parser.deinit();
+    errdefer cfo.deinit();
     parser.parse(&cfo, dbg) catch |e| {
         print("fail at {}\n", .{parser.pos});
         return e;
@@ -439,6 +441,8 @@ test "call near" {
 }
 
 test "swap simple" {
+    // FLIR.noisy = true;
+    // defer FLIR.noisy = false;
     var res = try parse_multi_dbg(
         \\func diff
         \\  %x = arg

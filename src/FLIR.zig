@@ -54,6 +54,8 @@ nsave: u8 = 0,
 ndf: u16 = 0,
 call_clobber_mask: u16 = undefined,
 
+pub var noisy: bool = false;
+
 // filler value for unintialized refs. not a sentinel for
 // actually invalid refs!
 pub const DEAD: u16 = 0xFEFF;
@@ -1553,33 +1555,40 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
     self.call_clobber_mask = mask;
 }
 
-pub fn resolve_movegroup(self: *Self, pos: *const InsIterator, tag: Tag) !void {
-    var put_pos = pos.*;
-
+// Resolve a block of parallel moves. Currently supported:
+// callarg instruction: source in i.op1, destination i itself
+// putphi instruction: source in i.op1, destination in i.op2 (the phi instruction)
+// pos is advanced to first ins (or null) after the move group
+pub fn resolve_movegroup(self: *Self, pos: *InsIterator, tag: Tag) !void {
+    if (noisy) print("teg: {}\n", .{tag});
     while (true) {
-        var phi_1 = put_pos;
+        var phi_1 = pos.*;
         var any_ready = false;
         while (phi_1.next()) |p1| {
-            if (p1.i.tag != tag) return; // we're already done
+            if (noisy) print("nesta: {}\n", .{p1.i.tag});
+            if (p1.i.tag != tag) break;
             const ready = is_ready: {
-                if (self.trivial(p1.i)) {
+                if (try self.trivial(p1.i)) {
+                    if (noisy) print("trivial..\n", .{});
                     break :is_ready true;
                 }
-                var phi_2 = phi_1; // starts after phi_1
+                var phi_2 = pos.*; // unordered, we cannot start after phi_1!
                 while (phi_2.next()) |p2| {
-                    // print("considering: {} {}\n", .{ p1.ref, p2.ref });
-
+                    // pointer comparison: skip diagonal element
+                    if (p1.i == p2.i) continue;
                     const after = p2.i;
                     if (after.tag != tag) break;
-                    if (self.conflict(p1.i, after)) {
+                    if (noisy) print("considering: {} {}\n", .{ p1.ref, p2.ref });
+                    if (try self.conflict(p1.i, after)) {
                         break :is_ready false;
                     }
                 }
                 break :is_ready true;
             };
             if (ready) {
-                // we cannot run out of put_pos as it is a slower (or always equal) iterator
-                mem.swap(Inst, p1.i, put_pos.next().?.i);
+                if (noisy) print("redo: {}\n", .{p1.i.tag});
+                // we cannot run out of pos as it is a slower (or always equal) iterator
+                mem.swap(Inst, p1.i, pos.next().?.i);
                 any_ready = true; // we advanced
             }
         }
@@ -1588,80 +1597,57 @@ pub fn resolve_movegroup(self: *Self, pos: *const InsIterator, tag: Tag) !void {
         }
     }
 
-    if (put_pos.next()) |px| {
-        if (px.i.tag != tag) {
+    if (pos.next()) |px| {
+        if (noisy) print("men se: {}\n", .{px.i.tag});
+        if (px.i.tag == tag) {
             std.log.err("TODO: put cycles", .{});
             return error.FLIRError;
         }
     }
 }
 
-pub fn resolve_phi(self: *Self) !void {
+pub fn resolve_moves(self: *Self) !void {
     for (self.n.items) |*n| {
-        // putphi are at the end blocks before a join node, and
-        // cannot be in a split node
-        if (n.s[1] != 0) continue;
-
-        const first_putphi = first: {
-            var iter = self.ins_iterator(n.firstblk);
-            var peek = iter;
-            while (peek.next()) |it| {
-                if (it.i.tag == .putphi) break :first iter;
-                iter = peek; // TODO: be smarter than this (or not)
+        var iter = self.ins_iterator(n.firstblk);
+        while (iter.peek()) |it| {
+            if (it.i.tag == .putphi or it.i.tag == .callarg) {
+                try self.resolve_movegroup(&iter, it.i.tag);
+            } else {
+                _ = iter.next();
             }
-            // no putphi, skip the node
-            continue;
-        };
-
-        try self.resolve_movegroup(&first_putphi, .putphi);
-    }
-}
-
-pub fn trivial(self: *Self, putphi: *Inst) bool {
-    const written = self.iref(putphi.op2) orelse return false;
-    const read = self.iref(putphi.op1) orelse return false;
-    if (written.mckind == read.mckind and written.mcidx == read.mcidx) return true;
-    return false;
-}
-
-pub fn conflict(self: *Self, before: *Inst, after: *Inst) bool {
-    const written = self.iref(before.op2) orelse return false;
-    const read = self.iref(after.op1) orelse return false;
-    if (written.mckind == read.mckind and written.mcidx == read.mcidx) return true;
-    return false;
-}
-
-fn mov_dest(self: *Self, i: *Inst) ?IPMCVal {
-    switch (i.tag) {
-        .putphi => self.ipval(i.op2),
-        .callarg => i.ipval(),
-        else => null,
-    }
-}
-
-// Resolve a block of parallel moves. Currently supported:
-// callarg instruction: source in i.op1, destination in i.ipval()
-// putphi instruction: source in i.op1, destination in i.op2 (the phi instruction)
-pub fn resolve_parallel_moves(self: *Self, start: InsIterator, tag: Tag) !void {
-    var read: u16 = 0;
-    var written: u16 = 0;
-    _ = read;
-    _ = written;
-
-    var iter = start;
-    while (iter.next()) |item| {
-        const i = item.i;
-        if (i.tag != tag) break;
-        // TODO: something like IPMCVal.undef for an explicit undefined value (discard the move)
-        const src = self.ipval(i.op1) orelse return error.FLIRError;
-        const dest = self.mov_dest(i);
-        _ = dest;
-        // if (src == dest) pretend nothing happened
-        switch (src) {
-            .ipreg => |reg| reg,
-            else => unreachable,
         }
     }
+}
+
+fn movins_dest(self: *Self, movins: *Inst) !*Inst {
+    return switch (movins.tag) {
+        .putphi => self.iref(movins.op2) orelse return error.FLIRError,
+        .callarg => movins,
+        else => error.FLIRError,
+    };
+}
+
+// if reading a constant or undef, returns null
+fn movins_read(self: *Self, movins: *Inst) !?*Inst {
+    return switch (movins.tag) {
+        .putphi => self.iref(movins.op1),
+        .callarg => self.iref(movins.op1),
+        else => error.FLIRError,
+    };
+}
+
+pub fn trivial(self: *Self, movins: *Inst) !bool {
+    const written = try self.movins_dest(movins);
+    const read = try self.movins_read(movins) orelse return false; // in principle moving UNDEF anywhere is trivial, but it doesn't matter here
+    if (written.mckind == read.mckind and written.mcidx == read.mcidx) return true;
+    return false;
+}
+
+pub fn conflict(self: *Self, before: *Inst, after: *Inst) !bool {
+    const written = try self.movins_dest(before);
+    const read = try self.movins_read(after) orelse return false;
+    if (written.mckind == read.mckind and written.mcidx == read.mcidx) return true;
+    return false;
 }
 
 const InsIterator = struct {
@@ -1670,10 +1656,23 @@ const InsIterator = struct {
     idx: u16,
 
     pub const IYtem = struct { i: *Inst, ref: u16 };
+
     pub fn next(it: *InsIterator) ?IYtem {
+        return it.get(true);
+    }
+
+    pub fn peek(it: *InsIterator) ?IYtem {
+        return it.get(false);
+    }
+
+    fn get(it: *InsIterator, advance: bool) ?IYtem {
         while (true) {
             if (it.cur_blk == NoRef) return null;
             const retval = IYtem{ .i = &it.self.b.items[it.cur_blk].i[it.idx], .ref = toref(it.cur_blk, it.idx) };
+            if (!advance and retval.i.tag != .empty) {
+                return retval;
+            }
+
             it.idx += 1;
             if (it.idx == BLK_SIZE) {
                 it.idx = 0;
@@ -1717,7 +1716,7 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
     if (check) try self.check_vregs();
 
     try self.scan_alloc(ABI);
-    try self.resolve_phi(); // GLYTTIT
+    try self.resolve_moves(); // GLYTTIT
     if (check) try self.check_ir_valid();
 
     try self.mark_empty();

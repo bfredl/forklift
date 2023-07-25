@@ -34,7 +34,6 @@ pub fn build(b: *std.Build) void {
         .optimize = opt,
     });
     test_bpf.addModule("forklift", forklift);
-    std.log.info("odd fellow: {s}", .{test_bpf.out_filename});
 
     const run_test_bpf = b.addRunArtifact(bpf_helper);
     run_test_bpf.addArtifactArg(test_bpf);
@@ -42,4 +41,7 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Check it!");
     test_step.dependOn(&run_test_user.step);
     test_step.dependOn(&run_test_bpf.step);
+
+    const test_step_user = b.step("test_user", "Check it!");
+    test_step_user.dependOn(&run_test_user.step);
 }

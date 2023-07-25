@@ -27,6 +27,11 @@ pub fn init(str: []const u8, allocator: Allocator) Self {
     };
 }
 
+pub fn deinit(self: *Self) void {
+    self.objs.deinit();
+}
+
+// consumes self
 pub fn to_map(self: Self) std.StringHashMap(u32) {
     return self.objs;
 }
