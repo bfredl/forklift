@@ -239,6 +239,18 @@ pub const Inst = struct {
         // if true: vregs_scratch encodes a bitset of conflicting regs.
         // for a vreg, this is always false, but check vregs[v].conflicts
         conflicts: bool = false,
+
+        // for the parallel move class of instructions:
+        // perform a swap between target and dest
+        do_swap: bool = false,
+        // gen as a no-op as previous instruction was a swap
+        swap_done: bool = false,
+
+        // note this can be more than two instructions, like
+        // do_swap a->b
+        // do_swap c->a
+        // swap_done b->c
+        // is a legal lowering of a->b, b->c, c->a or any permutation thereof
     } = .{},
 
     pub fn vreg(self: Inst) ?u16 {
@@ -1597,12 +1609,12 @@ pub fn resolve_movegroup(self: *Self, pos: *InsIterator, tag: Tag) !void {
         }
     }
 
-    if (pos.next()) |px| {
-        if (noisy) print("men se: {}\n", .{px.i.tag});
-        if (px.i.tag == tag) {
-            std.log.err("TODO: put cycles", .{});
-            return error.FLIRError;
+    while (pos.peek()) |px| {
+        if (px.i.tag != tag) {
+            return;
         }
+        std.log.err("TODO: put cycles", .{});
+        return error.FLIRError;
     }
 }
 
