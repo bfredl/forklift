@@ -44,4 +44,7 @@ pub fn build(b: *std.Build) void {
 
     const test_step_user = b.step("test_user", "Check it!");
     test_step_user.dependOn(&run_test_user.step);
+
+    const test_step_bpf = b.step("test_bpf", "Check it!");
+    test_step_bpf.dependOn(&run_test_bpf.step);
 }
