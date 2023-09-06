@@ -37,7 +37,7 @@ pub fn build(b: *std.Build) void {
 
     const run_test_bpf = b.addRunArtifact(bpf_helper);
     run_test_bpf.addArtifactArg(test_bpf);
-    run_test_bpf.stdio = .zig_test; // BAD BINOCULARS!
+    // run_test_bpf.stdio = .zig_test; // BAD BINOCULARS!
 
     const test_step = b.step("test", "Check it!");
     test_step.dependOn(&run_test_user.step);

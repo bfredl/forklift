@@ -1,2 +1,3 @@
 #!/bin/bash
-vmlinux root=/dev/root rootfstype=hostfs init=$PWD/Xinit.sh
+vmlinux root=/dev/root rootfstype=hostfs init=$PWD/init2.sh FOOKA=3
+reset
