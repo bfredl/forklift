@@ -36,6 +36,9 @@ pub fn build(b: *std.Build) void {
     });
     test_bpf.addModule("forklift", forklift);
 
+    b.installArtifact(test_bpf);
+    const run_test_bpf_sudo = b.addRunArtifact(test_bpf);
+
     const run_test_bpf = b.addRunArtifact(bpf_helper);
     run_test_bpf.addArtifactArg(test_bpf);
     // run_test_bpf.stdio = .zig_test; // BAD BINOCULARS!
@@ -49,4 +52,7 @@ pub fn build(b: *std.Build) void {
 
     const test_step_bpf = b.step("test_bpf", "Check it!");
     test_step_bpf.dependOn(&run_test_bpf.step);
+
+    const test_step_bpf_sudo = b.step("test_bpf_sudo", "Check it!");
+    test_step_bpf_sudo.dependOn(&run_test_bpf_sudo.step);
 }

@@ -182,6 +182,7 @@ fn addrmovmc(code: *Code, dst: EAddr, src: Inst) !void {
 fn regmovaddr(code: *Code, dst: IPReg, src: EAddr, size: common.ISize) !void {
     const bpfsize: Insn.Size = switch (size) {
         .dword => .double_word,
+        .byte => .byte,
         else => @panic("fill me in"),
     };
     try put(code, I.ldx(bpfsize, r(dst), @enumFromInt(src.reg), src.off));
@@ -310,7 +311,7 @@ pub fn codegen(self: *FLIR, code: *Code) !u32 {
 
                     const eaddr: EAddr = (try get_eaddr(self, addr, false)).with_off(@intCast(off));
                     const dst = i.ipreg() orelse r0;
-                    try regmovaddr(code, dst, eaddr, addr.mem_type().intptr);
+                    try regmovaddr(code, dst, eaddr, i.mem_type().intptr);
                     try mcmovreg(code, i.ipval().?, dst); // elided if dst is register
                 },
                 .lea => {

@@ -53,8 +53,8 @@ fn test_ir(ir_text: []const u8) !fd_t {
     try ir.test_analysis(FLIR.BPF_ABI, true);
     _ = try codegen_bpf(&ir, &code);
 
-    std.debug.print("\nprogram: \n", .{});
-    try forklift.dump_bpf(std.io.getStdErr().writer(), code.items);
+    // std.debug.print("\nprogram: \n", .{});
+    // try forklift.dump_bpf(std.io.getStdErr().writer(), code.items);
     return bpf_rt.prog_load_test(.syscall, code.items, "MIT", BPF.F_SLEEPABLE);
 }
 
@@ -68,8 +68,8 @@ test "run simple" {
     try std.testing.expectEqual(ret, 5);
 }
 
-test "ctx memory" {
-    std.debug.print("\nkod: \n", .{});
+test "load byte" {
+    // std.debug.print("\nkod: \n", .{});
     const prog_fd = try test_ir(
         \\ func returner
         \\ %ctx = arg
@@ -77,7 +77,20 @@ test "ctx memory" {
         \\ ret %data
         \\ end
     );
-    const data: u32 = 4;
+    // yes its LE specific. sorry if you use a weirdo processor
+    var data: u64 = 42 + 2 * 256;
     const ret = try bpf_rt.prog_test_run(prog_fd, mem.asBytes(&data));
-    try std.testing.expectEqual(ret, 5);
+    try std.testing.expectEqual(ret, 42);
+}
+
+// useful template for testing a raw BFPCode program
+test "raw BPFCode test template" {
+    const I = BPF.Insn;
+    var code = forklift.BPFCode.init(test_allocator);
+    try code.append(I.mov(.r0, .r1));
+    try code.append(I.exit());
+    defer code.deinit();
+    const prog_fd = try bpf_rt.prog_load_test(.syscall, code.items, "MIT", BPF.F_SLEEPABLE);
+    const ret = try bpf_rt.prog_test_run(prog_fd, null);
+    try std.testing.expectEqual(ret, 0);
 }
