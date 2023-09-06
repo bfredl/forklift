@@ -16,10 +16,11 @@ pub fn build(b: *std.Build) void {
     });
 
     const bpf_helper = b.addExecutable(.{
-        .name = "run",
+        .name = "bpf_helper",
         .root_source_file = .{ .path = "test/bpf_helper.zig" },
         .optimize = opt,
     });
+    b.installArtifact(bpf_helper); // debug the test
 
     const test_user = b.addTest(.{
         .root_source_file = .{ .path = "test/all_user.zig" },
