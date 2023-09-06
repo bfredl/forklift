@@ -4,3 +4,4 @@ diamond_test
 loop_test
 aoc/input_*.txt
 /ref/
+Xinit.sh
