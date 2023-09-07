@@ -181,9 +181,9 @@ fn addrmovmc(code: *Code, dst: EAddr, src: Inst) !void {
 
 fn regmovaddr(code: *Code, dst: IPReg, src: EAddr, size: common.ISize) !void {
     const bpfsize: Insn.Size = switch (size) {
-        .dword => .double_word,
         .byte => .byte,
-        else => @panic("fill me in"),
+        .dword => .word,
+        .quadword => .double_word,
     };
     try put(code, I.ldx(bpfsize, r(dst), @enumFromInt(src.reg), src.off));
 }
