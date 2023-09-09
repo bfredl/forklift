@@ -4,6 +4,67 @@ const BPF = linux.BPF;
 const mem = std.mem;
 const fd_t = linux.fd_t;
 
+pub const Code = std.ArrayList(BPF.Insn);
+
+pub const BPFObject = union(enum) {
+    map: struct {
+        fd: fd_t,
+        key_size: usize,
+        val_size: usize,
+        entries: usize,
+        kind: BPF.MapType,
+    },
+    prog: struct {
+        fd: fd_t,
+        // slice into bpf_code
+        code_start: u32,
+        code_len: u32,
+    },
+    // elf: struct {
+    //     fname: []const u8,
+    //     syms: ElfSymbols,
+    //     sdts: ArrayList(ElfSymbols.Stapsdt),
+    // },
+};
+
+pub const Module = struct {
+    bpf_code: Code,
+    objs: std.StringArrayHashMap(BPFObject),
+    // bpf_code.items[id] needs to point at fd of object specified by obj_idx
+    relocations: std.ArrayList(struct { pos: u32, obj_idx: u32 }),
+
+    pub fn init(allocator: std.mem.Allocator) Module {
+        return .{
+            .bpf_code = Code.init(allocator),
+            .objs = @TypeOf(init(allocator).objs).init(allocator),
+            .relocations = @TypeOf(init(allocator).relocations).init(allocator),
+        };
+    }
+
+    /// Frees all memory from `allocator`, but does not close any fd:s.
+    pub fn deinit_mem(self: *Module) void {
+        self.bpf_code.deinit();
+        self.objs.deinit();
+        self.relocations.deinit();
+    }
+
+    pub fn load(self: *Module) !void {
+        if (self.relocations.items.len > 0) {
+            unreachable;
+        }
+
+        for (self.objs.values()) |*v| {
+            switch (v.*) {
+                .prog => |*p| {
+                    const code = self.bpf_code.items[p.code_start..][0..p.code_len];
+                    p.fd = try prog_load_test(.syscall, code, "MIT", BPF.F_SLEEPABLE);
+                },
+                else => unreachable,
+            }
+        }
+    }
+};
+
 pub fn prog_load_test(prog_type: BPF.ProgType, c: []BPF.Insn, license: []const u8, flags: u32) !fd_t {
     var log_buf = [1]u8{0} ** 1024;
     var log = BPF.Log{ .level = 4, .buf = &log_buf };

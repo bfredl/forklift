@@ -66,14 +66,15 @@ pub fn main() !void {
     const inbuf = if (argv.len > nextarg) try readall(allocator, mem.span(argv[nextarg])) else null;
     defer if (inbuf) |b| allocator.free(b);
 
-    var ir = try FLIR.init(32, allocator);
-    defer ir.deinit();
-    var parser = IRParse.init(buf, allocator);
+    var parser = try IRParse.init(buf, allocator);
     // try parser.fd_objs.put("count", map_count);
-    _ = parser.parse_func(&ir) catch |e| {
+    _ = parser.parse_one_func() catch |e| {
         print("error at pos {}:{} (byte {} of {})\n", .{ parser.lnum + 1, 1 + parser.pos - parser.lpos, parser.pos, buf.len });
         return e;
     };
+
+    // TODO: this is a little backwards pwnership but will do for now
+    const ir = &parser.ir;
 
     if (options.dbg_raw_ir) ir.debug_print();
     try ir.test_analysis(FLIR.X86_64ABI, true);
@@ -86,7 +87,7 @@ pub fn main() !void {
     // emit trap instruction to invoke debugger
     if (options.dbg_trap) try cfo.trap();
 
-    _ = try @import("./codegen.zig").codegen(&ir, &cfo, options.dbg_disasm);
+    _ = try @import("./codegen.zig").codegen(ir, &cfo, options.dbg_disasm);
     try cfo.finalize();
     if (options.dbg_disasm) try cfo.dbg_nasm(allocator);
 

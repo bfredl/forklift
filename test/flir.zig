@@ -9,14 +9,6 @@ const os = std.os;
 
 const test_allocator = std.testing.allocator;
 
-pub fn parse(self: *FLIR, ir: []const u8) !void {
-    var parser = IRParse.init(ir, test_allocator);
-    _ = parser.parse_func(self) catch |e| {
-        print("fail at {}\n", .{parser.pos});
-        return e;
-    };
-}
-
 pub fn parse_test(ir: []const u8) !CFO {
     var res = try parse_multi(ir);
     if (res.objs.count() != 1) {
@@ -50,7 +42,7 @@ pub fn parse_multi_dbg(ir: []const u8) !Res {
 }
 
 pub fn parse_multi_impl(ir: []const u8, dbg: bool) !Res {
-    var parser = IRParse.init(ir, test_allocator);
+    var parser = try IRParse.init(ir, test_allocator);
     var cfo = try CFO.init(test_allocator);
     errdefer parser.deinit();
     errdefer cfo.deinit();
@@ -222,16 +214,21 @@ test "diamond cfg" {
 }
 
 test "maybe_split" {
-    var self = try FLIR.init(4, test_allocator);
-    try parse(&self,
+    var parser = try IRParse.init(
         \\func returner
         \\  %x = arg
         \\  %c = 1
         \\  %y = add %x %c
         \\  ret %y
         \\end
-    );
-    defer self.deinit();
+    , test_allocator);
+    defer parser.deinit();
+    _ = parser.parse_one_func() catch |e| {
+        print("fail at {}\n", .{parser.pos});
+        return e;
+    };
+
+    const self = &parser.ir; // FkERY
 
     const pos = 1; // TODO: get("%c")
     const new_pos = try self.maybe_split(pos);
@@ -239,7 +236,7 @@ test "maybe_split" {
     try self.test_analysis(FLIR.X86_64ABI, true);
     var cfo = try CFO.init(test_allocator);
     defer cfo.deinit();
-    _ = try forklift.codegen_x86_64(&self, &cfo, false);
+    _ = try forklift.codegen_x86_64(self, &cfo, false);
     try cfo.finalize();
     const fun = cfo.get_ptr(0, AFunc);
     try expect(usize, 12, fun(11));

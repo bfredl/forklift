@@ -6,8 +6,18 @@ lpos: usize = 0,
 objs: std.StringHashMap(u32),
 allocator: Allocator,
 
+// reset for each function; reused just to keep allocated buffers
+ir: FLIR,
+
+// tricky: ideally we want an unified module format, and an unified entry point
+// BPF is an outlier as code is not a sequence of bytes, but maybe it
+// doesn't matter. Because maybe a flirmodule should be able to
+// consist of both native and bpf code???
+bpf_module: ?*BPFModule,
+
 const FLIR = @import("./FLIR.zig");
 const codegen = @import("./codegen.zig");
+const codegen_bpf = @import("./codegen_bpf.zig").codegen;
 const CFO = @import("./CFO.zig");
 const common = @import("./common.zig");
 const Self = @This();
@@ -18,21 +28,26 @@ const ParseError = error{ ParseError, OutOfMemory, FLIRError };
 const meta = std.meta;
 
 const Allocator = mem.Allocator;
+const BPFModule = @import("./bpf_rt.zig").Module;
 
-pub fn init(str: []const u8, allocator: Allocator) Self {
+pub fn init(str: []const u8, allocator: Allocator) !Self {
     return .{
         .str = str,
         .allocator = allocator,
-        .objs = @TypeOf(init(str, allocator).objs).init(allocator),
+        .objs = std.StringHashMap(u32).init(allocator),
+        .bpf_module = null,
+        .ir = try FLIR.init(4, allocator),
     };
 }
 
 pub fn deinit(self: *Self) void {
     self.objs.deinit();
+    self.ir.deinit();
 }
 
 // consumes self
-pub fn to_map(self: Self) std.StringHashMap(u32) {
+pub fn to_map(self: *Self) std.StringHashMap(u32) {
+    self.ir.deinit(); // HaCKERY
     return self.objs;
 }
 
@@ -117,6 +132,10 @@ fn labelname(self: *Self) ParseError!?Chunk {
     return self.prefixed(':');
 }
 
+fn objname(self: *Self) ParseError!?Chunk {
+    return self.prefixed('$');
+}
+
 fn num(self: *Self) ?u32 {
     const first = self.nonws() orelse return null;
     if (!('0' <= first and first <= '9')) return null;
@@ -139,42 +158,74 @@ fn require(val: anytype, what: []const u8) ParseError!@TypeOf(val.?) {
     };
 }
 
+pub fn parse_one_func(self: *Self) ![]const u8 {
+    const kw = self.keyword() orelse return error.ParseError;
+    if (!mem.eql(u8, kw, "func")) {
+        return error.ParseError;
+    }
+
+    return self.parse_func();
+}
+
 pub fn parse(self: *Self, cfo: *CFO, dbg: bool) !void {
-    // small init size on purpose: must allow reallocations in place
-    var flir = try FLIR.init(4, self.allocator);
-    defer flir.deinit();
     while (self.nonws()) |_| {
-        const name = try self.parse_func(&flir);
+        const kw = self.keyword() orelse return error.ParseError;
+        if (!mem.eql(u8, kw, "func")) {
+            return error.ParseError;
+        }
+
+        const name = try self.parse_func();
         const item = try self.objs.getOrPut(name);
         if (item.found_existing) {
             print("duplicate function {s}!\n", .{name});
             return error.ParseError;
         }
 
-        try flir.test_analysis(FLIR.X86_64ABI, true);
-        if (dbg) flir.debug_print();
-        item.value_ptr.* = try codegen.codegen(&flir, cfo, false);
-        flir.reinit();
+        try self.ir.test_analysis(FLIR.X86_64ABI, true);
+        if (dbg) self.ir.debug_print();
+        item.value_ptr.* = try codegen.codegen(&self.ir, cfo, false);
+        self.ir.reinit();
     }
 }
 
-pub fn parse_func(self: *Self, flir: *FLIR) ![]const u8 {
-    const kw = self.keyword() orelse return error.ParseError;
-    if (!mem.eql(u8, kw, "func")) {
-        return error.ParseError;
+pub fn parse_bpf(self: *Self, dbg: bool) !void {
+    // small init size on purpose: must allow reallocations in place
+    var flir = try FLIR.init(4, self.allocator);
+    defer flir.deinit();
+    while (self.nonws()) |_| {
+        const kw = self.keyword() orelse return;
+        if (mem.eql(u8, kw, "func")) {
+            const name = try self.parse_func();
+            const item = try self.bpf_module.?.objs.getOrPut(name);
+            if (item.found_existing) {
+                print("duplicate function {s}!\n", .{name});
+                return error.ParseError;
+            }
+
+            try self.ir.test_analysis(FLIR.BPF_ABI, true);
+            if (dbg) flir.debug_print();
+            const mod = self.bpf_module.?;
+            const offset = try codegen_bpf(&self.ir, &mod.bpf_code);
+            const len = mod.bpf_code.items.len - offset;
+
+            item.value_ptr.* = .{ .prog = .{ .fd = -1, .code_start = @intCast(offset), .code_len = @intCast(len) } };
+            self.ir.reinit();
+        }
     }
+}
+
+pub fn parse_func(self: *Self) ![]const u8 {
     const name = try require(self.keyword(), "name");
     try self.lbrk();
 
     var func: Func = .{
-        .ir = flir,
         .refs = std.StringHashMap(u16).init(self.allocator),
         .labels = std.StringHashMap(u16).init(self.allocator),
     };
     defer func.refs.deinit();
     defer func.labels.deinit();
 
-    func.curnode = try func.ir.addNode();
+    func.curnode = try self.ir.addNode();
     while (true) {
         if (!try self.stmt(&func)) break;
         try self.lbrk();
@@ -184,7 +235,6 @@ pub fn parse_func(self: *Self, flir: *FLIR) ![]const u8 {
 }
 
 const Func = struct {
-    ir: *FLIR,
     curnode: u16 = FLIR.NoRef,
     refs: std.StringHashMap(u16),
     labels: std.StringHashMap(u16),
@@ -199,15 +249,15 @@ fn nonexisting(map: anytype, key: []const u8, what: []const u8) ParseError!@Type
     return item.value_ptr;
 }
 
-fn get_label(f: *Func, name: []const u8, allow_existing: bool) ParseError!u16 {
+fn get_label(self: *Self, f: *Func, name: []const u8, allow_existing: bool) ParseError!u16 {
     const item = try f.labels.getOrPut(name);
     if (item.found_existing) {
-        if (!allow_existing and !f.ir.empty(item.value_ptr.*, false)) {
+        if (!allow_existing and !self.ir.empty(item.value_ptr.*, false)) {
             print("duplicate label :{s}!\n", .{name});
             return error.ParseError;
         }
     } else {
-        item.value_ptr.* = try f.ir.addNode();
+        item.value_ptr.* = try self.ir.addNode();
     }
     return item.value_ptr.*;
 }
@@ -222,34 +272,35 @@ const jmpmap = std.ComptimeStringMap(FLIR.IntCond, .{
 });
 
 pub fn stmt(self: *Self, f: *Func) ParseError!bool {
+    const ir = &self.ir;
     if (self.keyword()) |kw| {
         if (mem.eql(u8, kw, "end")) {
             return false;
         } else if (mem.eql(u8, kw, "ret")) {
             const retval = try require(try self.call_arg(f), "return value");
-            try f.ir.ret(f.curnode, retval);
+            try ir.ret(f.curnode, retval);
             return true;
         } else if (mem.eql(u8, kw, "var")) {
             const name = try self.varname() orelse return error.ParseError;
             const item = try nonexisting(&f.refs, name, "ref %");
-            item.* = try f.ir.variable();
+            item.* = try ir.variable();
             return true;
         } else if (mem.eql(u8, kw, "jmp")) {
             const target = try require(try self.labelname(), "target");
             // TODO: mark current node as DED, need a new node
             // TODO: HUR STÅR DET TILL I PALLET? explicit syntax for evaluating lhs before rhs.* !
-            const node = try get_label(f, target, true);
-            f.ir.n.items[f.curnode].s[0] = node;
+            const node = try self.get_label(f, target, true);
+            ir.n.items[f.curnode].s[0] = node;
             return true;
         } else if (jmpmap.get(kw)) |cond| {
             const dest = try require(try self.call_arg(f), "dest");
             const src = try require(try self.call_arg(f), "src");
             const target = try require(try self.labelname(), "target");
-            _ = try f.ir.icmp(f.curnode, cond, dest, src);
+            _ = try ir.icmp(f.curnode, cond, dest, src);
 
             // TODO: mark current node as DED, need either a new node or an unconditional jump
-            const node = try get_label(f, target, true);
-            f.ir.n.items[f.curnode].s[1] = node;
+            const node = try self.get_label(f, target, true);
+            ir.n.items[f.curnode].s[1] = node;
             return true;
         } else if (mem.eql(u8, kw, "store")) {
             const kind = try require(try self.typename(), "type");
@@ -259,7 +310,7 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
             try self.expect_char(']');
             const value = try require(try self.call_arg(f), "value");
             const scale: u2 = if (kind == .avxval) 2 else 0;
-            _ = try f.ir.store(f.curnode, kind, dest, idx, scale, value);
+            _ = try ir.store(f.curnode, kind, dest, idx, scale, value);
             return true;
         }
     } else if (try self.varname()) |dest| {
@@ -273,7 +324,7 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
                 return error.ParseError;
             };
             const val = try self.expr(f);
-            try f.ir.putvar(f.curnode, thevar, val);
+            try ir.putvar(f.curnode, thevar, val);
         } else {
             const item = try nonexisting(&f.refs, dest, "ref %");
             item.* = try self.expr(f);
@@ -286,21 +337,21 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
                 const label = try self.identifier();
                 const item = try f.labels.getOrPut(label);
                 if (item.found_existing) {
-                    if (!f.ir.empty(item.value_ptr.*, false)) {
+                    if (!ir.empty(item.value_ptr.*, false)) {
                         print("duplicate label :{s}!\n", .{label});
                         return error.ParseError;
                     }
                 } else {
-                    item.value_ptr.* = try f.ir.addNode();
+                    item.value_ptr.* = try ir.addNode();
                 }
                 break :next item.value_ptr.*;
             } else {
-                break :next try f.ir.addNode();
+                break :next try ir.addNode();
             }
         };
 
-        if (f.ir.n.items[f.curnode].s[0] == 0) {
-            f.ir.n.items[f.curnode].s[0] = nextnode;
+        if (ir.n.items[f.curnode].s[0] == 0) {
+            ir.n.items[f.curnode].s[0] = nextnode;
         }
         f.curnode = nextnode;
         return true;
@@ -310,7 +361,7 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
 
 pub fn call_arg(self: *Self, f: *Func) ParseError!?u16 {
     if (self.num()) |numval| {
-        return try f.ir.const_int(@intCast(numval));
+        return try self.ir.const_int(@intCast(numval));
     } else if (try self.varname()) |src| {
         return f.refs.get(src) orelse {
             print("undefined ref %{s}!\n", .{src});
@@ -332,11 +383,12 @@ pub fn typename(self: *Self) ParseError!?FLIR.SpecType {
 }
 
 pub fn expr(self: *Self, f: *Func) ParseError!u16 {
+    const ir = &self.ir;
     if (try self.call_arg(f)) |arg| {
         return arg;
     } else if (self.keyword()) |kw| {
         if (mem.eql(u8, kw, "arg")) {
-            return f.ir.arg();
+            return ir.arg();
         } else if (mem.eql(u8, kw, "load")) {
             const kind = try require(try self.typename(), "type");
             try self.expect_char('[');
@@ -344,11 +396,11 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
             const idx = try require(try self.call_arg(f), "idx");
             try self.expect_char(']');
             const scale: u2 = if (kind == .avxval) 2 else 0; // TODO UUUGH
-            return f.ir.load(f.curnode, kind, base, idx, scale);
+            return ir.load(f.curnode, kind, base, idx, scale);
         } else if (meta.stringToEnum(FLIR.IntBinOp, kw)) |op| {
             const left = try require(try self.call_arg(f), "left");
             const right = try require(try self.call_arg(f), "right");
-            return f.ir.ibinop(f.curnode, op, left, right);
+            return ir.ibinop(f.curnode, op, left, right);
         } else if (mem.eql(u8, kw, "vop")) {
             // TODO: make this optional, if both op1/op2 share a fmode
             const modename = try require(self.keyword(), "fmode");
@@ -367,9 +419,9 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
             const left = try require(try self.call_arg(f), "left");
             const right = try require(try self.call_arg(f), "right");
             if (mathop) |op| {
-                return f.ir.vmath(f.curnode, op, fmode, left, right);
+                return ir.vmath(f.curnode, op, fmode, left, right);
             } else if (cmpop) |op| {
-                return f.ir.vcmpf(f.curnode, op, fmode, left, right);
+                return ir.vcmpf(f.curnode, op, fmode, left, right);
             } else {
                 unreachable;
             }
@@ -380,21 +432,21 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
                 print("unknown syscall: '{s}'\n", .{name});
                 return error.ParseError;
             };
-            const sysnum = try f.ir.const_int(@intCast(@intFromEnum(syscall)));
+            const sysnum = try ir.const_int(@intCast(@intFromEnum(syscall)));
 
             try self.parse_args(f);
 
-            return try f.ir.call(f.curnode, .syscall, sysnum);
+            return try ir.call(f.curnode, .syscall, sysnum);
         } else if (mem.eql(u8, kw, "call")) {
             const name = try require(self.keyword(), "name");
             const off = self.objs.get(name) orelse return error.ParseError;
 
-            const constoff = try f.ir.const_uint(off);
+            const constoff = try ir.const_uint(off);
             try self.parse_args(f);
-            return try f.ir.call(f.curnode, .near, constoff);
+            return try ir.call(f.curnode, .near, constoff);
         } else if (mem.eql(u8, kw, "alloc")) {
             const size = self.num() orelse 1;
-            return f.ir.alloc(f.curnode, @intCast(size));
+            return ir.alloc(f.curnode, @intCast(size));
         }
         print("NIN: {s}\n", .{kw});
     }
@@ -407,7 +459,7 @@ pub fn parse_args(self: *Self, f: *Func) ParseError!void {
     // to simplify analyis we want all .callarg insn
     // in a row before the .call
     while (try self.call_arg(f)) |arg| {
-        try f.ir.callarg(f.curnode, argno, arg);
+        try self.ir.callarg(f.curnode, argno, arg);
         argno += 1;
     }
 }

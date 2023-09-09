@@ -8,6 +8,7 @@ const BPF = std.os.linux.BPF;
 const fd_t = std.os.linux.fd_t;
 const mem = std.mem;
 const expectEqual = std.testing.expectEqual;
+const Module = bpf_rt.Module;
 
 fn expect(comptime T: type, x: T, y: T) !void {
     return std.testing.expectEqual(x, y);
@@ -16,30 +17,24 @@ fn expect(comptime T: type, x: T, y: T) !void {
 const std = @import("std");
 const test_allocator = std.testing.allocator;
 
-pub fn parse(self: *FLIR, ir: []const u8) !void {
-    var parser = IRParse.init(ir, test_allocator);
-    _ = parser.parse_func(self) catch |e| {
-        print("fail at {}\n", .{parser.pos});
-        return e;
-    };
-}
-
 test "show code" {
-    var ir = try FLIR.init(8, test_allocator);
-    defer ir.deinit();
-    try parse(&ir,
+    var mod = Module.init(test_allocator);
+    defer mod.deinit_mem();
+    var parser = try IRParse.init(
         \\ func returner
         \\ ret 5
         \\ end
-    );
-    var code = forklift.BPFCode.init(test_allocator);
-    defer code.deinit();
-    try ir.test_analysis(FLIR.BPF_ABI, true);
-    _ = try codegen_bpf(&ir, &code);
+    , test_allocator);
+    defer parser.deinit();
+    parser.bpf_module = &mod;
+    _ = parser.parse_bpf(false) catch |e| {
+        print("fail at {}\n", .{parser.pos});
+        return e;
+    };
 
     var data = std.ArrayList(u8).init(std.testing.allocator);
     defer data.deinit();
-    try forklift.dump_bpf(data.writer(), code.items);
+    try forklift.dump_bpf(data.writer(), mod.bpf_code.items);
     // std.debug.print("\n{s}\n", .{data.items});
     try std.testing.expectEqualSlices(u8,
         \\  0: b7 0 0  +0   +5 MOV64 r0, 5
@@ -48,23 +43,36 @@ test "show code" {
     , data.items);
 }
 
-fn test_ir(ir_text: []const u8) !fd_t {
-    var ir = try FLIR.init(8, test_allocator);
-    defer ir.deinit();
+fn test_one_func(ir_text: []const u8) !fd_t {
+    var mod = try parse_multi_impl(ir_text, false);
+    defer mod.deinit_mem();
 
-    try parse(&ir, ir_text);
-    var code = forklift.BPFCode.init(test_allocator);
-    defer code.deinit();
-    try ir.test_analysis(FLIR.BPF_ABI, true);
-    _ = try codegen_bpf(&ir, &code);
+    if (mod.objs.count() != 1) {
+        return error.ExpectedOneFunction;
+    }
 
-    // std.debug.print("\nprogram: \n", .{});
-    // try forklift.dump_bpf(std.io.getStdErr().writer(), code.items);
-    return bpf_rt.prog_load_test(.syscall, code.items, "MIT", BPF.F_SLEEPABLE);
+    return switch (mod.objs.values()[0]) {
+        .prog => |x| x.fd,
+        else => error.ExpectedOneFunction,
+    };
+}
+
+pub fn parse_multi_impl(ir: []const u8, dbg: bool) !Module {
+    var parser = try IRParse.init(ir, test_allocator);
+    var mod = Module.init(test_allocator);
+    defer parser.deinit();
+    errdefer mod.deinit_mem();
+    parser.bpf_module = &mod;
+    parser.parse_bpf(dbg) catch |e| {
+        print("fail at {}\n", .{parser.pos});
+        return e;
+    };
+    try mod.load();
+    return mod;
 }
 
 test "run simple" {
-    const prog_fd = try test_ir(
+    const prog_fd = try test_one_func(
         \\ func returner
         \\ ret 5
         \\ end
@@ -75,7 +83,7 @@ test "run simple" {
 
 test "load byte" {
     // std.debug.print("\nkod: \n", .{});
-    const prog_fd = try test_ir(
+    const prog_fd = try test_one_func(
         \\ func returner
         \\ %ctx = arg
         \\ %data = load byte [%ctx 0]
@@ -90,7 +98,7 @@ test "load byte" {
 
 test "load dword" {
     // std.debug.print("\nkod: \n", .{});
-    const prog_fd = try test_ir(
+    const prog_fd = try test_one_func(
         \\ func returner
         \\ %ctx = arg
         \\ %data = load dword [%ctx 0]
@@ -104,10 +112,10 @@ test "load dword" {
 
 test "load dword with offset" {
     // std.debug.print("\nkod: \n", .{});
-    const prog_fd = try test_ir(
+    const prog_fd = try test_one_func(
         \\ func returner
         \\ %ctx = arg
-        \\ %data = load dword [%ctx 1]
+        \\ %data = load dword [%ctx 4]
         \\ ret %data
         \\ end
     );

@@ -13,6 +13,8 @@ const Allocator = mem.Allocator;
 const fd_t = linux.fd_t;
 const IPMCVal = FLIR.IPMCVal;
 
+const Code = @import("./bpf_rt.zig").Code;
+
 const common = @import("./common.zig");
 fn r(reg: IPReg) Reg {
     return @enumFromInt(reg.id());
@@ -22,8 +24,6 @@ const ArrayList = std.ArrayList;
 
 const Insn = BPF.Insn;
 const I = Insn;
-
-pub const Code = ArrayList(Insn);
 
 const builtin = @import("builtin");
 const options = if (!builtin.is_test) &@import("root").options else null;
@@ -63,7 +63,7 @@ pub fn set_target(code: *Code, pos: u32) void {
 pub fn put(code: *Code, insn: Insn) !void {
     if (@TypeOf(options) != @TypeOf(null) and options.dbg_disasm_ir) {
         print("    ", .{});
-        bpf.dump_ins(insn, code.items.len);
+        // bpf.dump_ins(writer, insn, code.items.len);
     }
     try code.append(insn);
 }
@@ -74,10 +74,12 @@ pub fn slotoff(slotid: anytype) i16 {
 
 pub fn ld_map_fd(code: *Code, reg: IPReg, map_fd: fd_t, spec: u8) !void {
     var insn = I.ld_map_fd1(r(reg), map_fd);
-    if (spec == 1) { // BPF_PSEUDO_MAP_VALUE
+    if (spec == 0) {
+        // ok
+    } else if (spec == 1) { // BPF_PSEUDO_MAP_VALUE
         insn.src = BPF.PSEUDO_MAP_VALUE;
     } else {
-        std.debug.assert(spec == 0);
+        return error.FLIRError;
     }
     try put(code, insn);
     // TODO: PSEUDO_MAP_VALUE allows us to code an offset into the second instruction
@@ -182,6 +184,7 @@ fn addrmovmc(code: *Code, dst: EAddr, src: Inst) !void {
 fn regmovaddr(code: *Code, dst: IPReg, src: EAddr, size: common.ISize) !void {
     const bpfsize: Insn.Size = switch (size) {
         .byte => .byte,
+        .word => .half_word,
         .dword => .word,
         .quadword => .double_word,
     };
