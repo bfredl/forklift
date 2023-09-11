@@ -154,3 +154,16 @@ test "just map" {
 
     try expect(u32, get_val, put_val);
 }
+
+test "map value" {
+    var mod = try parse_multi(false,
+        \\ map global_var .array 4 8 1
+        \\ func setter
+        \\   %var = map_value count
+        \\   store quadword [%var 0] 1
+        \\ end
+    );
+    defer mod.deinit_mem();
+    try mod.load();
+    const fd = mod.get_fd("my_map") orelse unreachable;
+}

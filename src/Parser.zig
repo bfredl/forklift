@@ -467,10 +467,21 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
         } else if (mem.eql(u8, kw, "alloc")) {
             const size = self.num() orelse 1;
             return ir.alloc(f.curnode, @intCast(size));
+        } else if (mem.eql(u8, kw, "map")) {
+            return self.get_bpf_map(false, f);
+        } else if (mem.eql(u8, kw, "map_value")) {
+            return self.get_bpf_map(true, f);
         }
         print("NIN: {s}\n", .{kw});
     }
     return error.ParseError;
+}
+
+fn get_bpf_map(self: *Self, value: bool, f: *Func) !u16 {
+    const name = try require(try self.objname(), "map name");
+    const mod = self.bpf_module orelse return error.WHAAAA;
+    const id = mod.objs.getIndex(name) orelse return error.NotFoundError;
+    return self.ir.bpf_load_map(f.curnode, @intCast(id), value);
 }
 
 pub fn parse_args(self: *Self, f: *Func) ParseError!void {

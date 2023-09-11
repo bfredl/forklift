@@ -776,6 +776,12 @@ pub fn store(self: *Self, node: u16, kind: SpecType, base: u16, idx: u16, scale:
     return self.addInst(node, .{ .tag = .store, .op1 = addr, .op2 = val, .spec = sphigh(0, kind.into()) });
 }
 
+pub fn bpf_load_map(self: *Self, node: u16, map_idx: u32, value: bool) !u16 {
+    assert(map_idx < 0x10000);
+    const low_idx: u16 = @truncate(map_idx);
+    return self.addInst(node, .{ .tag = .load_map, .op1 = low_idx, .op2 = 0, .spec = if (value) 1 else 0 });
+}
+
 pub fn vmath(self: *Self, node: u16, vop: VMathOp, fmode: FMode, op1: u16, op2: u16) !u16 {
     // TODO: somewhere, typecheck that FMode matches fmode of args..
     return self.addInst(node, .{ .tag = .vmath, .spec = vmathspec(vop, fmode), .op1 = op1, .op2 = op2 });
