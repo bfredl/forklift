@@ -9,9 +9,9 @@ pub const Code = std.ArrayList(BPF.Insn);
 pub const BPFObject = union(enum) {
     map: struct {
         fd: fd_t,
-        key_size: usize,
-        val_size: usize,
-        entries: usize,
+        key_size: u32,
+        val_size: u32,
+        n_entries: u32,
         kind: BPF.MapType,
     },
     prog: struct {
@@ -59,9 +59,19 @@ pub const BPFModule = struct {
                     const code = self.bpf_code.items[p.code_start..][0..p.code_len];
                     p.fd = try prog_load_test(.syscall, code, "MIT", BPF.F_SLEEPABLE);
                 },
-                else => unreachable,
+                .map => |*m| {
+                    m.fd = try BPF.map_create(m.kind, m.key_size, m.val_size, m.n_entries);
+                },
             }
         }
+    }
+
+    pub fn get_fd(self: *BPFModule, name: []const u8) ?fd_t {
+        const val = self.objs.get(name) orelse return null;
+        return switch (val) {
+            .prog => |p| p.fd,
+            .map => |m| m.fd,
+        };
     }
 };
 

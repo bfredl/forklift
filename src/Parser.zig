@@ -138,6 +138,10 @@ fn objname(self: *Self) ParseError!?Chunk {
     return self.prefixed('$');
 }
 
+fn enumname(self: *Self) ParseError!?Chunk {
+    return self.prefixed('.');
+}
+
 fn num(self: *Self) ?u32 {
     const first = self.nonws() orelse return null;
     if (!('0' <= first and first <= '9')) return null;
@@ -219,7 +223,7 @@ pub fn parse_bpf(self: *Self, dbg: bool) !void {
         } else if (mem.eql(u8, kw, "map")) {
             const name = try require(self.keyword(), "name");
             const obj_slot = try nonexisting(&mod.objs, name, "object");
-            const kind = try require(self.keyword(), "kind");
+            const kind = try require(try self.enumname(), "kind");
             const key_size = try require(self.num(), "key_size");
             const val_size = try require(self.num(), "val_size");
             const n_entries = try require(self.num(), "n_entries");
@@ -228,7 +232,7 @@ pub fn parse_bpf(self: *Self, dbg: bool) !void {
                 print("unknown map kind: '{s}'\n", .{kind});
                 return error.ParseError;
             };
-            obj_slot.* = .{ .map = .{ .fd = -1, .kind = map_kind, .key_size = key_size, .val_size = val_size, .entries = n_entries } };
+            obj_slot.* = .{ .map = .{ .fd = -1, .kind = map_kind, .key_size = key_size, .val_size = val_size, .n_entries = n_entries } };
         }
     }
 }

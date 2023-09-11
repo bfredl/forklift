@@ -9,6 +9,7 @@ const fd_t = std.os.linux.fd_t;
 const mem = std.mem;
 const expectEqual = std.testing.expectEqual;
 const BPFModule = bpf_rt.BPFModule;
+const asBytes = mem.asBytes;
 
 fn expect(comptime T: type, x: T, y: T) !void {
     return std.testing.expectEqual(x, y);
@@ -44,7 +45,7 @@ test "show code" {
 }
 
 fn test_one_func(ir_text: []const u8) !fd_t {
-    var mod = try parse_multi_impl(ir_text, false);
+    var mod = try parse_multi(false, ir_text);
     defer mod.deinit_mem();
 
     if (mod.objs.count() != 1) {
@@ -57,7 +58,7 @@ fn test_one_func(ir_text: []const u8) !fd_t {
     };
 }
 
-pub fn parse_multi_impl(ir: []const u8, dbg: bool) !BPFModule {
+pub fn parse_multi(dbg: bool, ir: []const u8) !BPFModule {
     var parser = try Parser.init(ir, test_allocator);
     var mod = BPFModule.init(test_allocator);
     defer parser.deinit();
@@ -134,4 +135,22 @@ test "raw BPFCode test template" {
     const prog_fd = try bpf_rt.prog_load_test(.syscall, code.items, "MIT", BPF.F_SLEEPABLE);
     const ret = try bpf_rt.prog_test_run(prog_fd, null);
     try expect(u64, 0, ret);
+}
+
+test "just map" {
+    var mod = try parse_multi(false,
+        \\ map my_map .array 4 4 3
+    );
+    defer mod.deinit_mem();
+    try mod.load();
+    const fd = mod.get_fd("my_map") orelse unreachable;
+
+    const key: u32 = 1;
+    const put_val: u32 = 2;
+    try BPF.map_update_elem(fd, asBytes(&key), asBytes(&put_val), 0);
+
+    var get_val: u32 = 0xFFFFFFF;
+    try BPF.map_lookup_elem(fd, asBytes(&key), asBytes(&get_val));
+
+    try expect(u32, get_val, put_val);
 }
