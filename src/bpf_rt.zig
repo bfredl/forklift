@@ -27,13 +27,13 @@ pub const BPFObject = union(enum) {
     // },
 };
 
-pub const Module = struct {
+pub const BPFModule = struct {
     bpf_code: Code,
     objs: std.StringArrayHashMap(BPFObject),
     // bpf_code.items[id] needs to point at fd of object specified by obj_idx
     relocations: std.ArrayList(struct { pos: u32, obj_idx: u32 }),
 
-    pub fn init(allocator: std.mem.Allocator) Module {
+    pub fn init(allocator: std.mem.Allocator) BPFModule {
         return .{
             .bpf_code = Code.init(allocator),
             .objs = @TypeOf(init(allocator).objs).init(allocator),
@@ -42,13 +42,13 @@ pub const Module = struct {
     }
 
     /// Frees all memory from `allocator`, but does not close any fd:s.
-    pub fn deinit_mem(self: *Module) void {
+    pub fn deinit_mem(self: *BPFModule) void {
         self.bpf_code.deinit();
         self.objs.deinit();
         self.relocations.deinit();
     }
 
-    pub fn load(self: *Module) !void {
+    pub fn load(self: *BPFModule) !void {
         if (self.relocations.items.len > 0) {
             unreachable;
         }

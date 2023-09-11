@@ -2,7 +2,7 @@ const FLIR = @import("./FLIR.zig");
 const CFO = @import("./CFO.zig");
 const print = std.debug.print;
 
-const IRParse = @import("./IRParse.zig");
+const Parser = @import("./Parser.zig");
 const std = @import("std");
 const mem = std.mem;
 const os = std.os;
@@ -66,7 +66,7 @@ pub fn main() !void {
     const inbuf = if (argv.len > nextarg) try readall(allocator, mem.span(argv[nextarg])) else null;
     defer if (inbuf) |b| allocator.free(b);
 
-    var parser = try IRParse.init(buf, allocator);
+    var parser = try Parser.init(buf, allocator);
     // try parser.fd_objs.put("count", map_count);
     _ = parser.parse_one_func() catch |e| {
         print("error at pos {}:{} (byte {} of {})\n", .{ parser.lnum + 1, 1 + parser.pos - parser.lpos, parser.pos, buf.len });

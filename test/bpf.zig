@@ -1,14 +1,14 @@
 const forklift = @import("forklift");
 const FLIR = forklift.FLIR;
 const print = std.debug.print;
-const IRParse = forklift.IRParse;
+const Parser = forklift.Parser;
 const codegen_bpf = forklift.codegen_bpf;
 const bpf_rt = forklift.bpf_rt;
 const BPF = std.os.linux.BPF;
 const fd_t = std.os.linux.fd_t;
 const mem = std.mem;
 const expectEqual = std.testing.expectEqual;
-const Module = bpf_rt.Module;
+const BPFModule = bpf_rt.BPFModule;
 
 fn expect(comptime T: type, x: T, y: T) !void {
     return std.testing.expectEqual(x, y);
@@ -18,9 +18,9 @@ const std = @import("std");
 const test_allocator = std.testing.allocator;
 
 test "show code" {
-    var mod = Module.init(test_allocator);
+    var mod = BPFModule.init(test_allocator);
     defer mod.deinit_mem();
-    var parser = try IRParse.init(
+    var parser = try Parser.init(
         \\ func returner
         \\ ret 5
         \\ end
@@ -57,9 +57,9 @@ fn test_one_func(ir_text: []const u8) !fd_t {
     };
 }
 
-pub fn parse_multi_impl(ir: []const u8, dbg: bool) !Module {
-    var parser = try IRParse.init(ir, test_allocator);
-    var mod = Module.init(test_allocator);
+pub fn parse_multi_impl(ir: []const u8, dbg: bool) !BPFModule {
+    var parser = try Parser.init(ir, test_allocator);
+    var mod = BPFModule.init(test_allocator);
     defer parser.deinit();
     errdefer mod.deinit_mem();
     parser.bpf_module = &mod;

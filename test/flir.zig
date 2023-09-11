@@ -1,7 +1,7 @@
 const forklift = @import("forklift");
 const FLIR = forklift.FLIR;
 const CFO = forklift.CFO;
-const IRParse = forklift.IRParse;
+const Parser = forklift.Parser;
 const print = std.debug.print;
 
 const std = @import("std");
@@ -42,7 +42,7 @@ pub fn parse_multi_dbg(ir: []const u8) !Res {
 }
 
 pub fn parse_multi_impl(ir: []const u8, dbg: bool) !Res {
-    var parser = try IRParse.init(ir, test_allocator);
+    var parser = try Parser.init(ir, test_allocator);
     var cfo = try CFO.init(test_allocator);
     errdefer parser.deinit();
     errdefer cfo.deinit();
@@ -214,7 +214,7 @@ test "diamond cfg" {
 }
 
 test "maybe_split" {
-    var parser = try IRParse.init(
+    var parser = try Parser.init(
         \\func returner
         \\  %x = arg
         \\  %c = 1

@@ -19,6 +19,7 @@ const FLIR = @import("./FLIR.zig");
 const codegen = @import("./codegen.zig");
 const codegen_bpf = @import("./codegen_bpf.zig").codegen;
 const CFO = @import("./CFO.zig");
+const BPF = std.os.linux.BPF;
 const common = @import("./common.zig");
 const Self = @This();
 const std = @import("std");
@@ -28,7 +29,8 @@ const ParseError = error{ ParseError, OutOfMemory, FLIRError };
 const meta = std.meta;
 
 const Allocator = mem.Allocator;
-const BPFModule = @import("./bpf_rt.zig").Module;
+const BPFModule = bpf_rt.BPFModule;
+const bpf_rt = @import("./bpf_rt.zig");
 
 pub fn init(str: []const u8, allocator: Allocator) !Self {
     return .{
@@ -164,7 +166,10 @@ pub fn parse_one_func(self: *Self) ![]const u8 {
         return error.ParseError;
     }
 
-    return self.parse_func();
+    const name = try require(self.keyword(), "name");
+    try self.lbrk();
+    try self.parse_func_body();
+    return name;
 }
 
 pub fn parse(self: *Self, cfo: *CFO, dbg: bool) !void {
@@ -173,13 +178,16 @@ pub fn parse(self: *Self, cfo: *CFO, dbg: bool) !void {
         if (!mem.eql(u8, kw, "func")) {
             return error.ParseError;
         }
+        const name = try require(self.keyword(), "name");
 
-        const name = try self.parse_func();
         const item = try self.objs.getOrPut(name);
         if (item.found_existing) {
             print("duplicate function {s}!\n", .{name});
             return error.ParseError;
         }
+
+        try self.lbrk();
+        try self.parse_func_body();
 
         try self.ir.test_analysis(FLIR.X86_64ABI, true);
         if (dbg) self.ir.debug_print();
@@ -189,35 +197,43 @@ pub fn parse(self: *Self, cfo: *CFO, dbg: bool) !void {
 }
 
 pub fn parse_bpf(self: *Self, dbg: bool) !void {
+    const mod = self.bpf_module orelse return error.WHAAAA;
     // small init size on purpose: must allow reallocations in place
     var flir = try FLIR.init(4, self.allocator);
     defer flir.deinit();
     while (self.nonws()) |_| {
         const kw = self.keyword() orelse return;
         if (mem.eql(u8, kw, "func")) {
-            const name = try self.parse_func();
-            const item = try self.bpf_module.?.objs.getOrPut(name);
-            if (item.found_existing) {
-                print("duplicate function {s}!\n", .{name});
-                return error.ParseError;
-            }
+            const name = try require(self.keyword(), "name");
+            const obj_slot = try nonexisting(&mod.objs, name, "object");
+            try self.lbrk();
+            try self.parse_func_body();
 
             try self.ir.test_analysis(FLIR.BPF_ABI, true);
             if (dbg) flir.debug_print();
-            const mod = self.bpf_module.?;
             const offset = try codegen_bpf(&self.ir, &mod.bpf_code);
             const len = mod.bpf_code.items.len - offset;
 
-            item.value_ptr.* = .{ .prog = .{ .fd = -1, .code_start = @intCast(offset), .code_len = @intCast(len) } };
+            obj_slot.* = .{ .prog = .{ .fd = -1, .code_start = @intCast(offset), .code_len = @intCast(len) } };
             self.ir.reinit();
+        } else if (mem.eql(u8, kw, "map")) {
+            const name = try require(self.keyword(), "name");
+            const obj_slot = try nonexisting(&mod.objs, name, "object");
+            const kind = try require(self.keyword(), "kind");
+            const key_size = try require(self.num(), "key_size");
+            const val_size = try require(self.num(), "val_size");
+            const n_entries = try require(self.num(), "n_entries");
+            // print("map '{s}' of kind {s}, key={}, val={}\n", .{ name, kind, key_size, val_size });
+            const map_kind = meta.stringToEnum(BPF.MapType, kind) orelse {
+                print("unknown map kind: '{s}'\n", .{kind});
+                return error.ParseError;
+            };
+            obj_slot.* = .{ .map = .{ .fd = -1, .kind = map_kind, .key_size = key_size, .val_size = val_size, .entries = n_entries } };
         }
     }
 }
 
-pub fn parse_func(self: *Self) ![]const u8 {
-    const name = try require(self.keyword(), "name");
-    try self.lbrk();
-
+pub fn parse_func_body(self: *Self) !void {
     var func: Func = .{
         .refs = std.StringHashMap(u16).init(self.allocator),
         .labels = std.StringHashMap(u16).init(self.allocator),
@@ -231,7 +247,6 @@ pub fn parse_func(self: *Self) ![]const u8 {
         try self.lbrk();
     }
     try self.lbrk();
-    return name;
 }
 
 const Func = struct {
@@ -246,6 +261,7 @@ fn nonexisting(map: anytype, key: []const u8, what: []const u8) ParseError!@Type
         print("duplicate {s}{s}!\n", .{ what, key });
         return error.ParseError;
     }
+    // NON-EXIST-ENT!
     return item.value_ptr;
 }
 

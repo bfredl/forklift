@@ -1,5 +1,5 @@
 const bpf_rt = @import("./bpf_rt.zig");
-const IRParse = @import("./IRParse.zig");
+const Parser = @import("./Parser.zig");
 const std = @import("std");
 
 pub var options = struct {
@@ -16,7 +16,7 @@ pub fn main() !void {
     var allocator = std.heap.GeneralPurposeAllocator(.{}){};
     const gpa = allocator.allocator();
 
-    var parser = try IRParse.init(ir, gpa);
+    var parser = try Parser.init(ir, gpa);
     var mod = bpf_rt.Module.init(gpa);
     defer parser.deinit();
     defer mod.deinit_mem();
