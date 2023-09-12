@@ -298,9 +298,11 @@ pub fn codegen(self: *FLIR, code: *Code) !u32 {
                     const pos = try regjmpmc(code, op, op1, op2);
                     targets[ni][taken] = pos;
                 },
-                .putphi => {
-                    // TODO: actually check for parallell-move conflicts
-                    try movmcs(code, self.ipval(i.op2).?, self.ipval(i.op1).?);
+                .putphi, .callarg => {
+                    const dest = (try self.movins_dest(i)).ipval() orelse return error.FLIRError;
+                    if (try self.movins_read2(i)) |src| {
+                        try movmcs(code, dest, src);
+                    }
                 },
                 .load => {
                     // TODO: spill spall supllit?
@@ -337,21 +339,14 @@ pub fn codegen(self: *FLIR, code: *Code) !u32 {
                     try mcmovreg(code, i.ipval().?, reg);
                 },
                 .alloc => {},
-                .callarg => {
-                    unreachable;
-                },
                 .call => {
-                    //try regmovmc(code, .r1, self.iref(i.op1).?.*);
-                    //try regmovmc(code, .r2, self.iref(i.op2).?.*);
-                    // if (nexti) |iarg| {
-                    //     if (iarg.tag == .callarg) {
-                    //         try regmovmc(code, .r3, self.iref(iarg.op1).?.*);
-                    //         if (iarg.op2 != FLIR.NoRef) {
-                    //             try regmovmc(code, .r4, self.iref(iarg.op2).?.*);
-                    //         }
-                    //     }
-                    // }
-                    try put(code, I.call(@as(BPF.Helper, @enumFromInt(i.spec))));
+                    const kind: FLIR.CallKind = @enumFromInt(i.spec);
+                    switch (kind) {
+                        .bpf_helper => {
+                            try put(code, I.call(@as(BPF.Helper, @enumFromInt(i.spec))));
+                        },
+                        else => return error.FLIRError,
+                    }
                 },
                 .copy => {
                     try movmcs(code, i.ipval().?, self.ipval(i.op1).?);

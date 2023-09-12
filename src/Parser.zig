@@ -233,6 +233,7 @@ pub fn parse_bpf(self: *Self, dbg: bool) !void {
                 return error.ParseError;
             };
             obj_slot.* = .{ .map = .{ .fd = -1, .kind = map_kind, .key_size = key_size, .val_size = val_size, .n_entries = n_entries } };
+            try self.lbrk();
         }
     }
 }
@@ -464,6 +465,14 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
             const constoff = try ir.const_uint(off);
             try self.parse_args(f);
             return try ir.call(f.curnode, .near, constoff);
+        } else if (mem.eql(u8, kw, "call.bpf")) {
+            const name = try require(self.keyword(), "name");
+            const helper = meta.stringToEnum(BPF.Helper, name) orelse {
+                print("unknown BPF helper: '{s}'\n", .{name});
+                return error.ParseError;
+            };
+            try self.parse_args(f);
+            return try ir.call(f.curnode, .bpf_helper, @intCast(@intFromEnum(helper)));
         } else if (mem.eql(u8, kw, "alloc")) {
             const size = self.num() orelse 1;
             return ir.alloc(f.curnode, @intCast(size));
@@ -477,10 +486,10 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
     return error.ParseError;
 }
 
-fn get_bpf_map(self: *Self, value: bool, f: *Func) !u16 {
-    const name = try require(try self.objname(), "map name");
-    const mod = self.bpf_module orelse return error.WHAAAA;
-    const id = mod.objs.getIndex(name) orelse return error.NotFoundError;
+fn get_bpf_map(self: *Self, value: bool, f: *Func) ParseError!u16 {
+    const name = try require(self.keyword(), "map name");
+    const mod = self.bpf_module orelse return error.ParseError;
+    const id = mod.objs.getIndex(name) orelse return error.ParseError;
     return self.ir.bpf_load_map(f.curnode, @intCast(id), value);
 }
 

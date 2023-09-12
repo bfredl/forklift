@@ -549,8 +549,9 @@ pub const CallKind = enum(u8) {
     fun_ptr,
     /// platform dependent. syscall index in op1
     /// directly encodes the linux syscall number of the target
-    /// on EPBF this will be "helper" number?
     syscall,
+    /// bpf helper index
+    bpf_helper,
 };
 
 pub const MCKind = enum(u8) {
@@ -779,7 +780,7 @@ pub fn store(self: *Self, node: u16, kind: SpecType, base: u16, idx: u16, scale:
 pub fn bpf_load_map(self: *Self, node: u16, map_idx: u32, value: bool) !u16 {
     assert(map_idx < 0x10000);
     const low_idx: u16 = @truncate(map_idx);
-    return self.addInst(node, .{ .tag = .load_map, .op1 = low_idx, .op2 = 0, .spec = if (value) 1 else 0 });
+    return self.addInst(node, .{ .tag = .bpf_load_map, .op1 = low_idx, .op2 = 0, .spec = if (value) 1 else 0 });
 }
 
 pub fn vmath(self: *Self, node: u16, vop: VMathOp, fmode: FMode, op1: u16, op2: u16) !u16 {

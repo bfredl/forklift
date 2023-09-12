@@ -159,11 +159,26 @@ test "map value" {
     var mod = try parse_multi(false,
         \\ map global_var .array 4 8 1
         \\ func setter
-        \\   %var = map_value count
-        \\   store quadword [%var 0] 1
+        \\   %var = map_value global_var
+        \\   store quadword [%var 0] 17
+        \\   ret 0
         \\ end
     );
     defer mod.deinit_mem();
     try mod.load();
+
+    for (mod.objs.keys(), mod.objs.values()) |k, v| {
+        std.debug.print("dod {s} {}\n", .{ k, v });
+    }
+
+    const prog_fd = mod.get_fd("setter") orelse unreachable;
+    const ret = try bpf_rt.prog_test_run(prog_fd, null);
+    try expect(u64, ret, 0);
+
     const fd = mod.get_fd("my_map") orelse unreachable;
+
+    const key: u32 = 0;
+    var get_val: u32 = 0xFFFFFFF;
+    try BPF.map_lookup_elem(fd, asBytes(&key), asBytes(&get_val));
+    try expect(u32, get_val, 15);
 }

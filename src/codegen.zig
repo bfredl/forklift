@@ -339,7 +339,7 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                             const val = self.constval(i.op1) orelse return error.FLIRError;
                             try cfo.call_rel(@intCast(val));
                         },
-                        else => unreachable,
+                        else => error.FLIRError,
                     }
                 },
                 .copy => {
