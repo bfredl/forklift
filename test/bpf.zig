@@ -167,18 +167,20 @@ test "map value" {
     defer mod.deinit_mem();
     try mod.load();
 
-    for (mod.objs.keys(), mod.objs.values()) |k, v| {
-        std.debug.print("dod {s} {}\n", .{ k, v });
+    if (false) {
+        for (mod.objs.keys(), mod.objs.values()) |k, v| {
+            std.debug.print("dod {s} {}\n", .{ k, v });
+        }
     }
 
     const prog_fd = mod.get_fd("setter") orelse unreachable;
     const ret = try bpf_rt.prog_test_run(prog_fd, null);
     try expect(u64, ret, 0);
 
-    const fd = mod.get_fd("my_map") orelse unreachable;
+    const fd = mod.get_fd("global_var") orelse unreachable;
 
     const key: u32 = 0;
     var get_val: u32 = 0xFFFFFFF;
     try BPF.map_lookup_elem(fd, asBytes(&key), asBytes(&get_val));
-    try expect(u32, get_val, 15);
+    try expect(u32, get_val, 17);
 }

@@ -13,7 +13,9 @@ const Allocator = mem.Allocator;
 const fd_t = linux.fd_t;
 const IPMCVal = FLIR.IPMCVal;
 
-const Code = @import("./bpf_rt.zig").Code;
+const bpf_rt = @import("./bpf_rt.zig");
+const Code = bpf_rt.Code;
+const BPFModule = bpf_rt.BPFModule;
 
 const common = @import("./common.zig");
 fn r(reg: IPReg) Reg {
@@ -31,7 +33,7 @@ const options = if (!builtin.is_test) &@import("root").options else null;
 const EAddr = struct {
     reg: u4,
     off: i16,
-    fn with_off(self: EAddr, off: i16) EAddr {
+    fn o(self: EAddr, off: i16) EAddr {
         return .{ .reg = self.reg, .off = self.off + off };
     }
 };
@@ -39,9 +41,15 @@ const EAddr = struct {
 fn get_eaddr(self: *FLIR, i: FLIR.Inst, comptime may_lea: bool) !EAddr {
     if (may_lea and i.tag == .lea) {
         const base = self.iref(i.op1).?.*;
-        const baseval = try get_eaddr(self, base, false);
-        const off: i16 = @bitCast(i.op2);
-        return baseval.with_off(off);
+        var eval = try get_eaddr(self, base, false);
+        const idx = self.ipval(i.op2) orelse return error.FLIRError;
+        switch (idx) {
+            .constval => |c| {
+                eval = eval.o(@intCast(c)); // TODO: scale just disappears??
+            },
+            else => unreachable,
+        }
+        return eval;
     } else if (i.mckind == .ipreg) {
         return .{ .reg = @intCast(i.mcidx), .off = 0 };
     } else if (i.tag == .alloc) {
@@ -159,36 +167,26 @@ fn mcmovi(code: *Code, i: Inst) !void {
     }
 }
 
-fn stx(code: *Code, dst: EAddr, src: IPReg) !void {
-    try put(code, I.stx(.double_word, @enumFromInt(dst.reg), dst.off, r(src)));
-}
-
-fn st(code: *Code, dst: EAddr, src: anytype) !void {
-    // TODO: AAAA wrong size
-    try put(code, I.st(.double_word, @enumFromInt(dst.reg), dst.off, src));
-}
-
-fn addrmovmc(code: *Code, dst: EAddr, src: Inst) !void {
-    switch (src.mckind) {
-        // .constant => {
-        //     if (src.tag != .constant) unreachable;
-        //     try st(code, dst, src.op1);
-        // },
-        .ipreg => {
-            try stx(code, dst, @enumFromInt(src.mcidx));
-        },
-        else => unreachable,
-    }
-}
-
-fn regmovaddr(code: *Code, dst: IPReg, src: EAddr, size: common.ISize) !void {
-    const bpfsize: Insn.Size = switch (size) {
+fn bpf_size(size: common.ISize) Insn.Size {
+    return switch (size) {
         .byte => .byte,
         .word => .half_word,
         .dword => .word,
         .quadword => .double_word,
     };
-    try put(code, I.ldx(bpfsize, r(dst), @enumFromInt(src.reg), src.off));
+}
+
+fn addrmovmc(code: *Code, dst: EAddr, src: IPMCVal, size: common.ISize) !void {
+    const bsize = bpf_size(size);
+    switch (src) {
+        .ipreg => |reg| try put(code, I.stx(bsize, @enumFromInt(dst.reg), dst.off, r(reg))),
+        .constval => |c| try put(code, I.st(bsize, @enumFromInt(dst.reg), dst.off, @intCast(c))),
+        else => unreachable,
+    }
+}
+
+fn regmovaddr(code: *Code, dst: IPReg, src: EAddr, size: common.ISize) !void {
+    try put(code, I.ldx(bpf_size(size), r(dst), @enumFromInt(src.reg), src.off));
 }
 
 fn movmcs(code: *Code, dst: IPMCVal, src: IPMCVal) !void {
@@ -217,7 +215,8 @@ fn movmcs(code: *Code, dst: IPMCVal, src: IPMCVal) !void {
 //     }
 // }
 
-pub fn codegen(self: *FLIR, code: *Code) !u32 {
+pub fn codegen(self: *FLIR, mod: *BPFModule) !u32 {
+    const code = &mod.bpf_code;
     var labels = try self.a.alloc(u32, self.n.items.len);
     var targets = try self.a.alloc([2]u32, self.n.items.len);
 
@@ -314,7 +313,7 @@ pub fn codegen(self: *FLIR, code: *Code) !u32 {
                         }
                     };
 
-                    const eaddr: EAddr = (try get_eaddr(self, addr, false)).with_off(@intCast(off));
+                    const eaddr: EAddr = (try get_eaddr(self, addr, false)).o(@intCast(off));
                     const dst = i.ipreg() orelse r0;
                     try regmovaddr(code, dst, eaddr, i.mem_type().intptr);
                     try mcmovreg(code, i.ipval().?, dst); // elided if dst is register
@@ -328,14 +327,16 @@ pub fn codegen(self: *FLIR, code: *Code) !u32 {
                     }
                 },
                 .store => {
+                    const size = i.mem_type().intptr;
                     const addr = self.iref(i.op1).?.*;
                     const eaddr: EAddr = try get_eaddr(self, addr, true);
-                    const val = self.iref(i.op2).?;
-                    try addrmovmc(code, eaddr, val.*);
+                    const val = self.ipval(i.op2).?;
+                    try addrmovmc(code, eaddr, val, size);
                 },
                 .bpf_load_map => {
                     const reg: IPReg = if (i.mckind == .ipreg) @enumFromInt(i.mcidx) else r0;
-                    try ld_map_fd(code, reg, i.op1, i.spec);
+                    try mod.relocations.append(.{ .pos = get_target(code), .obj_idx = i.op1 });
+                    try ld_map_fd(code, reg, 0x7FFFFFFF, i.spec);
                     try mcmovreg(code, i.ipval().?, reg);
                 },
                 .alloc => {},

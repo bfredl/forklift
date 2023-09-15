@@ -17,7 +17,7 @@ pub fn main() !void {
     const gpa = allocator.allocator();
 
     var parser = try Parser.init(ir, gpa);
-    var mod = bpf_rt.Module.init(gpa);
+    var mod = bpf_rt.BPFModule.init(gpa);
     defer parser.deinit();
     defer mod.deinit_mem();
 

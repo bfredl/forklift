@@ -3,6 +3,7 @@ const linux = std.os.linux;
 const BPF = linux.BPF;
 const mem = std.mem;
 const fd_t = linux.fd_t;
+const bpf = @import("./bpf.zig");
 
 pub const Code = std.ArrayList(BPF.Insn);
 
@@ -49,18 +50,24 @@ pub const BPFModule = struct {
     }
 
     pub fn load(self: *BPFModule) !void {
-        if (self.relocations.items.len > 0) {
-            unreachable;
-        }
-
-        for (self.objs.values()) |*v| {
+        for (0.., self.objs.values()) |i, *v| {
             switch (v.*) {
                 .prog => |*p| {
                     const code = self.bpf_code.items[p.code_start..][0..p.code_len];
+                    if (false) {
+                        try bpf.dump_bpf(std.io.getStdErr().writer(), code);
+                    }
                     p.fd = try prog_load_test(.syscall, code, "MIT", BPF.F_SLEEPABLE);
                 },
                 .map => |*m| {
                     m.fd = try BPF.map_create(m.kind, m.key_size, m.val_size, m.n_entries);
+                    // O(N^2) but who the fuck cares
+                    for (self.relocations.items) |r| {
+                        if (r.obj_idx == i) {
+                            // note: technically [r.pos+1] contains the upper 32 bits of fd :zany_face:
+                            self.bpf_code.items[r.pos].imm = @intCast(m.fd);
+                        }
+                    }
                 },
             }
         }

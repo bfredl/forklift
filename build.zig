@@ -15,6 +15,13 @@ pub fn build(b: *std.Build) void {
         .source_file = .{ .path = "src/forklift.zig" },
     });
 
+    var exe_bpf = b.addExecutable(.{
+        .name = "run_bpf",
+        .root_source_file = .{ .path = "src/main_bpf.zig" },
+        .optimize = opt,
+    });
+    b.installArtifact(exe_bpf);
+
     const bpf_helper = b.addExecutable(.{
         .name = "bpf_helper",
         .root_source_file = .{ .path = "test/bpf_helper.zig" },

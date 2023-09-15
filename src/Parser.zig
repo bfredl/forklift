@@ -215,7 +215,7 @@ pub fn parse_bpf(self: *Self, dbg: bool) !void {
 
             try self.ir.test_analysis(FLIR.BPF_ABI, true);
             if (dbg) flir.debug_print();
-            const offset = try codegen_bpf(&self.ir, &mod.bpf_code);
+            const offset = try codegen_bpf(&self.ir, mod);
             const len = mod.bpf_code.items.len - offset;
 
             obj_slot.* = .{ .prog = .{ .fd = -1, .code_start = @intCast(offset), .code_len = @intCast(len) } };
@@ -486,11 +486,11 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
     return error.ParseError;
 }
 
-fn get_bpf_map(self: *Self, value: bool, f: *Func) ParseError!u16 {
+fn get_bpf_map(self: *Self, is_value: bool, f: *Func) ParseError!u16 {
     const name = try require(self.keyword(), "map name");
     const mod = self.bpf_module orelse return error.ParseError;
     const id = mod.objs.getIndex(name) orelse return error.ParseError;
-    return self.ir.bpf_load_map(f.curnode, @intCast(id), value);
+    return self.ir.bpf_load_map(f.curnode, @intCast(id), is_value);
 }
 
 pub fn parse_args(self: *Self, f: *Func) ParseError!void {
