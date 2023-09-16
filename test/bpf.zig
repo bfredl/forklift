@@ -180,7 +180,7 @@ test "map value" {
     const fd = mod.get_fd("global_var") orelse unreachable;
 
     const key: u32 = 0;
-    var get_val: u32 = 0xFFFFFFF;
+    var get_val: u64 = 0xFFFFFFF;
     try BPF.map_lookup_elem(fd, asBytes(&key), asBytes(&get_val));
-    try expect(u32, get_val, 17);
+    try expect(u64, get_val, 17);
 }
