@@ -45,18 +45,10 @@ test "show code" {
     , data.items);
 }
 
-fn test_one_func(ir_text: []const u8) !fd_t {
+fn parse_load(ir_text: []const u8) !BPFModule {
     var mod = try parse_multi(false, ir_text);
-    defer mod.deinit_mem();
-
-    if (mod.objs.count() != 1) {
-        return error.ExpectedOneFunction;
-    }
-
-    return switch (mod.objs.values()[0]) {
-        .prog => |x| x.fd,
-        else => error.ExpectedOneFunction,
-    };
+    try mod.load();
+    return mod;
 }
 
 pub fn parse_multi(dbg: bool, ir: []const u8) !BPFModule {
@@ -75,55 +67,59 @@ pub fn parse_multi(dbg: bool, ir: []const u8) !BPFModule {
 }
 
 test "run simple" {
-    const prog_fd = try test_one_func(
+    var mod = try parse_load(
         \\ func returner
         \\ ret 5
         \\ end
     );
-    const ret = try bpf_rt.prog_test_run(prog_fd, null);
+    defer mod.deinit_mem();
+    const ret = try mod.test_run("returner", null);
     try expectEqual(ret, 5);
 }
 
 test "load byte" {
     // std.debug.print("\nkod: \n", .{});
-    const prog_fd = try test_one_func(
+    var mod = try parse_load(
         \\ func returner
         \\ %ctx = arg
         \\ %data = load byte [%ctx 0]
         \\ ret %data
         \\ end
     );
+    defer mod.deinit_mem();
     // yes its LE specific. sorry if you use a weirdo processor
     var data: u64 = 42 + 2 * 256;
-    const ret = try bpf_rt.prog_test_run(prog_fd, mem.asBytes(&data));
+    const ret = try mod.test_run("returner", mem.asBytes(&data));
     try expect(u64, 42, ret);
 }
 
 test "load dword" {
     // std.debug.print("\nkod: \n", .{});
-    const prog_fd = try test_one_func(
+    var mod = try parse_load(
         \\ func returner
         \\ %ctx = arg
         \\ %data = load dword [%ctx 0]
         \\ ret %data
         \\ end
     );
+    defer mod.deinit_mem();
     var data: u64 = 0x222233331234abcd;
-    const ret = try bpf_rt.prog_test_run(prog_fd, mem.asBytes(&data));
+    const ret = try mod.test_run("returner", mem.asBytes(&data));
     try expect(u64, 0x1234abcd, ret);
 }
 
 test "load dword with offset" {
     // std.debug.print("\nkod: \n", .{});
-    const prog_fd = try test_one_func(
+    var mod = try parse_load(
         \\ func returner
         \\ %ctx = arg
         \\ %data = load dword [%ctx 4]
         \\ ret %data
         \\ end
     );
+    defer mod.deinit_mem();
     var data: u64 = 0x222233331234abcd;
-    const ret = try bpf_rt.prog_test_run(prog_fd, mem.asBytes(&data));
+    const ret = try mod.test_run("returner", mem.asBytes(&data));
     try expect(u64, 0x22223333, ret);
 }
 
@@ -169,8 +165,7 @@ test "map value" {
     defer mod.deinit_mem();
     try mod.load();
 
-    const prog_fd = mod.get_fd("main") orelse unreachable;
-    const ret = try bpf_rt.prog_test_run(prog_fd, null);
+    const ret = try mod.test_run("main", null);
     try expect(u64, ret, 0);
 
     const fd = mod.get_fd("global_var") orelse unreachable;
@@ -196,8 +191,7 @@ test "map + call" {
     defer mod.deinit_mem();
     try mod.load();
 
-    const prog_fd = mod.get_fd("main") orelse unreachable;
-    const ret = try bpf_rt.prog_test_run(prog_fd, null);
+    const ret = try mod.test_run("main", null);
     try expect(u64, ret, 0);
 
     const fd = mod.get_fd("global_var") orelse unreachable;

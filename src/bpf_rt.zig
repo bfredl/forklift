@@ -80,6 +80,19 @@ pub const BPFModule = struct {
             .map => |m| m.fd,
         };
     }
+
+    pub fn test_run(
+        self: *BPFModule,
+        name: []const u8,
+        ctx_in: ?[]const u8,
+    ) !u32 {
+        const val = self.objs.get(name) orelse return error.NotAProgram;
+        const fd = switch (val) {
+            .prog => |p| p.fd,
+            else => return error.NotAProgram,
+        };
+        return prog_test_run(fd, ctx_in);
+    }
 };
 
 pub fn prog_load_test(prog_type: BPF.ProgType, c: []BPF.Insn, license: []const u8, flags: u32) !fd_t {
