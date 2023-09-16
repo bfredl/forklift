@@ -22,7 +22,8 @@ pub fn main() !void {
     defer mod.deinit_mem();
 
     parser.parse_bpf(true) catch |e| {
-        std.debug.print("fail at {}\n", .{parser.pos});
+        const line, const col = parser.err_pos();
+        std.debug.print("fail at {}:{}\n", .{ line, col });
         return e;
     };
 }

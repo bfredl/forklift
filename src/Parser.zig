@@ -47,6 +47,10 @@ pub fn deinit(self: *Self) void {
     self.ir.deinit();
 }
 
+pub fn err_pos(self: *Self) struct { u32, u32 } {
+    return .{ self.lnum + 1, @intCast(self.pos - self.lpos) };
+}
+
 // consumes self
 pub fn to_map(self: *Self) std.StringHashMap(u32) {
     self.ir.deinit(); // HaCKERY
@@ -465,7 +469,7 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
             const constoff = try ir.const_uint(off);
             try self.parse_args(f);
             return try ir.call(f.curnode, .near, constoff);
-        } else if (mem.eql(u8, kw, "call.bpf")) {
+        } else if (mem.eql(u8, kw, "call_bpf")) {
             const name = try require(self.keyword(), "name");
             const helper = meta.stringToEnum(BPF.Helper, name) orelse {
                 print("unknown BPF helper: '{s}'\n", .{name});

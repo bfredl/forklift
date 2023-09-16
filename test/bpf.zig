@@ -29,7 +29,8 @@ test "show code" {
     defer parser.deinit();
     parser.bpf_module = &mod;
     _ = parser.parse_bpf(false) catch |e| {
-        print("fail at {}\n", .{parser.pos});
+        const line, const col = parser.err_pos();
+        print("fail at {}:{}\n", .{ line, col });
         return e;
     };
 
@@ -65,7 +66,8 @@ pub fn parse_multi(dbg: bool, ir: []const u8) !BPFModule {
     errdefer mod.deinit_mem();
     parser.bpf_module = &mod;
     parser.parse_bpf(dbg) catch |e| {
-        print("fail at {}\n", .{parser.pos});
+        const line, const col = parser.err_pos();
+        print("fail at {}:{}\n", .{ line, col });
         return e;
     };
     try mod.load();
@@ -158,7 +160,7 @@ test "just map" {
 test "map value" {
     var mod = try parse_multi(false,
         \\ map global_var .array 4 8 1
-        \\ func setter
+        \\ func main
         \\   %var = map_value global_var
         \\   store quadword [%var 0] 17
         \\   ret 0
@@ -167,13 +169,34 @@ test "map value" {
     defer mod.deinit_mem();
     try mod.load();
 
-    if (false) {
-        for (mod.objs.keys(), mod.objs.values()) |k, v| {
-            std.debug.print("dod {s} {}\n", .{ k, v });
-        }
-    }
+    const prog_fd = mod.get_fd("main") orelse unreachable;
+    const ret = try bpf_rt.prog_test_run(prog_fd, null);
+    try expect(u64, ret, 0);
 
-    const prog_fd = mod.get_fd("setter") orelse unreachable;
+    const fd = mod.get_fd("global_var") orelse unreachable;
+
+    const key: u32 = 0;
+    var get_val: u64 = 0xFFFFFFF;
+    try BPF.map_lookup_elem(fd, asBytes(&key), asBytes(&get_val));
+    try expect(u64, get_val, 17);
+}
+
+test "map + call" {
+    var mod = try parse_multi(false,
+        \\ map myhash .hash 4 8 16834
+        \\ func main
+        \\   %hash = map myhash
+        \\   %key = alloc 4
+        \\   store dword [%key 0] 86
+        \\   %value = call_bpf map_lookup_elem %hash %key
+        \\   store quadword [%value 0] 231
+        \\   ret 0
+        \\ end
+    );
+    defer mod.deinit_mem();
+    try mod.load();
+
+    const prog_fd = mod.get_fd("main") orelse unreachable;
     const ret = try bpf_rt.prog_test_run(prog_fd, null);
     try expect(u64, ret, 0);
 
