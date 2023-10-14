@@ -29,8 +29,7 @@ test "show code" {
     defer parser.deinit();
     parser.bpf_module = &mod;
     _ = parser.parse_bpf(false) catch |e| {
-        const line, const col = parser.err_pos();
-        print("fail at {}:{}\n", .{ line, col });
+        parser.t.fail_pos();
         return e;
     };
 
@@ -58,8 +57,7 @@ pub fn parse_multi(dbg: bool, ir: []const u8) !BPFModule {
     errdefer mod.deinit_mem();
     parser.bpf_module = &mod;
     parser.parse_bpf(dbg) catch |e| {
-        const line, const col = parser.err_pos();
-        print("fail at {}:{}\n", .{ line, col });
+        parser.t.fail_pos();
         return e;
     };
     try mod.load();

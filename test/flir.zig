@@ -47,7 +47,7 @@ pub fn parse_multi_impl(ir: []const u8, dbg: bool) !Res {
     errdefer parser.deinit();
     errdefer cfo.deinit();
     parser.parse(&cfo, dbg) catch |e| {
-        print("fail at {}\n", .{parser.pos});
+        parser.t.fail_pos();
         return e;
     };
     try cfo.finalize();
@@ -224,7 +224,7 @@ test "maybe_split" {
     , test_allocator);
     defer parser.deinit();
     _ = parser.parse_one_func() catch |e| {
-        print("fail at {}\n", .{parser.pos});
+        parser.t.fail_pos();
         return e;
     };
 

@@ -84,7 +84,8 @@ pub fn main() !void {
     } else {
         // try parser.fd_objs.put("count", map_count);
         _ = parser.parse_one_func() catch |e| {
-            print("error at pos {}:{} (byte {} of {})\n", .{ parser.lnum + 1, 1 + parser.pos - parser.lpos, parser.pos, buf.len });
+            parser.t.fail_pos();
+            print("(byte {} of {})\n", .{ parser.t.pos, buf.len });
             return e;
         };
     }

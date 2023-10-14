@@ -1,7 +1,4 @@
-str: []const u8,
-pos: usize = 0,
-lnum: u32 = 0,
-lpos: usize = 0,
+t: Tokenizer,
 
 objs: std.StringHashMap(u32),
 allocator: Allocator,
@@ -32,9 +29,11 @@ const Allocator = mem.Allocator;
 const BPFModule = bpf_rt.BPFModule;
 const bpf_rt = @import("./bpf_rt.zig");
 
+const Tokenizer = @import("./Tokenizer.zig");
+
 pub fn init(str: []const u8, allocator: Allocator) !Self {
     return .{
-        .str = str,
+        .t = .{ .str = str },
         .allocator = allocator,
         .objs = std.StringHashMap(u32).init(allocator),
         .bpf_module = null,
@@ -47,118 +46,28 @@ pub fn deinit(self: *Self) void {
     self.ir.deinit();
 }
 
-pub fn err_pos(self: *Self) struct { u32, u32 } {
-    return .{ self.lnum + 1, @intCast(self.pos - self.lpos) };
-}
-
 // consumes self
 pub fn to_map(self: *Self) std.StringHashMap(u32) {
     self.ir.deinit(); // HaCKERY
     return self.objs;
 }
 
-fn nonws(self: *Self) ?u8 {
-    while (self.pos < self.str.len) : (self.pos += 1) {
-        if (self.str[self.pos] != ' ') {
-            return self.str[self.pos];
-        }
-    }
-    return null;
-}
-
-fn lbrk(self: *Self) ParseError!void {
-    var val = self.nonws() orelse return;
-    while (true) {
-        if (val == ';') {
-            while (self.str[self.pos] != '\n') : (self.pos += 1) {
-                if (self.pos >= self.str.len - 1) return;
-            }
-        } else {
-            if (val != '\n') return error.ParseError;
-        }
-        self.pos += 1;
-        self.lnum += 1;
-        self.lpos = self.pos;
-
-        val = self.nonws() orelse return;
-        if (val != '\n' and val != ';') return;
-    }
-}
-
-fn idlike(c: u8) bool {
-    return ('a' <= c and c <= 'z') or ('A' <= c and c <= 'Z') or ('0' < c and c < '9') or c == '_';
-}
-
-const Chunk = []const u8;
-fn keyword(self: *Self) ?Chunk {
-    const c = self.nonws() orelse return null;
-    if (!('a' <= c and c <= 'z') and !('A' <= c and c <= 'Z')) return null;
-    const start = self.pos;
-    while (self.pos < self.str.len) : (self.pos += 1) {
-        const next = self.str[self.pos];
-        if (!idlike(next)) {
-            break;
-        }
-    }
-    return self.str[start..self.pos];
-}
-
-fn prefixed(self: *Self, sigil: u8) ParseError!?Chunk {
-    if (self.nonws() != sigil) return null;
-    self.pos += 1;
-    return try self.identifier();
-}
-
-fn expect_char(self: *Self, char: u8) ParseError!void {
-    if (self.nonws() == char) {
-        self.pos += 1;
-    } else {
-        print("expected '{c}'\n", .{char});
-        return error.ParseError;
-    }
-}
-
-fn identifier(self: *Self) ParseError!Chunk {
-    const start = self.pos;
-    while (self.pos < self.str.len) : (self.pos += 1) {
-        const next = self.str[self.pos];
-        if (!idlike(next)) {
-            break;
-        }
-    }
-    if (self.pos == start) return error.ParseError;
-    return self.str[start..self.pos];
-}
+const Chunk = Tokenizer.Chunk;
 
 fn varname(self: *Self) ParseError!?Chunk {
-    return self.prefixed('%');
+    return self.t.prefixed('%');
 }
 
 fn labelname(self: *Self) ParseError!?Chunk {
-    return self.prefixed(':');
+    return self.t.prefixed(':');
 }
 
 fn objname(self: *Self) ParseError!?Chunk {
-    return self.prefixed('$');
+    return self.t.prefixed('$');
 }
 
 fn enumname(self: *Self) ParseError!?Chunk {
-    return self.prefixed('.');
-}
-
-fn num(self: *Self) ?u32 {
-    const first = self.nonws() orelse return null;
-    if (!('0' <= first and first <= '9')) return null;
-    var val: u32 = 0;
-    while (self.pos < self.str.len) : (self.pos += 1) {
-        const next = self.str[self.pos];
-        if ('0' <= next and next <= '9') {
-            val = val * 10 + (next - '0');
-        } else {
-            break;
-        }
-    }
-    return val;
+    return self.t.prefixed('.');
 }
 
 fn require(val: anytype, what: []const u8) ParseError!@TypeOf(val.?) {
@@ -169,24 +78,24 @@ fn require(val: anytype, what: []const u8) ParseError!@TypeOf(val.?) {
 }
 
 pub fn parse_one_func(self: *Self) ![]const u8 {
-    const kw = self.keyword() orelse return error.ParseError;
+    const kw = self.t.keyword() orelse return error.ParseError;
     if (!mem.eql(u8, kw, "func")) {
         return error.ParseError;
     }
 
-    const name = try require(self.keyword(), "name");
-    try self.lbrk();
+    const name = try require(self.t.keyword(), "name");
+    try self.t.lbrk();
     try self.parse_func_body();
     return name;
 }
 
 pub fn parse(self: *Self, cfo: *CFO, dbg: bool) !void {
-    while (self.nonws()) |_| {
-        const kw = self.keyword() orelse return error.ParseError;
+    while (self.t.nonws()) |_| {
+        const kw = self.t.keyword() orelse return error.ParseError;
         if (!mem.eql(u8, kw, "func")) {
             return error.ParseError;
         }
-        const name = try require(self.keyword(), "name");
+        const name = try require(self.t.keyword(), "name");
 
         const item = try self.objs.getOrPut(name);
         if (item.found_existing) {
@@ -194,7 +103,7 @@ pub fn parse(self: *Self, cfo: *CFO, dbg: bool) !void {
             return error.ParseError;
         }
 
-        try self.lbrk();
+        try self.t.lbrk();
         try self.parse_func_body();
 
         try self.ir.test_analysis(FLIR.X86_64ABI, true);
@@ -209,12 +118,12 @@ pub fn parse_bpf(self: *Self, dbg: bool) !void {
     // small init size on purpose: must allow reallocations in place
     var flir = try FLIR.init(4, self.allocator);
     defer flir.deinit();
-    while (self.nonws()) |_| {
-        const kw = self.keyword() orelse return;
+    while (self.t.nonws()) |_| {
+        const kw = self.t.keyword() orelse return;
         if (mem.eql(u8, kw, "func")) {
-            const name = try require(self.keyword(), "name");
+            const name = try require(self.t.keyword(), "name");
             const obj_slot = try nonexisting(&mod.objs, name, "object");
-            try self.lbrk();
+            try self.t.lbrk();
             try self.parse_func_body();
 
             try self.ir.test_analysis(FLIR.BPF_ABI, true);
@@ -225,19 +134,19 @@ pub fn parse_bpf(self: *Self, dbg: bool) !void {
             obj_slot.* = .{ .prog = .{ .fd = -1, .code_start = @intCast(offset), .code_len = @intCast(len) } };
             self.ir.reinit();
         } else if (mem.eql(u8, kw, "map")) {
-            const name = try require(self.keyword(), "name");
+            const name = try require(self.t.keyword(), "name");
             const obj_slot = try nonexisting(&mod.objs, name, "object");
             const kind = try require(try self.enumname(), "kind");
-            const key_size = try require(self.num(), "key_size");
-            const val_size = try require(self.num(), "val_size");
-            const n_entries = try require(self.num(), "n_entries");
+            const key_size = try require(self.t.num(), "key_size");
+            const val_size = try require(self.t.num(), "val_size");
+            const n_entries = try require(self.t.num(), "n_entries");
             // print("map '{s}' of kind {s}, key={}, val={}\n", .{ name, kind, key_size, val_size });
             const map_kind = meta.stringToEnum(BPF.MapType, kind) orelse {
                 print("unknown map kind: '{s}'\n", .{kind});
                 return error.ParseError;
             };
             obj_slot.* = .{ .map = .{ .fd = -1, .kind = map_kind, .key_size = key_size, .val_size = val_size, .n_entries = n_entries } };
-            try self.lbrk();
+            try self.t.lbrk();
         }
     }
 }
@@ -253,9 +162,9 @@ pub fn parse_func_body(self: *Self) !void {
     func.curnode = try self.ir.addNode();
     while (true) {
         if (!try self.stmt(&func)) break;
-        try self.lbrk();
+        try self.t.lbrk();
     }
-    try self.lbrk();
+    try self.t.lbrk();
 }
 
 const Func = struct {
@@ -298,7 +207,7 @@ const jmpmap = std.ComptimeStringMap(FLIR.IntCond, .{
 
 pub fn stmt(self: *Self, f: *Func) ParseError!bool {
     const ir = &self.ir;
-    if (self.keyword()) |kw| {
+    if (self.t.keyword()) |kw| {
         if (mem.eql(u8, kw, "end")) {
             return false;
         } else if (mem.eql(u8, kw, "ret")) {
@@ -329,20 +238,20 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
             return true;
         } else if (mem.eql(u8, kw, "store")) {
             const kind = try require(try self.typename(), "type");
-            try self.expect_char('[');
+            try self.t.expect_char('[');
             const dest = try require(try self.call_arg(f), "destination");
             const idx = try require(try self.call_arg(f), "idx");
-            try self.expect_char(']');
+            try self.t.expect_char(']');
             const value = try require(try self.call_arg(f), "value");
             const scale: u2 = if (kind == .avxval) 2 else 0;
             _ = try ir.store(f.curnode, kind, dest, idx, scale, value);
             return true;
         }
     } else if (try self.varname()) |dest| {
-        const next = self.nonws();
+        const next = self.t.nonws();
         const is_var = (next == @as(u8, ':'));
-        if (is_var) self.pos += 1;
-        try self.expect_char('=');
+        if (is_var) self.t.pos += 1;
+        try self.t.expect_char('=');
         if (is_var) {
             const thevar = f.refs.get(dest) orelse {
                 print("undefined var %{s}!\n", .{dest});
@@ -355,11 +264,11 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
             item.* = try self.expr(f);
         }
         return true;
-    } else if (self.nonws() == @as(u8, ':')) {
-        self.pos += 1;
+    } else if (self.t.nonws() == @as(u8, ':')) {
+        self.t.pos += 1;
         var nextnode: u16 = next: {
-            if (idlike(self.nonws() orelse return error.ParseError)) {
-                const label = try self.identifier();
+            if (Tokenizer.idlike(self.t.nonws() orelse return error.ParseError)) {
+                const label = try self.t.identifier();
                 const item = try f.labels.getOrPut(label);
                 if (item.found_existing) {
                     if (!ir.empty(item.value_ptr.*, false)) {
@@ -385,7 +294,7 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
 }
 
 pub fn call_arg(self: *Self, f: *Func) ParseError!?u16 {
-    if (self.num()) |numval| {
+    if (self.t.num()) |numval| {
         return try self.ir.const_int(@intCast(numval));
     } else if (try self.varname()) |src| {
         return f.refs.get(src) orelse {
@@ -397,7 +306,7 @@ pub fn call_arg(self: *Self, f: *Func) ParseError!?u16 {
 }
 
 pub fn typename(self: *Self) ParseError!?FLIR.SpecType {
-    const kw = self.keyword() orelse return null;
+    const kw = self.t.keyword() orelse return null;
     if (meta.stringToEnum(common.ISize, kw)) |size| {
         return .{ .intptr = size };
     } else if (meta.stringToEnum(CFO.FMode, kw)) |mode| {
@@ -411,15 +320,15 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
     const ir = &self.ir;
     if (try self.call_arg(f)) |arg| {
         return arg;
-    } else if (self.keyword()) |kw| {
+    } else if (self.t.keyword()) |kw| {
         if (mem.eql(u8, kw, "arg")) {
             return ir.arg();
         } else if (mem.eql(u8, kw, "load")) {
             const kind = try require(try self.typename(), "type");
-            try self.expect_char('[');
+            try self.t.expect_char('[');
             const base = try require(try self.call_arg(f), "base");
             const idx = try require(try self.call_arg(f), "idx");
-            try self.expect_char(']');
+            try self.t.expect_char(']');
             const scale: u2 = if (kind == .avxval) 2 else 0; // TODO UUUGH
             return ir.load(f.curnode, kind, base, idx, scale);
         } else if (meta.stringToEnum(FLIR.IntBinOp, kw)) |op| {
@@ -428,12 +337,12 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
             return ir.ibinop(f.curnode, op, left, right);
         } else if (mem.eql(u8, kw, "vop")) {
             // TODO: make this optional, if both op1/op2 share a fmode
-            const modename = try require(self.keyword(), "fmode");
+            const modename = try require(self.t.keyword(), "fmode");
             const fmode = meta.stringToEnum(CFO.FMode, modename) orelse {
                 print("eioouuu: '{s}'\n", .{modename});
                 return error.ParseError;
             };
-            const opname = try require(self.keyword(), "vop");
+            const opname = try require(self.t.keyword(), "vop");
             const mathop = meta.stringToEnum(CFO.VMathOp, opname);
             const cmpop = if (mathop == null) meta.stringToEnum(CFO.VCmpOp, opname) else null;
             if (mathop == null and cmpop == null) {
@@ -451,7 +360,7 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
                 unreachable;
             }
         } else if (mem.eql(u8, kw, "syscall")) {
-            const name = try require(self.keyword(), "name");
+            const name = try require(self.t.keyword(), "name");
             // TODO: non-native for
             const syscall = meta.stringToEnum(std.os.linux.SYS, name) orelse {
                 print("unknown syscall: '{s}'\n", .{name});
@@ -463,14 +372,14 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
 
             return try ir.call(f.curnode, .syscall, sysnum);
         } else if (mem.eql(u8, kw, "call")) {
-            const name = try require(self.keyword(), "name");
+            const name = try require(self.t.keyword(), "name");
             const off = self.objs.get(name) orelse return error.ParseError;
 
             const constoff = try ir.const_uint(off);
             try self.parse_args(f);
             return try ir.call(f.curnode, .near, constoff);
         } else if (mem.eql(u8, kw, "call_bpf")) {
-            const name = try require(self.keyword(), "name");
+            const name = try require(self.t.keyword(), "name");
             const helper = meta.stringToEnum(BPF.Helper, name) orelse {
                 print("unknown BPF helper: '{s}'\n", .{name});
                 return error.ParseError;
@@ -478,7 +387,7 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
             try self.parse_args(f);
             return try ir.call(f.curnode, .bpf_helper, @intCast(@intFromEnum(helper)));
         } else if (mem.eql(u8, kw, "alloc")) {
-            const size = self.num() orelse 1;
+            const size = self.t.num() orelse 1;
             return ir.alloc(f.curnode, @intCast(size));
         } else if (mem.eql(u8, kw, "map")) {
             return self.get_bpf_map(false, f);
@@ -491,7 +400,7 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
 }
 
 fn get_bpf_map(self: *Self, is_value: bool, f: *Func) ParseError!u16 {
-    const name = try require(self.keyword(), "map name");
+    const name = try require(self.t.keyword(), "map name");
     const mod = self.bpf_module orelse return error.ParseError;
     const id = mod.objs.getIndex(name) orelse return error.ParseError;
     return self.ir.bpf_load_map(f.curnode, @intCast(id), is_value);
