@@ -1,6 +1,7 @@
 const FLIR = @import("./FLIR.zig");
 const CFO = @import("./CFO.zig");
 const print = std.debug.print;
+const ForkScript = @import("./ForkScript.zig");
 
 const Parser = @import("./Parser.zig");
 const std = @import("std");
@@ -35,11 +36,15 @@ pub fn main() !void {
     if (argv.len < 2) return usage();
     var nextarg: u8 = 1;
     const firstarg = mem.span(argv[nextarg]);
+
+    var script: bool = false;
+
     if (firstarg[0] == '-') {
         if (argv.len < 3) return usage();
         nextarg += 1;
         for (firstarg[1..]) |a| {
             switch (a) {
+                's' => script = true,
                 'i' => options.dbg_raw_ir = true,
                 'a' => options.dbg_analysed_ir = true,
                 'v' => options.dbg_vregs = true,
@@ -67,14 +72,22 @@ pub fn main() !void {
     defer if (inbuf) |b| allocator.free(b);
 
     var parser = try Parser.init(buf, allocator);
-    // try parser.fd_objs.put("count", map_count);
-    _ = parser.parse_one_func() catch |e| {
-        print("error at pos {}:{} (byte {} of {})\n", .{ parser.lnum + 1, 1 + parser.pos - parser.lpos, parser.pos, buf.len });
-        return e;
-    };
-
     // TODO: this is a little backwards pwnership but will do for now
+    // TODO: won't do with multiple functions!
     const ir = &parser.ir;
+
+    if (script) {
+        const didret = try ForkScript.parse(ir, buf);
+        if (!didret) {
+            @panic("must return");
+        }
+    } else {
+        // try parser.fd_objs.put("count", map_count);
+        _ = parser.parse_one_func() catch |e| {
+            print("error at pos {}:{} (byte {} of {})\n", .{ parser.lnum + 1, 1 + parser.pos - parser.lpos, parser.pos, buf.len });
+            return e;
+        };
+    }
 
     if (options.dbg_raw_ir) ir.debug_print();
     try ir.test_analysis(FLIR.X86_64ABI, true);
