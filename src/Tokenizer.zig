@@ -52,16 +52,23 @@ pub fn idlike(c: u8) bool {
 
 pub const Chunk = []const u8;
 pub fn keyword(self: *Self) ?Chunk {
+    const chunk = self.peek_keyword() orelse return null;
+    self.pos += chunk.len;
+    return chunk;
+}
+
+pub fn peek_keyword(self: *Self) ?Chunk {
     const c = self.nonws() orelse return null;
     if (!('a' <= c and c <= 'z') and !('A' <= c and c <= 'Z')) return null;
     const start = self.pos;
-    while (self.pos < self.str.len) : (self.pos += 1) {
-        const next = self.str[self.pos];
+    var pos = self.pos;
+    while (pos < self.str.len) : (pos += 1) {
+        const next = self.str[pos];
         if (!idlike(next)) {
             break;
         }
     }
-    return self.str[start..self.pos];
+    return self.str[start..pos];
 }
 
 pub fn prefixed(self: *Self, sigil: u8) ParseError!?Chunk {

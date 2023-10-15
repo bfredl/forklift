@@ -1,13 +1,11 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const test_allocator = std.testing.allocator;
 const FLIR = @import("./FLIR.zig");
-const CFO = @import("./CFO.zig");
 const print = std.debug.print;
+const mem = std.mem;
+const Tokenizer = @import("./Tokenizer.zig");
 
 const Self = @This();
-
-const Inst = FLIR.Inst;
 
 ir: *FLIR,
 // tmp: [10]?u16 = .{null} ** 10,
@@ -15,36 +13,25 @@ tmp: [10]?u16 = ([1]?u16{null}) ** 10,
 curnode: u16,
 
 t: Tokenizer,
-const Tokenizer = @import("./Tokenizer.zig");
 
-//TODO: gabagool
-pub fn num(self: *Self) ?u4 {
-    const c = self.t.nonws() orelse return null;
-    if ('0' <= c and c < '9') {
-        self.t.pos += 1;
-        return @as(u4, @intCast(c - '0'));
-    }
-    return null;
-}
+vars: std.StringHashMap(IdInfo),
+const IdInfo = struct {
+    ref: u16,
+    is_mut: bool, // assignable
+    // is_avx: bool, // true if avxval
+};
 
 pub fn expr_0(self: *Self) !?u16 {
     const char = self.t.nonws() orelse return null;
     switch (char) {
-        'a'...'d' => {
-            const arg = char - 'a';
-            if (arg >= self.ir.narg) return error.InvalidSyntax;
-            self.t.pos += 1;
-            return arg;
+        'a'...'z', 'A'...'Z' => {
+            const name = try self.t.identifier();
+            const obj = self.vars.get(name) orelse return error.UndefinedName;
+            return obj.ref;
         },
-        't' => {
-            self.t.pos += 1;
-            const i = self.num() orelse return error.InvalidSyntax;
-            return self.tmp[i] orelse return error.UndefTemporary;
-        },
-        'k' => {
-            self.t.pos += 1;
-            const i = self.num() orelse return error.InvalidSyntax;
-            return try self.ir.const_int(i);
+        '0'...'9' => {
+            const i = self.t.num() orelse return error.InvalidSyntax;
+            return try self.ir.const_int(@intCast(i));
         },
         else => return null,
     }
@@ -80,39 +67,39 @@ pub fn expr_2(self: *Self) !?u16 {
     return val;
 }
 
-pub fn stmt(self: *Self) !?bool {
-    const char = self.t.nonws() orelse return null;
-    self.t.pos += 1;
-    const extra: u8 =
-        switch (char) {
-        'r' => undefined,
-        't' => self.num() orelse return error.SyntaxError,
-        else => return error.SyntaxError,
-    };
+pub fn expr(self: *Self) !u16 {
+    return (try self.expr_2()) orelse return error.EOFError;
+}
 
-    try self.t.expect_char('=');
-    const res = (try self.expr_2()) orelse return error.EOFError;
+pub fn stmt(self: *Self) !?bool {
+    const kw = self.t.keyword() orelse return null;
+    var did_ret = false;
+    if (mem.eql(u8, kw, "return")) {
+        const res = try self.expr();
+        try self.ir.ret(self.curnode, res);
+        did_ret = true;
+    } else if (mem.eql(u8, kw, "let")) {
+        const name = self.t.keyword() orelse return error.ParseError;
+        const item = try self.vars.getOrPut(name);
+        if (item.found_existing) {
+            print("duplicate function {s}!\n", .{name});
+            return error.ParseError;
+        }
+        try self.t.expect_char('=');
+        const val = try self.expr();
+        item.value_ptr.* = .{ .ref = val, .is_mut = false };
+    } else {
+        return error.SyntaxError;
+    }
+
     try self.t.expect_char(';');
     try self.t.lbrk();
 
-    switch (char) {
-        'r' => {
-            try self.ir.ret(self.curnode, res);
-            return true;
-        },
-        // 'x'...'z' => .{ .tag = .store, .opspec = i + char - 'x', .op1 = res, .op2 = extra },
-        't' => {
-            self.tmp[extra] = res;
-            return false;
-        },
-        else => return error.SyntaxError,
-    }
+    return did_ret;
 }
 
-pub fn parse(ir: *FLIR, str: []const u8) !bool {
+fn do_parse(self: *Self) !bool {
     var didret = false;
-    const curnode = try ir.addNode();
-    var self: Self = .{ .ir = ir, .t = .{ .str = str }, .curnode = curnode };
     while (try self.stmt()) |res| {
         if (res) {
             didret = true;
@@ -121,4 +108,14 @@ pub fn parse(ir: *FLIR, str: []const u8) !bool {
     }
     if (self.t.nonws() != null) return error.SyntaxError;
     return didret;
+}
+
+pub fn parse(ir: *FLIR, str: []const u8, allocator: Allocator) !bool {
+    const curnode = try ir.addNode();
+    var self: Self = .{ .ir = ir, .t = .{ .str = str }, .curnode = curnode, .vars = std.StringHashMap(IdInfo).init(allocator) };
+    defer self.vars.deinit();
+    return self.do_parse() catch |e| {
+        self.t.fail_pos();
+        return e;
+    };
 }

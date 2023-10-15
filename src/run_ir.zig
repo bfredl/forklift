@@ -77,7 +77,7 @@ pub fn main() !void {
     const ir = &parser.ir;
 
     if (script) {
-        const didret = try ForkScript.parse(ir, buf);
+        const didret = try ForkScript.parse(ir, buf, allocator);
         if (!didret) {
             @panic("must return");
         }
