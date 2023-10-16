@@ -1,3 +1,6 @@
 args foo bar;
-let t2 = bar + 3;
+vars baaa;
+baaa := 3;
+baaa := baaa + 4;
+let t2 = bar + baaa;
 return t2;

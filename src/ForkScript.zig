@@ -81,13 +81,23 @@ pub fn stmt(self: *Self) !?bool {
         try self.ir.ret(self.curnode, res);
         did_ret = true;
     } else if (mem.eql(u8, kw, "let")) {
-        const name = self.t.keyword() orelse return error.ParseError;
+        const name = self.t.keyword() orelse return error.SyntaxError;
         const item = try nonexisting(&self.vars, name, "variable");
         try self.t.expect_char('=');
         const val = try self.expr();
         item.* = .{ .ref = val, .is_mut = false };
     } else {
-        return error.SyntaxError;
+        // try var assignment
+        const v = self.vars.get(kw) orelse return error.SyntaxError;
+        if (!v.is_mut) {
+            print("neee", .{});
+            return error.SyntaxError;
+        }
+        // not sure how typed assigment would look, like "foo :2d= ree"
+        try self.t.expect_char(':');
+        try self.t.expect_char('=');
+        const res = try self.expr();
+        try self.ir.putvar(self.curnode, v.ref, res);
     }
 
     try self.t.expect_char(';');
@@ -96,8 +106,16 @@ pub fn stmt(self: *Self) !?bool {
     return did_ret;
 }
 
+fn block(self: *Self) !bool {
+    while (try self.stmt()) |res| {
+        if (res) {
+            return true;
+        }
+    }
+    return false;
+}
+
 fn do_parse(self: *Self) !bool {
-    var didret = false;
     if (self.t.peek_keyword()) |kw| {
         if (mem.eql(u8, kw, "args")) {
             _ = self.t.keyword();
@@ -110,14 +128,21 @@ fn do_parse(self: *Self) !bool {
             try self.t.lbrk();
         }
     }
-    while (try self.stmt()) |res| {
-        if (res) {
-            didret = true;
-            break;
+    if (self.t.peek_keyword()) |kw| {
+        if (mem.eql(u8, kw, "vars")) {
+            _ = self.t.keyword();
+            while (self.t.keyword()) |name| {
+                const item = try nonexisting(&self.vars, name, "variable");
+                const val = try self.ir.variable();
+                item.* = .{ .ref = val, .is_mut = true };
+            }
+            try self.t.expect_char(';');
+            try self.t.lbrk();
         }
     }
+    const did_ret = self.block();
     if (self.t.nonws() != null) return error.SyntaxError;
-    return didret;
+    return did_ret;
 }
 
 pub fn parse(ir: *FLIR, str: []const u8, allocator: Allocator) !bool {
