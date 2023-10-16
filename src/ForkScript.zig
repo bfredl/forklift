@@ -5,6 +5,8 @@ const print = std.debug.print;
 const mem = std.mem;
 const Tokenizer = @import("./Tokenizer.zig");
 
+const nonexisting = @import("./Parser.zig").nonexisting;
+
 const Self = @This();
 
 ir: *FLIR,
@@ -80,14 +82,10 @@ pub fn stmt(self: *Self) !?bool {
         did_ret = true;
     } else if (mem.eql(u8, kw, "let")) {
         const name = self.t.keyword() orelse return error.ParseError;
-        const item = try self.vars.getOrPut(name);
-        if (item.found_existing) {
-            print("duplicate function {s}!\n", .{name});
-            return error.ParseError;
-        }
+        const item = try nonexisting(&self.vars, name, "variable");
         try self.t.expect_char('=');
         const val = try self.expr();
-        item.value_ptr.* = .{ .ref = val, .is_mut = false };
+        item.* = .{ .ref = val, .is_mut = false };
     } else {
         return error.SyntaxError;
     }
@@ -100,6 +98,18 @@ pub fn stmt(self: *Self) !?bool {
 
 fn do_parse(self: *Self) !bool {
     var didret = false;
+    if (self.t.peek_keyword()) |kw| {
+        if (mem.eql(u8, kw, "args")) {
+            _ = self.t.keyword();
+            while (self.t.keyword()) |name| {
+                const item = try nonexisting(&self.vars, name, "argument");
+                const val = try self.ir.arg();
+                item.* = .{ .ref = val, .is_mut = false };
+            }
+            try self.t.expect_char(';');
+            try self.t.lbrk();
+        }
+    }
     while (try self.stmt()) |res| {
         if (res) {
             didret = true;

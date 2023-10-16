@@ -5,3 +5,5 @@ loop_test
 aoc/input_*.txt
 /ref/
 Xinit.sh
+run_ir
+main_bpf

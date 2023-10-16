@@ -173,7 +173,7 @@ const Func = struct {
     labels: std.StringHashMap(u16),
 };
 
-fn nonexisting(map: anytype, key: []const u8, what: []const u8) ParseError!@TypeOf(map.getPtr(key).?) {
+pub fn nonexisting(map: anytype, key: []const u8, what: []const u8) ParseError!@TypeOf(map.getPtr(key).?) {
     const item = try map.getOrPut(key);
     if (item.found_existing) {
         print("duplicate {s}{s}!\n", .{ what, key });
