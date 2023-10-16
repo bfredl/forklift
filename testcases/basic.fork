@@ -1,6 +1,9 @@
 args foo bar;
-vars baaa;
+vars baaa bee;
 baaa := 3;
 baaa := baaa + 4;
+{
 let t2 = bar + baaa;
-return t2;
+bee := t2;
+}
+return bee;
