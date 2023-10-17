@@ -14,6 +14,7 @@ ir: *FLIR,
 // tmp: [10]?u16 = .{null} ** 10,
 tmp: [10]?u16 = ([1]?u16{null}) ** 10,
 curnode: u16,
+curloop: u16 = 0,
 
 t: Tokenizer,
 
@@ -126,6 +127,22 @@ pub fn braced_block(self: *Self) !?bool {
     return did_ret;
 }
 
+pub fn loop(self: *Self) !void {
+    const entry = try self.ir.addNodeAfter(self.curnode);
+    const exit = try self.ir.addNode();
+
+    const save_curloop = self.curloop;
+    self.curnode = entry;
+    self.curloop = exit;
+
+    _ = try self.braced_block();
+
+    try self.ir.addLink(self.curnode, 0, entry);
+    self.curnode = exit;
+
+    self.curloop = save_curloop;
+}
+
 pub fn stmt(self: *Self) !?bool {
     const kw = self.t.keyword() orelse {
         return self.braced_block();
@@ -146,15 +163,28 @@ pub fn stmt(self: *Self) !?bool {
         _ = try self.cond_expr();
         try self.t.expect_char(')');
         const prev_node = self.curnode;
-        const then = try self.ir.addNode();
-        self.curnode = then;
-        try self.ir.addLink(prev_node, 1, then);
-        // TODO: allow a quick "if (foo) break;"
-        _ = (try self.braced_block()) orelse return error.SyntaxError;
-        // TODO: actual else block, this is just the codes below
         const after = try self.ir.addNodeAfter(prev_node);
-        try self.ir.addLink(then, 0, after);
+        if (self.t.keyword()) |kw2| {
+            if (mem.eql(u8, kw2, "break")) {
+                try self.t.expect_char(';');
+                try self.t.lbrk();
+                if (self.curloop == 0) return error.SyntaxError;
+                try self.ir.addLink(prev_node, 1, self.curloop);
+            } else {
+                return error.SyntaxError;
+            }
+        } else {
+            const then = try self.ir.addNode();
+            self.curnode = then;
+            try self.ir.addLink(prev_node, 1, then);
+            _ = (try self.braced_block()) orelse return error.SyntaxError;
+            // TODO: actual else block, this is just the codes below
+            try self.ir.addLink(then, 0, after);
+        }
         self.curnode = after;
+        return false;
+    } else if (mem.eql(u8, kw, "loop")) {
+        try self.loop();
         return false;
     } else {
         // try var assignment
