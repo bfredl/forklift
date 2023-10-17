@@ -74,22 +74,61 @@ pub fn expr(self: *Self) !u16 {
     return (try self.expr_2()) orelse return error.SyntaxError;
 }
 
+pub fn cond_op(op: []const u8) ?FLIR.IntCond {
+    if (op.len == 1) {
+        return switch (op[0]) {
+            '<' => .lt,
+            '>' => .gt,
+            '=' => .eq,
+            else => null,
+        };
+    } else if (mem.eql(u8, op, ">=")) {
+        return .ge;
+    } else if (mem.eql(u8, op, "<=")) {
+        return .le;
+    } else if (mem.eql(u8, op, "!=")) {
+        return .ge;
+        // unsigned variants (as a treat™)
+    } else if (mem.eql(u8, op, "|>")) {
+        return .a;
+    } else if (mem.eql(u8, op, "|>=")) {
+        return .nb;
+    } else if (mem.eql(u8, op, "<|")) {
+        return .b;
+    } else if (mem.eql(u8, op, "<|=")) {
+        return .na;
+    } else {
+        return null;
+    }
+}
+
+// currently not integrated with expr ( "let a = b < c" no good)
+pub fn cond_expr(self: *Self) !u16 {
+    const left = try self.expr();
+    const op_str = self.t.operator() orelse return error.SyntaxError;
+    const op = cond_op(op_str) orelse return error.SyntaxError;
+    const right = try self.expr();
+
+    return self.ir.icmp(self.curnode, op, left, right);
+}
+
+pub fn braced_block(self: *Self) !?bool {
+    if (self.t.nonws() != '{') {
+        return null;
+    }
+    self.t.pos += 1;
+    try self.t.lbrk();
+
+    const did_ret = try self.scoped_block();
+
+    try self.t.expect_char('}');
+    try self.t.lbrk();
+    return did_ret;
+}
+
 pub fn stmt(self: *Self) !?bool {
     const kw = self.t.keyword() orelse {
-        if (self.t.nonws()) |ch| {
-            if (ch != '{') {
-                return null;
-            }
-            self.t.pos += 1;
-            try self.t.lbrk();
-
-            const did_ret = try self.scoped_block();
-
-            try self.t.expect_char('}');
-            try self.t.lbrk();
-            return did_ret;
-        }
-        return null;
+        return self.braced_block();
     };
     var did_ret = false;
     if (mem.eql(u8, kw, "return")) {
@@ -102,6 +141,21 @@ pub fn stmt(self: *Self) !?bool {
         try self.t.expect_char('=');
         const val = try self.expr();
         item.* = .{ .ref = val, .is_mut = false };
+    } else if (mem.eql(u8, kw, "if")) {
+        try self.t.expect_char('(');
+        _ = try self.cond_expr();
+        try self.t.expect_char(')');
+        const prev_node = self.curnode;
+        const then = try self.ir.addNode();
+        self.curnode = then;
+        try self.ir.addLink(prev_node, 1, then);
+        // TODO: allow a quick "if (foo) break;"
+        _ = (try self.braced_block()) orelse return error.SyntaxError;
+        // TODO: actual else block, this is just the codes below
+        const after = try self.ir.addNodeAfter(prev_node);
+        try self.ir.addLink(then, 0, after);
+        self.curnode = after;
+        return false;
     } else {
         // try var assignment
         const v = self.vars.get(kw) orelse return error.SyntaxError;

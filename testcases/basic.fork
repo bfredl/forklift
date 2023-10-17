@@ -2,8 +2,9 @@ args foo bar;
 vars baaa bee;
 baaa := 3;
 baaa := baaa + 4;
-{
-let t2 = bar + baaa;
-bee := t2;
+bee := 0;
+if (baaa > 6) {
+  let t2 = bar + baaa;
+  bee := t2;
 }
 return bee;

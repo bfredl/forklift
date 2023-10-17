@@ -684,6 +684,19 @@ pub fn addNode(self: *Self) !u16 {
     return nodeid;
 }
 
+// not-taken/unconditional branch of `n` set to the new node
+pub fn addNodeAfter(self: *Self, node: u16) !u16 {
+    const new_node = try self.addNode();
+    try self.addLink(node, 0, new_node);
+    return new_node;
+}
+
+pub fn addLink(self: *Self, node_from: u16, branch: u1, node_to: u16) !void {
+    const succ = &self.n.items[node_from].s[branch];
+    if (succ.* != 0) return error.FLIRError;
+    succ.* = node_to;
+}
+
 // add inst to the end of block
 pub fn addInst(self: *Self, node: u16, inst: Inst) !u16 {
     const n = &self.n.items[node];

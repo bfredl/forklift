@@ -50,6 +50,10 @@ pub fn idlike(c: u8) bool {
     return ('a' <= c and c <= 'z') or ('A' <= c and c <= 'Z') or ('0' < c and c < '9') or c == '_';
 }
 
+pub fn oplike(c: u8) bool {
+    return (c == '+' or c == '-' or c == '/' or c == '*' or c == '=' or c == '<' or c == '>' or c == '!');
+}
+
 pub const Chunk = []const u8;
 pub fn keyword(self: *Self) ?Chunk {
     const chunk = self.peek_keyword() orelse return null;
@@ -111,4 +115,23 @@ pub fn num(self: *Self) ?u32 {
         }
     }
     return val;
+}
+
+pub fn operator(self: *Self) ?Chunk {
+    const chunk = self.peek_operator() orelse return null;
+    self.pos += chunk.len;
+    return chunk;
+}
+pub fn peek_operator(self: *Self) ?Chunk {
+    const first = self.nonws() orelse return null;
+    if (!oplike(first)) return null;
+    const start = self.pos;
+    var pos = self.pos;
+    while (pos < self.str.len) : (pos += 1) {
+        const next = self.str[pos];
+        if (!oplike(next)) {
+            break;
+        }
+    }
+    return self.str[start..pos];
 }
