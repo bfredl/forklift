@@ -1,0 +1,11 @@
+args foo bar;
+vars i sum;
+i := 0;
+sum := 0;
+loop {
+  if (i >= 10) break;
+  sum := sum + i;
+  i := i + 1;
+}
+let dummig = $exit(sum);
+return sum;

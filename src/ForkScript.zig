@@ -41,8 +41,24 @@ pub fn expr_0(self: *Self) !?u16 {
     }
 }
 
-pub fn expr_1(self: *Self) !?u16 {
+pub fn expr_1(self: *Self) ParseError!?u16 {
     var val = (try self.expr_0()) orelse return null;
+    while (self.t.nonws()) |char| {
+        if (char == '[') {
+            self.t.pos += 1;
+            // TODO: addr[] as shorthand? or maybe [addr] :)
+            const addr = try self.arg_expr();
+            try self.t.expect_char(']');
+            val = try self.ir.load(self.curnode, .{ .intptr = .byte }, val, addr, 0);
+        } else {
+            break;
+        }
+    }
+    return val;
+}
+
+pub fn expr_2(self: *Self) !?u16 {
+    var val = (try self.expr_1()) orelse return null;
     while (self.t.nonws()) |char| {
         const theop: FLIR.IntBinOp = switch (char) {
             '*' => .mul,
@@ -56,8 +72,8 @@ pub fn expr_1(self: *Self) !?u16 {
     return val;
 }
 
-pub fn expr_2(self: *Self) !?u16 {
-    var val = (try self.expr_1()) orelse return null;
+pub fn expr_3(self: *Self) !?u16 {
+    var val = (try self.expr_2()) orelse return null;
     while (self.t.nonws()) |char| {
         const theop: FLIR.IntBinOp = switch (char) {
             '+' => .add,
@@ -72,7 +88,7 @@ pub fn expr_2(self: *Self) !?u16 {
 }
 
 pub fn arg_expr(self: *Self) !u16 {
-    return (try self.expr_2()) orelse return error.SyntaxError;
+    return (try self.expr_3()) orelse return error.SyntaxError;
 }
 
 pub fn call_expr(self: *Self) !u16 {
