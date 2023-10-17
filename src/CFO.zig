@@ -709,7 +709,6 @@ pub fn imulrr(self: *Self, dst: IPReg, src: IPReg) !void {
 }
 
 // DST = SRC * imm
-// TODO: be smart and fit factor in ib,iw,id as fits
 pub fn imulrri(self: *Self, dst: IPReg, src: IPReg, factor: i32) !void {
     try self.new_inst(@returnAddress());
     try self.rex_wrxb(true, dst.ext(), false, src.ext());

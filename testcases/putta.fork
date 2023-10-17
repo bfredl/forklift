@@ -1,0 +1,3 @@
+args data len;
+let status = $write(0, data + 10, 5);
+return status;

@@ -8,7 +8,7 @@ const Tokenizer = @import("./Tokenizer.zig");
 const nonexisting = @import("./Parser.zig").nonexisting;
 
 const Self = @This();
-const ParseError = error{ ParseError, SyntaxError, OutOfMemory, FLIRError, UndefinedName };
+const ParseError = error{ ParseError, SyntaxError, OutOfMemory, FLIRError, UndefinedName, TooManyArgs };
 
 ir: *FLIR,
 // tmp: [10]?u16 = .{null} ** 10,
@@ -87,6 +87,7 @@ pub fn expr_3(self: *Self) !?u16 {
     return val;
 }
 
+// BULL: not even used for args..
 pub fn arg_expr(self: *Self) !u16 {
     return (try self.expr_3()) orelse return error.SyntaxError;
 }
@@ -101,11 +102,24 @@ pub fn call_expr(self: *Self) !u16 {
         const sysnum = try self.ir.const_int(@intCast(@intFromEnum(syscall)));
         try self.t.expect_char('(');
 
-        const arg = try self.arg_expr();
+        var args = [_]u16{0} ** 6;
+        var n_arg: u8 = 0;
+        while (true) {
+            const arg = (try self.expr_3()) orelse break;
+            if (n_arg == args.len) {
+                return error.TooManyArgs;
+            }
+            args[n_arg] = arg;
+            n_arg += 1;
+            if (self.t.nonws() != ',') break;
+            self.t.pos += 1;
+        }
 
         try self.t.expect_char(')');
 
-        try self.ir.callarg(self.curnode, 0, arg);
+        for (0.., args[0..n_arg]) |i, arg| {
+            try self.ir.callarg(self.curnode, @intCast(i), arg);
+        }
         return self.ir.call(self.curnode, .syscall, sysnum);
     }
     return self.arg_expr();
