@@ -71,8 +71,28 @@ pub fn expr_2(self: *Self) !?u16 {
     return val;
 }
 
-pub fn expr(self: *Self) !u16 {
+pub fn arg_expr(self: *Self) !u16 {
     return (try self.expr_2()) orelse return error.SyntaxError;
+}
+
+pub fn call_expr(self: *Self) !u16 {
+    if (try self.t.prefixed('$')) |name| {
+        // TODO: non-native for
+        const syscall = std.meta.stringToEnum(std.os.linux.SYS, name) orelse {
+            print("unknown syscall: '{s}'\n", .{name});
+            return error.ParseError;
+        };
+        const sysnum = try self.ir.const_int(@intCast(@intFromEnum(syscall)));
+        try self.t.expect_char('(');
+
+        const arg = try self.arg_expr();
+
+        try self.t.expect_char(')');
+
+        try self.ir.callarg(self.curnode, 0, arg);
+        return self.ir.call(self.curnode, .syscall, sysnum);
+    }
+    return self.arg_expr();
 }
 
 pub fn cond_op(op: []const u8) ?FLIR.IntCond {
@@ -105,10 +125,10 @@ pub fn cond_op(op: []const u8) ?FLIR.IntCond {
 
 // currently not integrated with expr ( "let a = b < c" no good)
 pub fn cond_expr(self: *Self) !u16 {
-    const left = try self.expr();
+    const left = try self.arg_expr();
     const op_str = self.t.operator() orelse return error.SyntaxError;
     const op = cond_op(op_str) orelse return error.SyntaxError;
-    const right = try self.expr();
+    const right = try self.arg_expr();
 
     return self.ir.icmp(self.curnode, op, left, right);
 }
@@ -149,14 +169,14 @@ pub fn stmt(self: *Self) !?bool {
     };
     var did_ret = false;
     if (mem.eql(u8, kw, "return")) {
-        const res = try self.expr();
+        const res = try self.arg_expr();
         try self.ir.ret(self.curnode, res);
         did_ret = true;
     } else if (mem.eql(u8, kw, "let")) {
         const name = self.t.keyword() orelse return error.SyntaxError;
         const item = try nonexisting(&self.vars, name, "variable");
         try self.t.expect_char('=');
-        const val = try self.expr();
+        const val = try self.call_expr();
         item.* = .{ .ref = val, .is_mut = false };
     } else if (mem.eql(u8, kw, "if")) {
         try self.t.expect_char('(');
@@ -190,13 +210,12 @@ pub fn stmt(self: *Self) !?bool {
         // try var assignment
         const v = self.vars.get(kw) orelse return error.SyntaxError;
         if (!v.is_mut) {
-            print("neee", .{});
             return error.SyntaxError;
         }
         // not sure how typed assigment would look, like "foo :2d= ree"
         try self.t.expect_char(':');
         try self.t.expect_char('=');
-        const res = try self.expr();
+        const res = try self.call_expr();
         try self.ir.putvar(self.curnode, v.ref, res);
     }
 
