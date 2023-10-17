@@ -1,7 +1,7 @@
 args foo bar;
 vars baaa bee;
 baaa := 3;
-baaa := baaa + 4;
+baaa := baaa * 4;
 bee := 0;
 if (baaa > 6) {
   let t2 = bar + baaa;

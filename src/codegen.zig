@@ -203,7 +203,10 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                     } else if (op == .mul) {
                         switch (rhs) {
                             .constval => |c| {
-                                const src = lhs.as_ipreg() orelse return error.SpillError; // TODO: can be mem
+                                const src = lhs.as_ipreg() orelse dstsrc: {
+                                    try regmovmc(cfo, dst, lhs);
+                                    break :dstsrc dst;
+                                };
                                 try cfo.imulrri(r(dst), r(src), @intCast(c));
                             },
                             .ipreg => if (rhs.as_ipreg()) |rhsreg| {
