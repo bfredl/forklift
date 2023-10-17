@@ -710,12 +710,18 @@ pub fn imulrr(self: *Self, dst: IPReg, src: IPReg) !void {
 
 // DST = SRC * imm
 // TODO: be smart and fit factor in ib,iw,id as fits
-pub fn imulrri(self: *Self, dst: IPReg, src: IPReg, factor: i8) !void {
+pub fn imulrri(self: *Self, dst: IPReg, src: IPReg, factor: i32) !void {
     try self.new_inst(@returnAddress());
     try self.rex_wrxb(true, dst.ext(), false, src.ext());
-    try self.wb(0x6b); // IMUL reg, \rm, ib
+    const small_factor: i8 = @truncate(factor);
+    const big = (factor != small_factor);
+    try self.wb(if (big) 0x69 else 0x6b); // IMUL reg, \rm, ib/id
     try self.modRm(0b11, dst.lowId(), src.lowId());
-    try self.wbi(factor);
+    if (big) {
+        try self.wd(factor);
+    } else {
+        try self.wbi(small_factor);
+    }
 }
 
 // RDX:RAX = RAX * SRC
