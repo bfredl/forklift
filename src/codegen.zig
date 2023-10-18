@@ -190,14 +190,21 @@ pub fn codegen(self: *FLIR, cfo: *CFO, dbg: bool) !u32 {
                 .alloc => {},
                 .ret => try regmovmc(cfo, CFO.IPReg.rax.into(), self.ipval(i.op1).?),
                 .ibinop => {
-                    const lhs = self.ipval(i.op1) orelse return error.FLIRError;
-                    const rhs = self.ipval(i.op2) orelse return error.FLIRError;
+                    var lhs = self.ipval(i.op1) orelse return error.FLIRError;
+                    var rhs = self.ipval(i.op2) orelse return error.FLIRError;
                     const dst = i.ipreg() orelse return error.SpillError;
                     const op: FLIR.IntBinOp = @enumFromInt(i.spec);
 
+                    var dst_conflict = (dst == rhs.as_ipreg() and dst != lhs.as_ipreg());
+                    // TODO: later on all these cases might be handled earlier in isel
+                    if (dst_conflict and op.symmetric()) {
+                        mem.swap(IPMCVal, &lhs, &rhs);
+                        dst_conflict = false;
+                    }
+
                     if (op.asAOP()) |aop| {
-                        // TODO: fugly: remove once we have constraint handling in regalloc
-                        if (dst == rhs.as_ipreg() and dst != lhs.as_ipreg()) @panic("conflict!");
+                        // TODO: fugly: remove once we have constraint handling in isel/regalloc
+                        if (dst_conflict) @panic("conflict!");
                         try regmovmc(cfo, dst, lhs); // often elided if lhs has the same reg
                         try regaritmc(cfo, aop, dst, rhs);
                     } else if (op == .mul) {

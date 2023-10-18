@@ -448,6 +448,13 @@ pub const IntBinOp = enum(u6) {
     sar,
     shr,
 
+    pub fn symmetric(self: IntBinOp) bool {
+        return switch (self) {
+            .add, .@"or", .@"and", .xor, .mul => true,
+            else => false,
+        };
+    }
+
     pub fn asAOP(self: IntBinOp) ?CFO.AOp {
         return switch (self) {
             .add => .add,
