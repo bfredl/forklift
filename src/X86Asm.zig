@@ -2,28 +2,34 @@ const std = @import("std");
 const mem = std.mem;
 const os = std.os;
 const debug = std.debug;
-const fs = std.fs;
 const Allocator = mem.Allocator;
-const page_allocator = std.heap.page_allocator;
-const ArrayListAligned = std.ArrayListAligned;
-
-const builtin = @import("builtin");
-const ArrayList = std.ArrayList;
-const print = std.debug.print;
-
-const page_size = std.mem.page_size;
 
 const common = @import("./common.zig");
 const ISize = common.ISize;
 
-code: ArrayListAligned(u8, page_size),
-
-/// offset of each encoded instruction. Might not be needed
-/// but useful for debugging.
-inst_off: ArrayList(u32),
-inst_dbg: ArrayList(usize),
-
+code: *@import("./CodeBuffer.zig"),
 long_jump_mode: bool = false,
+
+fn new_inst(self: *Self, addr: usize) !void {
+    try self.code.new_inst(addr);
+}
+
+// TODO: use appendAssumeCapacity in a smart way like arch/x86_64
+pub fn wb(self: *Self, opcode: u8) !void {
+    try self.code.buf.append(opcode);
+}
+
+pub fn wbi(self: *Self, imm: i8) !void {
+    try self.wb(@as(u8, @bitCast(imm)));
+}
+
+pub fn wd(self: *Self, dword: i32) !void {
+    std.mem.writeIntLittle(i32, try self.code.buf.addManyAsArray(4), dword);
+}
+
+pub fn wq(self: *Self, qword: u64) !void {
+    std.mem.writeIntLittle(u64, try self.code.buf.addManyAsArray(8), qword);
+}
 
 const Self = @This();
 
@@ -255,51 +261,11 @@ pub const VMathOp = enum(u3) {
     }
 };
 
-pub fn init(allocator: Allocator) !Self {
-    // TODO: allocate consequtive mprotectable pages
-    return Self{
-        .code = try ArrayListAligned(u8, page_size).initCapacity(page_allocator, page_size),
-        .inst_off = ArrayList(u32).init(allocator),
-        .inst_dbg = ArrayList(usize).init(allocator),
-    };
-}
-
-pub fn deinit(self: *Self) void {
-    // TODO: only in debug mode (as clobbers the array, needs r/w)
-    os.mprotect(self.code.items.ptr[0..self.code.capacity], os.PROT.READ | os.PROT.WRITE) catch unreachable;
-    self.code.deinit();
-    self.inst_off.deinit();
-    self.inst_dbg.deinit();
-}
-
-fn new_inst(self: *Self, addr: usize) !void {
-    var size = @as(u32, @intCast(self.get_target()));
-    try self.inst_off.append(size);
-    try self.inst_dbg.append(addr);
-}
-
-// TODO: use appendAssumeCapacity in a smart way like arch/x86_64
-pub fn wb(self: *Self, opcode: u8) !void {
-    try self.code.append(opcode);
-}
-
-pub fn wbi(self: *Self, imm: i8) !void {
-    try self.wb(@as(u8, @bitCast(imm)));
-}
-
-pub fn wd(self: *Self, dword: i32) !void {
-    std.mem.writeIntLittle(i32, try self.code.addManyAsArray(4), dword);
-}
-
-pub fn wq(self: *Self, qword: u64) !void {
-    std.mem.writeIntLittle(u64, try self.code.addManyAsArray(8), qword);
-}
-
 pub fn set_align(self: *Self, alignment: u32) !void {
-    var residue = self.get_target() & (alignment - 1);
+    var residue = self.code.get_target() & (alignment - 1);
     var padding = alignment - residue;
     if (padding != 0 and padding != alignment) {
-        try self.code.appendNTimes(0x90, padding);
+        try self.code.buf.appendNTimes(0x90, padding);
     }
 }
 
@@ -404,7 +370,7 @@ pub fn modRmEA(self: *Self, reg_or_opx: u3, ea: EAddr) !void {
     }
     if (ea.base == null) {
         // rip+off32
-        try self.wd(ea.offset - (@as(i32, @bitCast(self.get_target())) + 4));
+        try self.wd(ea.offset - (@as(i32, @bitCast(self.code.get_target())) + 4));
     } else if (mod != 0b00) {
         try if (offset8) |off| self.wbi(off) else self.wd(ea.offset);
     }
@@ -470,7 +436,7 @@ pub fn syscall(self: *Self) !void {
 
 pub fn call_rel(self: *Self, addr: u32) !void {
     try self.new_inst(@returnAddress());
-    const rel_pos = self.get_target() + 5;
+    const rel_pos = self.code.get_target() + 5;
     // TODO: check bounds
     const diff = @as(i32, @intCast(addr)) - @as(i32, @intCast(rel_pos));
     try self.wb(0xE8);
@@ -479,7 +445,7 @@ pub fn call_rel(self: *Self, addr: u32) !void {
 
 pub fn maybe_call_rel_abs(self: *Self, addr: *const u8) !?void {
     // TRICKY: this assumes code won't move.
-    const rel_pos = @intFromPtr(self.code.items.ptr) + self.get_target() + 5;
+    const rel_pos = @intFromPtr(self.code.buf.items.ptr) + self.code.get_target() + 5;
     // This should be safe if we stay in USER space (0 <= intptr < 2**47)
     const diff = @as(isize, @intCast(@intFromPtr(addr))) - @as(isize, @intCast(rel_pos));
     const short_diff = @as(i32, @truncate(diff));
@@ -512,7 +478,7 @@ pub fn jfwd(self: *Self, cond: ?Cond) !u32 {
     } else {
         try self.wb(if (long) 0xe9 else 0xeb);
     }
-    const pos: u32 = @intCast(self.code.items.len);
+    const pos: u32 = @intCast(self.code.buf.items.len);
     if (long) {
         try self.wd(0x00); // placeholder
     } else {
@@ -523,35 +489,31 @@ pub fn jfwd(self: *Self, cond: ?Cond) !u32 {
 
 pub fn set_target(self: *Self, pos: u32) !void {
     if (self.long_jump_mode) {
-        var off = self.get_target() - (pos + 4);
-        std.mem.writeIntLittle(u32, self.code.items[pos..][0..4], off);
+        var off = self.code.get_target() - (pos + 4);
+        std.mem.writeIntLittle(u32, self.code.buf.items[pos..][0..4], off);
     } else {
-        var off = self.get_target() - (pos + 1);
+        var off = self.code.get_target() - (pos + 1);
         if (off > 0x7f) {
             return error.InvalidNearJump;
         }
-        self.code.items[pos] = @as(u8, @intCast(off));
+        self.code.buf.items[pos] = @as(u8, @intCast(off));
     }
 }
 
 pub fn set_lea_target(self: *Self, pos: u32) void {
-    self.set_lea(pos, self.get_target());
+    self.set_lea(pos, self.code.get_target());
 }
 
 pub fn set_lea(self: *Self, pos: u32, target: u32) void {
     var off = target - (pos + 4);
-    self.code.items[pos] = @intCast(off);
-    std.mem.writeIntLittle(u32, self.code.items[pos..][0..4], off);
-}
-
-pub fn get_target(self: *Self) u32 {
-    return @intCast(self.code.items.len);
+    self.code.buf.items[pos] = @intCast(off);
+    std.mem.writeIntLittle(u32, self.code.buf.items[pos..][0..4], off);
 }
 
 // .. and back again
 pub fn jbck(self: *Self, cond: ?Cond, target: u32) !void {
     try self.new_inst(@returnAddress());
-    var off = @as(i32, @intCast(target)) - (@as(i32, @intCast(self.code.items.len)) + 2);
+    var off = @as(i32, @intCast(target)) - (@as(i32, @intCast(self.code.buf.items.len)) + 2);
     if (maybe_imm8(off)) |off8| {
         try self.wb(if (cond) |c| 0x70 + c.off() else 0xEB);
         try self.wbi(off8);
@@ -658,7 +620,7 @@ pub fn lealink(self: *Self, dst: IPReg) !u32 {
     try self.rex_wrxb(true, dst.ext(), false, false);
     try self.wb(0x8d);
     try self.modRm(0x00, dst.lowId(), 0x05);
-    const pos = self.get_target();
+    const pos = self.code.get_target();
     try self.wd(0); // placeholder
     return pos;
 }
@@ -712,14 +674,14 @@ pub fn imulrr(self: *Self, dst: IPReg, src: IPReg) !void {
 pub fn imulrri(self: *Self, dst: IPReg, src: IPReg, factor: i32) !void {
     try self.new_inst(@returnAddress());
     try self.rex_wrxb(true, dst.ext(), false, src.ext());
-    const small_factor: i8 = @truncate(factor);
-    const big = (factor != small_factor);
-    try self.wb(if (big) 0x69 else 0x6b); // IMUL reg, \rm, ib/id
+    const small_factor: ?i8 = maybe_imm8(factor);
+
+    try self.wb(if (small_factor) |_| 0x6b else 0x69); // IMUL reg, \rm, ib/id
     try self.modRm(0b11, dst.lowId(), src.lowId());
-    if (big) {
-        try self.wd(factor);
+    if (small_factor) |f| {
+        try self.wbi(f);
     } else {
-        try self.wbi(small_factor);
+        try self.wd(factor);
     }
 }
 
@@ -884,50 +846,14 @@ pub fn sx(self: *Self, op: ShiftOp, dst: IPReg, src1: IPReg, src2: IPReg) !void 
 
 // output functions
 
-pub fn dump(self: *Self) !void {
-    try fs.cwd().writeFile("test.o", self.code.items);
-}
-
 pub fn dbg_nasm(self: *Self, allocator: Allocator) !void {
     var nasm = std.ChildProcess.init(&[_][]const u8{ "ndisasm", "-b", "64", "-" }, allocator);
     // defer nasm.deinit();
     nasm.stdin_behavior = .Pipe;
     _ = try std.io.getStdOut().write("\n");
     try nasm.spawn();
-    _ = try nasm.stdin.?.write(self.code.items);
+    _ = try nasm.stdin.?.write(self.code.buf.items);
     _ = nasm.stdin.?.close();
     nasm.stdin = null;
     _ = try nasm.wait();
-}
-
-pub fn finalize(self: *Self) !void {
-    try os.mprotect(self.code.items.ptr[0..self.code.capacity], os.PROT.READ | os.PROT.EXEC);
-}
-
-pub fn get_ptr(self: *Self, target: u32, comptime T: type) T {
-    return @ptrCast(self.code.items[target..].ptr);
-}
-
-pub fn dbg_test(self: *Self) !void {
-    const stderr = std.io.getStdErr().writer();
-    const dbginfo = try debug.getSelfDebugInfo();
-    const tty_config = debug.detectTTYConfig();
-    for (self.inst_dbg.items, 0..) |x, i| {
-        print("{} {}\n", .{ i, x });
-        try debug.printSourceAtAddress(dbginfo, stderr, x, tty_config);
-    }
-}
-
-pub fn lookup(self: *Self, addr: usize) usize {
-    const startaddr: usize = @intFromPtr(self.code.items.ptr);
-    const endaddr: usize = startaddr + self.code.items.len;
-    if (startaddr <= addr and addr < endaddr) {
-        const off = addr - startaddr;
-        for (self.inst_dbg.items, 0..) |x, i| {
-            if (i + 1 >= self.inst_off.items.len or off < self.inst_off.items[i + 1]) {
-                return x;
-            }
-        }
-    }
-    return addr;
 }

@@ -1,10 +1,10 @@
 const std = @import("std");
-const CFO = @import("./CFO.zig");
+const CodeBuffer = @import("./CodeBuffer.zig");
 const debug = std.debug;
 const os = std.os;
 const io = std.io;
 
-var the_cfo: ?*CFO = null;
+var the_cfo: ?*CodeBuffer = null;
 
 fn sigHandler(sig: i32, info: *const os.siginfo_t, ctx_ptr: ?*const anyopaque) callconv(.C) void {
     const s = io.getStdErr().writer();
@@ -43,7 +43,7 @@ fn sigHandler(sig: i32, info: *const os.siginfo_t, ctx_ptr: ?*const anyopaque) c
     debug.dumpStackTraceFromBase(bp, ip);
 }
 
-pub fn install(cfo: *CFO) !void {
+pub fn install(cfo: *CodeBuffer) !void {
     the_cfo = cfo;
 
     var act = os.Sigaction{

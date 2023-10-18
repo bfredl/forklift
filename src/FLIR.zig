@@ -5,7 +5,7 @@ const Allocator = mem.Allocator;
 const Self = @This();
 const print = std.debug.print;
 const common = @import("./common.zig");
-const CFO = @import("./CFO.zig");
+const X86Asm = @import("./X86Asm.zig");
 const SSA_GVN = @import("./SSA_GVN.zig");
 const builtin = @import("builtin");
 const BPF = std.os.linux.BPF;
@@ -22,9 +22,9 @@ const assert = std.debug.assert;
 const IPReg = common.IPReg;
 const ISize = common.ISize;
 
-const VMathOp = CFO.VMathOp;
-const VCmpOp = CFO.VCmpOp;
-const FMode = CFO.FMode;
+const VMathOp = X86Asm.VMathOp;
+const VCmpOp = X86Asm.VCmpOp;
+const FMode = X86Asm.FMode;
 
 a: Allocator,
 // TODO: unmanage all these:
@@ -102,7 +102,7 @@ pub const EMPTY: Inst = .{ .tag = .empty, .op1 = 0, .op2 = 0 };
 // really 14 usable, but let's keep simple by not renumbering ipregs
 pub const n_ipreg = 16;
 
-// erase(xregs: [N]CFO.IPReg) [N]IPReg
+// erase(xregs: [N]X86Asm.IPReg) [N]IPReg
 pub fn erase(xregs: anytype) [xregs.len]IPReg {
     var r: [xregs.len]IPReg = undefined;
     for (xregs, 0..) |x, i| {
@@ -111,8 +111,8 @@ pub fn erase(xregs: anytype) [xregs.len]IPReg {
     return r;
 }
 
-pub const X86_64ABI = struct {
-    const Reg = CFO.IPReg;
+pub const X86ABI = struct {
+    const Reg = X86Asm.IPReg;
     // Args: used used both for incoming args and nested calls (including syscalls)
     pub const argregs = erase([6]Reg{ .rdi, .rsi, .rdx, .rcx, .r8, .r9 });
     pub const ret_reg: IPReg = Reg.rax.into();
@@ -455,7 +455,7 @@ pub const IntBinOp = enum(u6) {
         };
     }
 
-    pub fn asAOP(self: IntBinOp) ?CFO.AOp {
+    pub fn asAOP(self: IntBinOp) ?X86Asm.AOp {
         return switch (self) {
             .add => .add,
             .sub => .sub,
@@ -466,7 +466,7 @@ pub const IntBinOp = enum(u6) {
         };
     }
 
-    pub fn asShift(self: IntBinOp) ?CFO.ShiftOp {
+    pub fn asShift(self: IntBinOp) ?X86Asm.ShiftOp {
         return switch (self) {
             .shl => .hl,
             .sar => .ar,
@@ -502,7 +502,7 @@ pub const IntCond = enum(u6) {
     b, // beloved: unsigned less than
     nb,
 
-    pub fn asCFOCond(self: IntCond) ?CFO.Cond {
+    pub fn asX86Cond(self: IntCond) ?X86Asm.Cond {
         return switch (self) {
             .eq => .e,
             .neq => .ne,

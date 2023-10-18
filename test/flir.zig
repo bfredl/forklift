@@ -1,6 +1,6 @@
 const forklift = @import("forklift");
 const FLIR = forklift.FLIR;
-const CFO = forklift.CFO;
+const CodeBuffer = forklift.CodeBuffer;
 const Parser = forklift.Parser;
 const print = std.debug.print;
 
@@ -9,26 +9,26 @@ const os = std.os;
 
 const test_allocator = std.testing.allocator;
 
-pub fn parse_test(ir: []const u8) !CFO {
+pub fn parse_test(ir: []const u8) !CodeBuffer {
     var res = try parse_multi(ir);
     if (res.objs.count() != 1) {
         return error.ExpectedOneFunction;
     }
     res.objs.deinit();
-    return res.cfo;
+    return res.code;
 }
 
 const Res = struct {
-    cfo: CFO,
+    code: CodeBuffer,
     objs: std.StringHashMap(u32),
 
     pub fn get_ptr(self: *Res, name: []const u8, comptime T: type) !T {
         const addr = self.objs.get(name) orelse return error.FAILURE;
-        return self.cfo.get_ptr(addr, T);
+        return self.code.get_ptr(addr, T);
     }
 
     pub fn deinit(self: *Res) void {
-        self.cfo.deinit();
+        self.code.deinit();
         self.objs.deinit();
     }
 };
@@ -43,7 +43,7 @@ pub fn parse_multi_dbg(ir: []const u8) !Res {
 
 pub fn parse_multi_impl(ir: []const u8, dbg: bool) !Res {
     var parser = try Parser.init(ir, test_allocator);
-    var cfo = try CFO.init(test_allocator);
+    var cfo = try CodeBuffer.init(test_allocator);
     errdefer parser.deinit();
     errdefer cfo.deinit();
     parser.parse(&cfo, dbg) catch |e| {
@@ -51,7 +51,7 @@ pub fn parse_multi_impl(ir: []const u8, dbg: bool) !Res {
         return e;
     };
     try cfo.finalize();
-    return Res{ .cfo = cfo, .objs = parser.to_map() };
+    return Res{ .code = cfo, .objs = parser.to_map() };
 }
 
 pub fn expect(comptime T: type, x: T, y: T) !void {
@@ -210,7 +210,7 @@ test "diamond cfg" {
 
     try self.ret(end, v);
 
-    try self.test_analysis(FLIR.X86_64ABI, true);
+    try self.test_analysis(FLIR.X86ABI, true);
 }
 
 test "maybe_split" {
@@ -233,8 +233,8 @@ test "maybe_split" {
     const pos = 1; // TODO: get("%c")
     const new_pos = try self.maybe_split(pos);
     try std.testing.expectEqual(self.iref(new_pos).?.tag, .empty);
-    try self.test_analysis(FLIR.X86_64ABI, true);
-    var cfo = try CFO.init(test_allocator);
+    try self.test_analysis(FLIR.X86ABI, true);
+    var cfo = try CodeBuffer.init(test_allocator);
     defer cfo.deinit();
     _ = try forklift.codegen_x86_64(self, &cfo, false);
     try cfo.finalize();

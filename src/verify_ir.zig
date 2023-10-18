@@ -3,7 +3,7 @@ const Tag = FLIR.Tag;
 const NoRef = FLIR.NoRef;
 const uv = FLIR.uv;
 
-const CFO = @import("./CFO.zig");
+const X86Asm = @import("./X86Asm.zig");
 
 const std = @import("std");
 const mem = std.mem;
@@ -206,7 +206,7 @@ pub fn print_blk(self: *FLIR, firstblk: u16) void {
         } else if (i.tag == .ibinop) {
             print(".{s}", .{@tagName(@as(FLIR.IntBinOp, @enumFromInt(i.spec)))});
         } else if (i.tag == .icmp) {
-            print(".{s}", .{@tagName(@as(CFO.Cond, @enumFromInt(i.spec)))});
+            print(".{s}", .{@tagName(@as(X86Asm.Cond, @enumFromInt(i.spec)))});
         } else if (i.tag == .putphi) {
             print(" %{} <-", .{i.op2});
         }
@@ -231,11 +231,11 @@ pub fn print_blk(self: *FLIR, firstblk: u16) void {
         if (i.tag == .putphi) {
             if (self.ipreg(i.op2)) |reg| {
                 const regsrc = self.ipreg(i.op1);
-                const tag = @tagName(CFO.IPReg.from(reg));
+                const tag = @tagName(X86Asm.IPReg.from(reg));
                 if (regsrc == null or regsrc == reg) {
                     print(" [{s}] ", .{tag});
                 } else {
-                    print(" [{s} <- {s}] ", .{ tag, @tagName(CFO.IPReg.from(regsrc.?)) });
+                    print(" [{s} <- {s}] ", .{ tag, @tagName(X86Asm.IPReg.from(regsrc.?)) });
                 }
             }
         }
@@ -261,7 +261,7 @@ fn print_mcval(i: FLIR.Inst) void {
     }
     switch (i.mckind) {
         .frameslot => print(" [rbp-8*{}]", .{i.mcidx}),
-        .ipreg => print(" ${s}", .{@tagName(@as(CFO.IPReg, @enumFromInt(i.mcidx)))}),
+        .ipreg => print(" ${s}", .{@tagName(@as(X86Asm.IPReg, @enumFromInt(i.mcidx)))}),
         .vfreg => print(" $ymm{}", .{i.mcidx}),
         else => {
             if (i.tag == .load or i.tag == .phi or i.tag == .arg) {

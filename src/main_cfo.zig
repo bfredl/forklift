@@ -1,13 +1,14 @@
 const std = @import("std");
 const print = std.debug.print;
-const CFO = @import("./CFO.zig");
+const CodeBuffer = @import("./CodeBuffer.zig");
+const X86Asm = @import("./X86Asm.zig");
 const OSHA = @import("./OSHA.zig");
 const parse = @import("./parse.zig");
 const FLIR = @import("./Old_FLIR.zig");
 
 const page_allocator = std.heap.page_allocator;
 
-var the_cfo: ?*CFO = null;
+var the_cfo: ?*CodeBuffer = null;
 pub fn addr_lookup(addr: usize) usize {
     return if (the_cfo) |c| c.lookup(addr) else addr;
 }
@@ -25,7 +26,7 @@ pub fn main() !void {
         arr2[i] = 100000.0 * @as(f64, @floatFromInt(i));
     }
 
-    const IPReg = CFO.IPReg;
+    const IPReg = X86Asm.IPReg;
     const idx: IPReg = .rcx;
     const arg1: IPReg = .rdi;
     const arg2: IPReg = .rsi;
@@ -35,19 +36,21 @@ pub fn main() !void {
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
-    var cfo = try CFO.init(allocator);
-    defer cfo.deinit();
+    var code = try CodeBuffer.init(allocator);
+    defer code.deinit();
+
+    const cfo = X86Asm{ .code = code };
 
     const start = cfo.get_target();
     try cfo.enter();
     try cfo.arit(.xor, idx, idx);
     const loop = cfo.get_target();
-    // try cfo.vmovurm(.sd, v0, CFO.a(idx));
-    try cfo.vmovurm(.sd, v0, CFO.qi(arg1, idx));
-    //try cfo.vmathfrm(.add, .sd, v0, v0, CFO.qi(arg2, idx));
-    try cfo.vmovurm(.sd, v1, CFO.qi(arg2, idx));
+    // try cfo.vmovurm(.sd, v0, X86Asm.a(idx));
+    try cfo.vmovurm(.sd, v0, X86Asm.qi(arg1, idx));
+    //try cfo.vmathfrm(.add, .sd, v0, v0, X86Asm.qi(arg2, idx));
+    try cfo.vmovurm(.sd, v1, X86Asm.qi(arg2, idx));
     try cfo.vmathf(.add, .sd, v0, v0, v1);
-    try cfo.vmovumr(.sd, CFO.qi(arg1, idx), v0);
+    try cfo.vmovumr(.sd, X86Asm.qi(arg1, idx), v0);
     try cfo.aritri(.add, idx, 1);
     try cfo.arit(.cmp, idx, arg3);
     try cfo.jbck(.l, loop);
@@ -59,9 +62,9 @@ pub fn main() !void {
     try cfo.enter();
     try cfo.arit(.xor, idx, idx);
     const loop2 = cfo.get_target();
-    try cfo.vmovarm(.pd4, v0, CFO.qi(arg1, idx));
-    try cfo.vmathfrm(.add, .pd4, v0, v0, CFO.qi(arg2, idx));
-    try cfo.vmovamr(.pd4, CFO.qi(arg1, idx), v0);
+    try cfo.vmovarm(.pd4, v0, X86Asm.qi(arg1, idx));
+    try cfo.vmathfrm(.add, .pd4, v0, v0, X86Asm.qi(arg2, idx));
+    try cfo.vmovamr(.pd4, X86Asm.qi(arg1, idx), v0);
     try cfo.aritri(.add, idx, 4);
     try cfo.arit(.cmp, idx, arg3);
     try cfo.jbck(.l, loop2);
@@ -73,12 +76,12 @@ pub fn main() !void {
     try cfo.enter();
     try cfo.arit(.xor, idx, idx);
     const loop3 = cfo.get_target();
-    try cfo.vmovarm(.pd4, v0, CFO.qi(arg1, idx));
-    try cfo.vmovarm(.pd4, v1, CFO.qi(arg1, idx).o(32));
-    try cfo.vmathfrm(.add, .pd4, v0, v0, CFO.qi(arg2, idx));
-    try cfo.vmathfrm(.add, .pd4, v1, v1, CFO.qi(arg2, idx).o(32));
-    try cfo.vmovamr(.pd4, CFO.qi(arg1, idx), v0);
-    try cfo.vmovamr(.pd4, CFO.qi(arg1, idx).o(32), v1);
+    try cfo.vmovarm(.pd4, v0, X86Asm.qi(arg1, idx));
+    try cfo.vmovarm(.pd4, v1, X86Asm.qi(arg1, idx).o(32));
+    try cfo.vmathfrm(.add, .pd4, v0, v0, X86Asm.qi(arg2, idx));
+    try cfo.vmathfrm(.add, .pd4, v1, v1, X86Asm.qi(arg2, idx).o(32));
+    try cfo.vmovamr(.pd4, X86Asm.qi(arg1, idx), v0);
+    try cfo.vmovamr(.pd4, X86Asm.qi(arg1, idx).o(32), v1);
     try cfo.aritri(.add, idx, 8);
     try cfo.arit(.cmp, idx, arg3);
     try cfo.jbck(.l, loop3);

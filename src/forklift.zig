@@ -1,4 +1,5 @@
-pub const CFO = @import("./CFO.zig");
+pub const CodeBuffer = @import("./CodeBuffer.zig");
+pub const X86Asm = @import("./X86Asm.zig");
 pub const FLIR = @import("./FLIR.zig");
 
 // TODO: crufty!

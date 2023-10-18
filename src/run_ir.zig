@@ -1,5 +1,6 @@
 const FLIR = @import("./FLIR.zig");
-const CFO = @import("./CFO.zig");
+const CodeBuffer = @import("./CodeBuffer.zig");
+const X86Asm = @import("./X86Asm.zig");
 const print = std.debug.print;
 const ForkScript = @import("./ForkScript.zig");
 
@@ -91,23 +92,27 @@ pub fn main() !void {
     }
 
     if (options.dbg_raw_ir) ir.debug_print();
-    try ir.test_analysis(FLIR.X86_64ABI, true);
+    try ir.test_analysis(FLIR.X86ABI, true);
     if (options.dbg_analysed_ir) ir.debug_print();
 
     if (options.dbg_vregs) ir.print_intervals();
 
-    var cfo = try CFO.init(allocator);
+    var code = try CodeBuffer.init(allocator);
+    // TODO: BULL
+    var cfo = X86Asm{ .code = &code };
 
     // emit trap instruction to invoke debugger
-    if (options.dbg_trap) try cfo.trap();
+    if (options.dbg_trap) {
+        try cfo.trap();
+    }
 
-    _ = try @import("./codegen.zig").codegen(ir, &cfo, options.dbg_disasm);
-    try cfo.finalize();
+    _ = try @import("./codegen.zig").codegen(ir, &code, options.dbg_disasm);
+    try code.finalize();
     if (options.dbg_disasm) try cfo.dbg_nasm(allocator);
 
     if (inbuf) |b| {
         const SFunc = *const fn (arg1: [*]u8, arg2: usize) callconv(.C) usize;
-        const fun = cfo.get_ptr(0, SFunc);
+        const fun = code.get_ptr(0, SFunc);
         print("res: {}\n", .{fun(b.ptr, b.len)});
     }
 }

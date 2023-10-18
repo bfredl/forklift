@@ -15,7 +15,8 @@ bpf_module: ?*BPFModule,
 const FLIR = @import("./FLIR.zig");
 const codegen = @import("./codegen.zig");
 const codegen_bpf = @import("./codegen_bpf.zig").codegen;
-const CFO = @import("./CFO.zig");
+const CodeBuffer = @import("./CodeBuffer.zig");
+const X86Asm = @import("./X86Asm.zig");
 const BPF = std.os.linux.BPF;
 const common = @import("./common.zig");
 const Self = @This();
@@ -89,7 +90,7 @@ pub fn parse_one_func(self: *Self) ![]const u8 {
     return name;
 }
 
-pub fn parse(self: *Self, cfo: *CFO, dbg: bool) !void {
+pub fn parse(self: *Self, cfo: *CodeBuffer, dbg: bool) !void {
     while (self.t.nonws()) |_| {
         const kw = self.t.keyword() orelse return error.ParseError;
         if (!mem.eql(u8, kw, "func")) {
@@ -106,7 +107,7 @@ pub fn parse(self: *Self, cfo: *CFO, dbg: bool) !void {
         try self.t.lbrk();
         try self.parse_func_body();
 
-        try self.ir.test_analysis(FLIR.X86_64ABI, true);
+        try self.ir.test_analysis(FLIR.X86ABI, true);
         if (dbg) self.ir.debug_print();
         item.value_ptr.* = try codegen.codegen(&self.ir, cfo, false);
         self.ir.reinit();
@@ -309,7 +310,7 @@ pub fn typename(self: *Self) ParseError!?FLIR.SpecType {
     const kw = self.t.keyword() orelse return null;
     if (meta.stringToEnum(common.ISize, kw)) |size| {
         return .{ .intptr = size };
-    } else if (meta.stringToEnum(CFO.FMode, kw)) |mode| {
+    } else if (meta.stringToEnum(X86Asm.FMode, kw)) |mode| {
         return .{ .avxval = mode };
     } else {
         return error.ParseError;
@@ -338,13 +339,13 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
         } else if (mem.eql(u8, kw, "vop")) {
             // TODO: make this optional, if both op1/op2 share a fmode
             const modename = try require(self.t.keyword(), "fmode");
-            const fmode = meta.stringToEnum(CFO.FMode, modename) orelse {
+            const fmode = meta.stringToEnum(X86Asm.FMode, modename) orelse {
                 print("eioouuu: '{s}'\n", .{modename});
                 return error.ParseError;
             };
             const opname = try require(self.t.keyword(), "vop");
-            const mathop = meta.stringToEnum(CFO.VMathOp, opname);
-            const cmpop = if (mathop == null) meta.stringToEnum(CFO.VCmpOp, opname) else null;
+            const mathop = meta.stringToEnum(X86Asm.VMathOp, opname);
+            const cmpop = if (mathop == null) meta.stringToEnum(X86Asm.VCmpOp, opname) else null;
             if (mathop == null and cmpop == null) {
                 print("aeue-r: '{s}'\n", .{opname});
                 return error.ParseError;
