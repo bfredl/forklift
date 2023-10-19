@@ -1,4 +1,3 @@
-- port "delete unused critical node" from Eiri
 - calls:
   - vregs+temps now have for all clobbered regs, not just "overlaps a call" bit but we need to use it
    - for syscalls: much fewer clobbers
@@ -8,9 +7,6 @@
   - block of putphi instructions
   - block of callarg instructions
   - block of arg instructions (we shouldn't need to do swaps here, but why not support to)
-
-- make FLIR.zig ABI general. likely stub out some AArch64 stuff already to expose x86-isms
-  (BPF is much limited in what code we actually will compile with iti)
 
 - regalloc:
  - implement dummy "spill everything!" allocator just to test spill code in isolation

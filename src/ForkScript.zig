@@ -1,3 +1,8 @@
+// ForkScript. Not a "real" language, more like a high-level script for
+// constructing IR from a structured form for the purpose of testing FLIR.
+// No "semantics" are being done here and type errors will be caught (or
+// brilliantly ignored) by FLIR analyis later.
+
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const FLIR = @import("./FLIR.zig");

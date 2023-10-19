@@ -141,6 +141,9 @@ pub const BPF_ABI = struct {
     const reg_order: [10]IPReg = call_unsaved ++ callee_saved;
 };
 
+// TODO: these blocks are likely too small, maybe header+15 instructions
+// in 256-byte blocks would be better, although it makes many small nodes worse,
+// maybe a few instructions inline in Node for a tiny block.
 pub const BLK_SIZE = 4;
 pub const BLK_SHIFT = 2;
 pub const Block = struct {
