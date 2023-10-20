@@ -1,6 +1,7 @@
 const forklift = @import("forklift");
 const FLIR = forklift.FLIR;
 const CodeBuffer = forklift.CodeBuffer;
+const CFOModule = forklift.CFOModule;
 const Parser = forklift.Parser;
 const print = std.debug.print;
 
@@ -14,44 +15,30 @@ pub fn parse_test(ir: []const u8) !CodeBuffer {
     if (res.objs.count() != 1) {
         return error.ExpectedOneFunction;
     }
+    // TODO: this is a bit funky..
     res.objs.deinit();
     return res.code;
 }
 
-const Res = struct {
-    code: CodeBuffer,
-    objs: std.StringHashMap(u32),
-
-    pub fn get_ptr(self: *Res, name: []const u8, comptime T: type) !T {
-        const addr = self.objs.get(name) orelse return error.FAILURE;
-        return self.code.get_ptr(addr, T);
-    }
-
-    pub fn deinit(self: *Res) void {
-        self.code.deinit();
-        self.objs.deinit();
-    }
-};
-
-pub fn parse_multi(ir: []const u8) !Res {
+pub fn parse_multi(ir: []const u8) !CFOModule {
     return parse_multi_impl(ir, false);
 }
 
-pub fn parse_multi_dbg(ir: []const u8) !Res {
+pub fn parse_multi_dbg(ir: []const u8) !CFOModule {
     return parse_multi_impl(ir, true);
 }
 
-pub fn parse_multi_impl(ir: []const u8, dbg: bool) !Res {
-    var parser = try Parser.init(ir, test_allocator);
-    var cfo = try CodeBuffer.init(test_allocator);
-    errdefer parser.deinit();
-    errdefer cfo.deinit();
-    parser.parse(&cfo, dbg) catch |e| {
+pub fn parse_multi_impl(ir: []const u8, dbg: bool) !CFOModule {
+    var mod = try CFOModule.init(test_allocator);
+    var parser = try Parser.init(ir, test_allocator, &mod);
+    defer parser.deinit();
+    errdefer mod.deinit_mem();
+    parser.parse(dbg, false) catch |e| {
         parser.t.fail_pos();
         return e;
     };
-    try cfo.finalize();
-    return Res{ .code = cfo, .objs = parser.to_map() };
+    try mod.code.finalize();
+    return mod;
 }
 
 pub fn expect(comptime T: type, x: T, y: T) !void {
@@ -214,6 +201,8 @@ test "diamond cfg" {
 }
 
 test "maybe_split" {
+    var mod = try CFOModule.init(test_allocator);
+    defer mod.deinit_mem();
     var parser = try Parser.init(
         \\func returner
         \\  %x = arg
@@ -221,14 +210,15 @@ test "maybe_split" {
         \\  %y = add %x %c
         \\  ret %y
         \\end
-    , test_allocator);
+    , test_allocator, &mod);
     defer parser.deinit();
-    _ = parser.parse_one_func() catch |e| {
+    _ = parser.parse(false, true) catch |e| {
         parser.t.fail_pos();
         return e;
     };
 
-    const self = &parser.ir; // FkERY
+    // TODO: should be mod.ir I guess??
+    const self = &parser.ir;
 
     const pos = 1; // TODO: get("%c")
     const new_pos = try self.maybe_split(pos);
@@ -402,10 +392,10 @@ test "multi function" {
         \\  ret %z
         \\end
     );
-    defer res.deinit();
+    defer res.deinit_mem();
 
-    const fun1 = try res.get_ptr("adder", BFunc);
-    const fun2 = try res.get_ptr("multiplier", BFunc);
+    const fun1 = try res.get_func_ptr("adder", BFunc);
+    const fun2 = try res.get_func_ptr("multiplier", BFunc);
     try expect(usize, 210, fun1(100, 10));
     try expect(usize, 1000, fun2(100, 10));
 }
@@ -428,12 +418,12 @@ test "call near" {
         \\  ret %summa
         \\end
     );
-    defer res.deinit();
+    defer res.deinit_mem();
 
-    const fun1 = try res.get_ptr("kuben", AFunc);
+    const fun1 = try res.get_func_ptr("kuben", AFunc);
     try expect(usize, 1000000, fun1(100));
 
-    const fun2 = try res.get_ptr("twokube", BFunc);
+    const fun2 = try res.get_func_ptr("twokube", BFunc);
     try expect(usize, 1008, fun2(2, 10));
 }
 
@@ -455,11 +445,11 @@ test "swap simple" {
         \\  ret %ad
         \\end
     );
-    defer res.deinit();
+    defer res.deinit_mem();
 
-    const fun1 = try res.get_ptr("antidiff", BFunc);
+    const fun1 = try res.get_func_ptr("antidiff", BFunc);
     try expect(usize, 30, fun1(70, 100));
 
-    const fun2 = try res.get_ptr("diff", BFunc);
+    const fun2 = try res.get_func_ptr("diff", BFunc);
     try expect(usize, 40, fun2(50, 10));
 }

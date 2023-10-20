@@ -30,6 +30,7 @@ pub var options = struct {
     dbg_disasm: bool = false,
     dbg_vregs: bool = false,
     dbg_trap: bool = false,
+    dbg_disasm_ir: bool = false,
 }{};
 
 pub fn main() !void {
@@ -72,7 +73,8 @@ pub fn main() !void {
     const inbuf = if (argv.len > nextarg) try readall(allocator, mem.span(argv[nextarg])) else null;
     defer if (inbuf) |b| allocator.free(b);
 
-    var parser = try Parser.init(buf, allocator);
+    var module = try @import("./CFOModule.zig").init(allocator);
+    var parser = try Parser.init(buf, allocator, &module);
     // TODO: this is a little backwards pwnership but will do for now
     // TODO: won't do with multiple functions!
     const ir = &parser.ir;
@@ -84,7 +86,7 @@ pub fn main() !void {
         }
     } else {
         // try parser.fd_objs.put("count", map_count);
-        _ = parser.parse_one_func() catch |e| {
+        parser.parse(false, true) catch |e| {
             parser.t.fail_pos();
             print("(byte {} of {})\n", .{ parser.t.pos, buf.len });
             return e;

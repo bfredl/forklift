@@ -13,9 +13,8 @@ const Allocator = mem.Allocator;
 const fd_t = linux.fd_t;
 const IPMCVal = FLIR.IPMCVal;
 
-const bpf_rt = @import("./bpf_rt.zig");
-const Code = bpf_rt.Code;
-const BPFModule = bpf_rt.BPFModule;
+const CFOModule = @import("./CFOModule.zig");
+const BPFCode = CFOModule.BPFCode;
 
 const common = @import("./common.zig");
 fn r(reg: IPReg) Reg {
@@ -59,16 +58,16 @@ fn get_eaddr(self: *FLIR, i: FLIR.Inst, comptime may_lea: bool) !EAddr {
     }
 }
 
-pub fn get_target(code: *Code) u32 {
+pub fn get_target(code: *BPFCode) u32 {
     return @intCast(code.items.len);
 }
 
-pub fn set_target(code: *Code, pos: u32) void {
+pub fn set_target(code: *BPFCode, pos: u32) void {
     var off = get_target(code) - (pos + 1);
     code.items[pos].off = @intCast(off);
 }
 
-pub fn put(code: *Code, insn: Insn) !void {
+pub fn put(code: *BPFCode, insn: Insn) !void {
     if (@TypeOf(options) != @TypeOf(null) and options.dbg_disasm_ir) {
         print("    ", .{});
         // bpf.dump_ins(writer, insn, code.items.len);
@@ -80,7 +79,7 @@ pub fn slotoff(slotid: anytype) i16 {
     return -8 * (1 + @as(i16, @intCast(slotid)));
 }
 
-pub fn ld_map_fd(code: *Code, reg: IPReg, map_fd: fd_t, spec: u8) !void {
+pub fn ld_map_fd(code: *BPFCode, reg: IPReg, map_fd: fd_t, spec: u8) !void {
     var insn = I.ld_map_fd1(r(reg), map_fd);
     if (spec == 0) {
         // ok
@@ -94,19 +93,19 @@ pub fn ld_map_fd(code: *Code, reg: IPReg, map_fd: fd_t, spec: u8) !void {
     try put(code, I.ld_map_fd2(map_fd));
 }
 
-pub fn jeq(code: *Code, src: IPReg, dst: anytype) !u32 {
+pub fn jeq(code: *BPFCode, src: IPReg, dst: anytype) !u32 {
     var pos = get_target(code);
     try put(code, I.jeq(src, dst, -0x7FFF));
     return pos;
 }
 
-fn mov(code: *Code, dst: IPReg, src: anytype) !void {
+fn mov(code: *BPFCode, dst: IPReg, src: anytype) !void {
     try put(code, I.mov(r(dst), src));
 }
 
 const r0: common.IPReg = @enumFromInt(0);
 
-fn regmovmc(code: *Code, dst: IPReg, src: IPMCVal) !void {
+fn regmovmc(code: *BPFCode, dst: IPReg, src: IPMCVal) !void {
     switch (src) {
         .frameslot => |f| try put(code, I.ldx(.double_word, r(dst), .r10, slotoff(f))),
         .ipreg => |reg| if (dst != reg) try mov(code, dst, r(reg)),
@@ -119,7 +118,7 @@ fn regmovmc(code: *Code, dst: IPReg, src: IPMCVal) !void {
     // },
 }
 
-fn regjmpmc(code: *Code, op: Insn.JmpOp, dst: IPReg, src: IPMCVal) !u32 {
+fn regjmpmc(code: *BPFCode, op: Insn.JmpOp, dst: IPReg, src: IPMCVal) !u32 {
     _ = dst;
     _ = op;
     const pos = get_target(code);
@@ -133,7 +132,7 @@ fn regjmpmc(code: *Code, op: Insn.JmpOp, dst: IPReg, src: IPMCVal) !u32 {
     return pos;
 }
 
-fn regaritmc(code: *Code, op: Insn.AluOp, dst: IPReg, src: IPMCVal) !void {
+fn regaritmc(code: *BPFCode, op: Insn.AluOp, dst: IPReg, src: IPMCVal) !void {
     switch (src) {
         .frameslot => return error.FLIRError,
         .ipreg => |reg| try put(code, I.alu(64, op, r(dst), r(reg))),
@@ -142,7 +141,7 @@ fn regaritmc(code: *Code, op: Insn.AluOp, dst: IPReg, src: IPMCVal) !void {
     }
 }
 
-fn mcmovreg(code: *Code, dst: IPMCVal, src: IPReg) !void {
+fn mcmovreg(code: *BPFCode, dst: IPMCVal, src: IPReg) !void {
     switch (dst) {
         .frameslot => |f| try put(code, I.stx(.double_word, .r10, slotoff(f), r(src))),
         .ipreg => |reg| if (reg != src) try mov(code, reg, r(src)),
@@ -150,7 +149,7 @@ fn mcmovreg(code: *Code, dst: IPMCVal, src: IPReg) !void {
     }
 }
 
-fn mcmovi(code: *Code, i: Inst) !void {
+fn mcmovi(code: *BPFCode, i: Inst) !void {
     switch (i.mckind) {
         .frameslot => {
             // TODO: just store??
@@ -176,7 +175,7 @@ fn bpf_size(size: common.ISize) Insn.Size {
     };
 }
 
-fn addrmovmc(code: *Code, dst: EAddr, src: IPMCVal, size: common.ISize) !void {
+fn addrmovmc(code: *BPFCode, dst: EAddr, src: IPMCVal, size: common.ISize) !void {
     const bsize = bpf_size(size);
     switch (src) {
         .ipreg => |reg| try put(code, I.stx(bsize, @enumFromInt(dst.reg), dst.off, r(reg))),
@@ -185,11 +184,11 @@ fn addrmovmc(code: *Code, dst: EAddr, src: IPMCVal, size: common.ISize) !void {
     }
 }
 
-fn regmovaddr(code: *Code, dst: IPReg, src: EAddr, size: common.ISize) !void {
+fn regmovaddr(code: *BPFCode, dst: IPReg, src: EAddr, size: common.ISize) !void {
     try put(code, I.ldx(bpf_size(size), r(dst), @enumFromInt(src.reg), src.off));
 }
 
-fn movmcs(code: *Code, dst: IPMCVal, src: IPMCVal) !void {
+fn movmcs(code: *BPFCode, dst: IPMCVal, src: IPMCVal) !void {
     // sadge
     // if (dst.mckind == src.mckind and dst.mcidx == src.mcidx) {
     //     return;
@@ -203,7 +202,7 @@ fn movmcs(code: *Code, dst: IPMCVal, src: IPMCVal) !void {
     }
 }
 
-// pub fn makejmp(self: *FLIR, code: *Code, op: ?Insn.JmpOp, ni: u16, si: u1, labels: []u32, targets: [][2]u32) !void {
+// pub fn makejmp(self: *FLIR, code: *BPFCode, op: ?Insn.JmpOp, ni: u16, si: u1, labels: []u32, targets: [][2]u32) !void {
 //     const succ = self.n.items[ni].s[si];
 //     // NOTE: we assume blk 0 always has the prologue (push rbp; mov rbp, rsp)
 //     // at least, so that even if blk 0 is empty, blk 1 has target larger than 0x00
@@ -215,7 +214,7 @@ fn movmcs(code: *Code, dst: IPMCVal, src: IPMCVal) !void {
 //     }
 // }
 
-pub fn codegen(self: *FLIR, mod: *BPFModule) !u32 {
+pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
     const code = &mod.bpf_code;
     var labels = try self.a.alloc(u32, self.n.items.len);
     var targets = try self.a.alloc([2]u32, self.n.items.len);

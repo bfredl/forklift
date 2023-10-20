@@ -1,17 +1,3 @@
-t: Tokenizer,
-
-objs: std.StringHashMap(u32),
-allocator: Allocator,
-
-// reset for each function; reused just to keep allocated buffers
-ir: FLIR,
-
-// tricky: ideally we want an unified module format, and an unified entry point
-// BPF is an outlier as code is not a sequence of bytes, but maybe it
-// doesn't matter. Because maybe a flirmodule should be able to
-// consist of both native and bpf code???
-bpf_module: ?*BPFModule,
-
 const FLIR = @import("./FLIR.zig");
 const codegen = @import("./codegen.zig");
 const codegen_bpf = @import("./codegen_bpf.zig").codegen;
@@ -27,23 +13,29 @@ const ParseError = error{ ParseError, OutOfMemory, FLIRError };
 const meta = std.meta;
 
 const Allocator = mem.Allocator;
-const BPFModule = bpf_rt.BPFModule;
-const bpf_rt = @import("./bpf_rt.zig");
+const CFOModule = @import("./CFOModule.zig");
 
 const Tokenizer = @import("./Tokenizer.zig");
 
-pub fn init(str: []const u8, allocator: Allocator) !Self {
+t: Tokenizer,
+
+allocator: Allocator,
+
+// reset for each function; reused just to keep allocated buffers
+ir: FLIR,
+
+mod: *CFOModule,
+
+pub fn init(str: []const u8, allocator: Allocator, module: *CFOModule) !Self {
     return .{
         .t = .{ .str = str },
         .allocator = allocator,
-        .objs = std.StringHashMap(u32).init(allocator),
-        .bpf_module = null,
+        .mod = module,
         .ir = try FLIR.init(4, allocator),
     };
 }
 
 pub fn deinit(self: *Self) void {
-    self.objs.deinit();
     self.ir.deinit();
 }
 
@@ -78,50 +70,30 @@ fn require(val: anytype, what: []const u8) ParseError!@TypeOf(val.?) {
     };
 }
 
-pub fn parse_one_func(self: *Self) ![]const u8 {
-    const kw = self.t.keyword() orelse return error.ParseError;
-    if (!mem.eql(u8, kw, "func")) {
-        return error.ParseError;
-    }
-
-    const name = try require(self.t.keyword(), "name");
-    try self.t.lbrk();
-    try self.parse_func_body();
-    return name;
-}
-
-pub fn parse(self: *Self, cfo: *CodeBuffer, dbg: bool) !void {
-    while (self.t.nonws()) |_| {
-        const kw = self.t.keyword() orelse return error.ParseError;
-        if (!mem.eql(u8, kw, "func")) {
-            return error.ParseError;
-        }
-        const name = try require(self.t.keyword(), "name");
-
-        const item = try self.objs.getOrPut(name);
-        if (item.found_existing) {
-            print("duplicate function {s}!\n", .{name});
-            return error.ParseError;
-        }
-
-        try self.t.lbrk();
-        try self.parse_func_body();
-
-        try self.ir.test_analysis(FLIR.X86ABI, true);
-        if (dbg) self.ir.debug_print();
-        item.value_ptr.* = try codegen.codegen(&self.ir, cfo, false);
-        self.ir.reinit();
-    }
-}
-
-pub fn parse_bpf(self: *Self, dbg: bool) !void {
-    const mod = self.bpf_module orelse return error.WHAAAA;
+pub fn parse(self: *Self, dbg: bool, one: bool) !void {
+    const mod = self.mod;
     // small init size on purpose: must allow reallocations in place
     var flir = try FLIR.init(4, self.allocator);
     defer flir.deinit();
     while (self.t.nonws()) |_| {
         const kw = self.t.keyword() orelse return;
         if (mem.eql(u8, kw, "func")) {
+            const name = try require(self.t.keyword(), "name");
+
+            const obj_slot = try nonexisting(&mod.objs, name, "object");
+
+            try self.t.lbrk();
+            try self.parse_func_body();
+            if (one) {
+                return;
+            }
+
+            try self.ir.test_analysis(FLIR.X86ABI, true);
+            if (dbg) self.ir.debug_print();
+            const target = try codegen.codegen(&self.ir, &mod.code, false);
+            obj_slot.* = .{ .func = .{ .code_start = target } };
+            self.ir.reinit();
+        } else if (mem.eql(u8, kw, "bpf_func")) {
             const name = try require(self.t.keyword(), "name");
             const obj_slot = try nonexisting(&mod.objs, name, "object");
             try self.t.lbrk();
@@ -132,9 +104,9 @@ pub fn parse_bpf(self: *Self, dbg: bool) !void {
             const offset = try codegen_bpf(&self.ir, mod);
             const len = mod.bpf_code.items.len - offset;
 
-            obj_slot.* = .{ .prog = .{ .fd = -1, .code_start = @intCast(offset), .code_len = @intCast(len) } };
+            obj_slot.* = .{ .bpf_prog = .{ .fd = -1, .code_start = @intCast(offset), .code_len = @intCast(len) } };
             self.ir.reinit();
-        } else if (mem.eql(u8, kw, "map")) {
+        } else if (mem.eql(u8, kw, "bpf_map")) {
             const name = try require(self.t.keyword(), "name");
             const obj_slot = try nonexisting(&mod.objs, name, "object");
             const kind = try require(try self.enumname(), "kind");
@@ -146,9 +118,14 @@ pub fn parse_bpf(self: *Self, dbg: bool) !void {
                 print("unknown map kind: '{s}'\n", .{kind});
                 return error.ParseError;
             };
-            obj_slot.* = .{ .map = .{ .fd = -1, .kind = map_kind, .key_size = key_size, .val_size = val_size, .n_entries = n_entries } };
+            obj_slot.* = .{ .bpf_map = .{ .fd = -1, .kind = map_kind, .key_size = key_size, .val_size = val_size, .n_entries = n_entries } };
             try self.t.lbrk();
+        } else {
+            return error.ParseError;
         }
+    }
+    if (one) {
+        return error.ParseError;
     }
 }
 
@@ -374,7 +351,7 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
             return try ir.call(f.curnode, .syscall, sysnum);
         } else if (mem.eql(u8, kw, "call")) {
             const name = try require(self.t.keyword(), "name");
-            const off = self.objs.get(name) orelse return error.ParseError;
+            const off = self.mod.get_func_off(name) orelse return error.ParseError;
 
             const constoff = try ir.const_uint(off);
             try self.parse_args(f);
@@ -402,8 +379,7 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
 
 fn get_bpf_map(self: *Self, is_value: bool, f: *Func) ParseError!u16 {
     const name = try require(self.t.keyword(), "map name");
-    const mod = self.bpf_module orelse return error.ParseError;
-    const id = mod.objs.getIndex(name) orelse return error.ParseError;
+    const id = self.mod.objs.getIndex(name) orelse return error.ParseError;
     return self.ir.bpf_load_map(f.curnode, @intCast(id), is_value);
 }
 

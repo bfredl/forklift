@@ -1,4 +1,4 @@
-const bpf_rt = @import("./bpf_rt.zig");
+const CFOModule = @import("./CFOModule.zig");
 const Parser = @import("./Parser.zig");
 const std = @import("std");
 
@@ -16,12 +16,12 @@ pub fn main() !void {
     var allocator = std.heap.GeneralPurposeAllocator(.{}){};
     const gpa = allocator.allocator();
 
-    var parser = try Parser.init(ir, gpa);
-    var mod = bpf_rt.BPFModule.init(gpa);
+    var mod = try CFOModule.init(gpa);
+    var parser = try Parser.init(ir, gpa, &mod);
     defer parser.deinit();
     defer mod.deinit_mem();
 
-    parser.parse_bpf(true) catch |e| {
+    parser.parse(true, false) catch |e| {
         parser.t.fail_pos();
         return e;
     };
