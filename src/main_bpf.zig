@@ -1,15 +1,9 @@
 const CFOModule = @import("./CFOModule.zig");
 const Parser = @import("./Parser.zig");
 const std = @import("std");
+const common = @import("./common.zig");
 
-pub var options = struct {
-    dbg_raw_ir: bool = false,
-    dbg_analysed_ir: bool = false,
-    dbg_disasm: bool = false,
-    dbg_vregs: bool = false,
-    dbg_trap: bool = false,
-    dbg_disasm_ir: bool = false,
-}{};
+pub var options: common.DebugOptions = .{};
 
 pub fn main() !void {
     const ir = "";

@@ -16,6 +16,8 @@ const IPMCVal = FLIR.IPMCVal;
 const CFOModule = @import("./CFOModule.zig");
 const BPFCode = CFOModule.BPFCode;
 
+const options = common.debug_options;
+
 const common = @import("./common.zig");
 fn r(reg: IPReg) Reg {
     return @enumFromInt(reg.id());
@@ -25,9 +27,6 @@ const ArrayList = std.ArrayList;
 
 const Insn = BPF.Insn;
 const I = Insn;
-
-const builtin = @import("builtin");
-const options = if (!builtin.is_test) &@import("root").options else null;
 
 const EAddr = struct {
     reg: u4,
@@ -68,7 +67,7 @@ pub fn set_target(code: *BPFCode, pos: u32) void {
 }
 
 pub fn put(code: *BPFCode, insn: Insn) !void {
-    if (@TypeOf(options) != @TypeOf(null) and options.dbg_disasm_ir) {
+    if (options.dbg_disasm_ir) {
         print("    ", .{});
         // bpf.dump_ins(writer, insn, code.items.len);
     }
@@ -258,7 +257,7 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
         while (it.next()) |item| {
             const i = item.i;
 
-            if (@TypeOf(options) != @TypeOf(null) and options.dbg_disasm_ir) {
+            if (options.dbg_disasm_ir) {
                 // FLIR.print_insn(FLIR.toref(blk, uv(ii)), i.*, color_map, &last_color);
                 print("guuuh\n", .{});
             }

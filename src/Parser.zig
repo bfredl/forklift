@@ -17,6 +17,8 @@ const CFOModule = @import("./CFOModule.zig");
 
 const Tokenizer = @import("./Tokenizer.zig");
 
+const options = common.debug_options;
+
 t: Tokenizer,
 
 allocator: Allocator,
@@ -82,14 +84,25 @@ pub fn parse(self: *Self, dbg: bool, one: bool) !void {
 
             const obj_slot = try nonexisting(&mod.objs, name, "object");
 
+            if (self.t.nonws() == '{') {
+                self.t.pos += 1;
+                try self.t.lbrk();
+                try @import("./CFOScript.zig").parse(&self.ir, &self.t, self.allocator);
+                try self.t.expect_char('}');
+                try self.t.lbrk();
+            }
+
             try self.t.lbrk();
             try self.parse_func_body();
             if (one) {
                 return;
             }
 
+            if (options.dbg_raw_ir) self.ir.debug_print();
             try self.ir.test_analysis(FLIR.X86ABI, true);
-            if (dbg) self.ir.debug_print();
+            if (options.dbg_analysed_ir) self.ir.debug_print();
+            if (options.dbg_vregs) self.ir.print_intervals();
+
             const target = try codegen.codegen(&self.ir, &mod.code, false);
             obj_slot.* = .{ .func = .{ .code_start = target } };
             self.ir.reinit();

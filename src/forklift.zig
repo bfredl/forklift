@@ -10,3 +10,6 @@ pub const Parser = @import("./Parser.zig");
 pub const bpf = @import("./bpf.zig");
 pub const dump_bpf = bpf.dump_bpf;
 pub const CFOModule = @import("./CFOModule.zig");
+
+const common = @import("./common.zig");
+pub const debug_options = common.debug_options;

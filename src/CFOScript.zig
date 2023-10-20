@@ -1,4 +1,4 @@
-// ForkScript. Not a "real" language, more like a high-level script for
+// CFOScript. Not a "real" language, more like a high-level script for
 // constructing IR from a structured form for the purpose of testing FLIR.
 // No "semantics" are being done here and type errors will be caught (or
 // brilliantly ignored) by FLIR analyis later.
@@ -312,11 +312,13 @@ fn do_parse(self: *Self) !bool {
     return did_ret;
 }
 
-pub fn parse(ir: *FLIR, str: []const u8, allocator: Allocator) !bool {
+pub fn parse(ir: *FLIR, t: *Tokenizer, allocator: Allocator) !void {
     const curnode = try ir.addNode();
-    var self: Self = .{ .ir = ir, .t = .{ .str = str }, .curnode = curnode, .vars = std.StringArrayHashMap(IdInfo).init(allocator) };
+    var self: Self = .{ .ir = ir, .t = t.*, .curnode = curnode, .vars = std.StringArrayHashMap(IdInfo).init(allocator) };
     defer self.vars.deinit();
-    return self.do_parse() catch |e| {
+    defer t.* = self.t;
+    // TODO: use did_ret for something?
+    _ = self.do_parse() catch |e| {
         self.t.fail_pos();
         return e;
     };

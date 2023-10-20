@@ -2,9 +2,9 @@ const FLIR = @import("./FLIR.zig");
 const CodeBuffer = @import("./CodeBuffer.zig");
 const X86Asm = @import("./X86Asm.zig");
 const print = std.debug.print;
-const ForkScript = @import("./ForkScript.zig");
 
 const Parser = @import("./Parser.zig");
+const common = @import("./common.zig");
 const std = @import("std");
 const mem = std.mem;
 const os = std.os;
@@ -24,14 +24,7 @@ pub fn readall(allocator: mem.Allocator, filename: []u8) ![]u8 {
     return buf;
 }
 
-pub var options = struct {
-    dbg_raw_ir: bool = false,
-    dbg_analysed_ir: bool = false,
-    dbg_disasm: bool = false,
-    dbg_vregs: bool = false,
-    dbg_trap: bool = false,
-    dbg_disasm_ir: bool = false,
-}{};
+pub var options: common.DebugOptions = .{};
 
 pub fn main() !void {
     const argv = std.os.argv;
@@ -75,46 +68,18 @@ pub fn main() !void {
 
     var module = try @import("./CFOModule.zig").init(allocator);
     var parser = try Parser.init(buf, allocator, &module);
-    // TODO: this is a little backwards pwnership but will do for now
-    // TODO: won't do with multiple functions!
-    const ir = &parser.ir;
 
-    if (script) {
-        const didret = try ForkScript.parse(ir, buf, allocator);
-        if (!didret) {
-            @panic("must return");
-        }
-    } else {
-        // try parser.fd_objs.put("count", map_count);
-        parser.parse(false, true) catch |e| {
-            parser.t.fail_pos();
-            print("(byte {} of {})\n", .{ parser.t.pos, buf.len });
-            return e;
-        };
-    }
-
-    if (options.dbg_raw_ir) ir.debug_print();
-    try ir.test_analysis(FLIR.X86ABI, true);
-    if (options.dbg_analysed_ir) ir.debug_print();
-
-    if (options.dbg_vregs) ir.print_intervals();
-
-    var code = try CodeBuffer.init(allocator);
-    // TODO: BULL
-    var cfo = X86Asm{ .code = &code };
-
-    // emit trap instruction to invoke debugger
-    if (options.dbg_trap) {
-        try cfo.trap();
-    }
-
-    _ = try @import("./codegen.zig").codegen(ir, &code, options.dbg_disasm);
-    try code.finalize();
-    if (options.dbg_disasm) try cfo.dbg_nasm(allocator);
+    // try parser.fd_objs.put("count", map_count);
+    parser.parse(false, false) catch |e| {
+        parser.t.fail_pos();
+        print("(byte {} of {})\n", .{ parser.t.pos, buf.len });
+        return e;
+    };
 
     if (inbuf) |b| {
+        try module.code.finalize();
         const SFunc = *const fn (arg1: [*]u8, arg2: usize) callconv(.C) usize;
-        const fun = code.get_ptr(0, SFunc);
+        const fun = try module.get_func_ptr("main", SFunc);
         print("res: {}\n", .{fun(b.ptr, b.len)});
     }
 }

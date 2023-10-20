@@ -14,6 +14,7 @@ const AOp = X86Asm.AOp;
 const CodeBuffer = @import("./CodeBuffer.zig");
 
 const common = @import("./common.zig");
+const options = common.debug_options;
 fn r(reg: IPReg) X86Asm.IPReg {
     return @enumFromInt(reg.id());
 }
@@ -151,6 +152,12 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
     cfo.long_jump_mode = true; // TODO: as an option
 
     const target = code.get_target();
+
+    // TODO: bull, this should be an instruction
+    if (options.dbg_trap) {
+        try cfo.trap();
+    }
+
     try cfo.enter();
     for (ABI.callee_saved[0..self.nsave]) |reg| {
         try cfo.push(r(reg));
@@ -390,5 +397,6 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
     }
     try cfo.leave();
     try cfo.ret();
+    if (options.dbg_disasm) try cfo.dbg_nasm(self.a);
     return target;
 }
