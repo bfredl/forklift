@@ -218,7 +218,7 @@ pub const FMode = enum(u3) {
         return @intFromEnum(self) >= 4;
     }
 
-    fn scalar(self: @This()) bool {
+    pub fn scalar(self: @This()) bool {
         return self == @This().ss or self == @This().sd;
     }
 
@@ -394,7 +394,11 @@ pub fn vex3(self: *Self, w: bool, r: bool, x: bool, b: bool, mm: MM, vv: u4, l: 
 }
 
 pub fn vex0fwig(self: *Self, r: bool, x: bool, b: bool, vv: u4, l: bool, pp: PP) !void {
-    try if (x or b) self.vex3(false, r, x, b, .h0F, vv, l, pp) else self.vex2(r, vv, l, pp);
+    return self.vex0f(false, r, x, b, vv, l, pp);
+}
+
+pub fn vex0f(self: *Self, w: bool, r: bool, x: bool, b: bool, vv: u4, l: bool, pp: PP) !void {
+    try if (w or x or b) self.vex3(w, r, x, b, .h0F, vv, l, pp) else self.vex2(r, vv, l, pp);
 }
 
 // control flow
@@ -779,6 +783,18 @@ pub fn vcmpf(self: *Self, op: VCmpOp, fmode: FMode, dst: u4, src1: u4, src2: u4)
 pub fn vcmpfrm(self: *Self, op: VCmpOp, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
     try self.vop_rr(0xC2, fmode, dst, src1, src2);
     try self.wb(op.val());
+}
+
+//conversion instructions
+
+pub fn vcvtsi2s_rr(self: *Self, fmode: FMode, dst: u4, w: bool, src2: IPReg) !void {
+    if (!fmode.scalar()) return error.InvalidFMode;
+    // TODO: we get one free mix as part of the instruction, currently ignored
+    // i e, we only do vcvtsi2sd xmmX, xmmX, rYY for the same X
+    const src1 = dst;
+    try self.vex0f(false, dst > 7, w, src2.ext(), src1, false, fmode.pp());
+    try self.wb(0x2A);
+    try self.modRm(0b11, @truncate(dst), src2.lowId());
 }
 
 // integer vector instructions

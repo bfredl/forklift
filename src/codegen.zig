@@ -284,7 +284,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                                     try cfo.movrm_byte(r(dst), eaddr);
                                 },
                                 .quadword => try cfo.movrm(r(dst), eaddr),
-                                else => unreachable,
+                                else => return error.NotImplemented,
                             }
                         },
                         .avxval => |fmode| {
@@ -297,7 +297,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     // TODO: spill spall supllit?
                     // const eaddr = X86Asm.qi(base, idx);
                     if (i.mckind == .fused) {} else {
-                        if (true) unreachable;
+                        if (true) return error.NotImplemented;
                         const base = self.ipreg(i.op1) orelse return error.SpillError;
                         const idx = self.ipreg(i.op2) orelse return error.SpillError;
                         const dst = i.ipreg() orelse return error.SpillError;
@@ -316,7 +316,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                                             try cfo.movmr_byte(eaddr, r(reg));
                                         },
                                         .quadword => try cfo.movmr(eaddr, r(reg)),
-                                        else => unreachable,
+                                        else => return error.NotImplemented,
                                     }
                                 },
                                 .constval => |c| {
@@ -325,7 +325,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                                             try cfo.movmi_byte(eaddr, @truncate(c));
                                         },
                                         .quadword => try cfo.movmi(eaddr, @intCast(c)),
-                                        else => unreachable,
+                                        else => return error.NotImplemented,
                                     }
                                 },
                                 else => return error.SpillError,
@@ -348,6 +348,19 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     const y = self.avxreg(i.op2) orelse return error.FLIRError;
                     const dst = i.avxreg() orelse return error.FLIRError;
                     try cfo.vcmpf(i.vcmpop(), i.fmode_op(), dst, x, y);
+                },
+                .int2vf => {
+                    const val = self.ipval(i.op1) orelse return error.FLIRError;
+                    const dst = i.avxreg() orelse return error.FLIRError;
+                    // TODO: more ops than sitosd/sitoss
+                    switch (val) {
+                        // TODO:
+                        // .frameslot => |f| try cfo.movrm(r(dst), X86Asm.a(.rbp).o(slotoff(f))),
+                        .frameslot => return error.NotImplemented,
+                        .ipreg => |reg| try cfo.vcvtsi2s_rr(i.fmode_op(), dst, true, r(reg)),
+                        .constval => return error.FLIRError, // mandatory cfold for things like this?
+                    }
+                    // try int2vf(&cfo, dst, val);
                 },
                 .call => {
                     const kind: FLIR.CallKind = @enumFromInt(i.spec);

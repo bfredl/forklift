@@ -318,6 +318,8 @@ pub const Inst = struct {
             .icmp => null, // technically the FLAG register but anyway
             .vmath => .avxval,
             .vcmpf => .avxval,
+            // convert int to float, or move int from gp to vector reg
+            .int2vf => .avxval,
             .ret => null,
             .call => .intptr,
             .callarg => null,
@@ -350,6 +352,7 @@ pub const Inst = struct {
             .icmp => 2,
             .vmath => 2,
             .vcmpf => 2,
+            .int2vf => 1,
             .ret => 1,
             .callarg => 1,
             .call => 0, // could be for funptr/dynamic syscall?
@@ -433,6 +436,7 @@ pub const Tag = enum(u8) {
     icmp,
     vmath,
     vcmpf,
+    int2vf,
     ret,
     call,
     callarg,
@@ -684,6 +688,11 @@ pub fn vcmpfspec(vcmp: VCmpOp, fmode: FMode) u8 {
     return sphigh(@intFromEnum(fmode), vcmp.val());
 }
 
+// TODO: will generalize
+pub fn vcvtspec(fmode: FMode) u8 {
+    return sphigh(@intFromEnum(fmode), 0);
+}
+
 pub fn addNode(self: *Self) !u16 {
     const n = try self.n.addOne();
     const b = try self.b.addOne();
@@ -813,6 +822,12 @@ pub fn vmath(self: *Self, node: u16, vop: VMathOp, fmode: FMode, op1: u16, op2: 
 
 pub fn vcmpf(self: *Self, node: u16, vop: VCmpOp, fmode: FMode, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .vcmpf, .spec = vcmpfspec(vop, fmode), .op1 = op1, .op2 = op2 });
+}
+
+pub fn int2float(self: *Self, node: u16, fmode: FMode, op1: u16) !u16 {
+    // maybe a packed should implicitly convert and then broadcast?
+    if (!fmode.scalar()) return error.FLIRError;
+    return self.addInst(node, .{ .tag = .int2vf, .spec = vcvtspec(fmode), .op1 = op1, .op2 = NoRef });
 }
 
 pub fn ibinop(self: *Self, node: u16, op: IntBinOp, op1: u16, op2: u16) !u16 {

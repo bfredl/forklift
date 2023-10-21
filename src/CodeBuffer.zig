@@ -44,7 +44,7 @@ pub fn deinit(self: *Self) void {
 }
 
 pub fn dump(self: *Self) !void {
-    try std.fs.cwd().writeFile("test.o", self.code.items);
+    try std.fs.cwd().writeFile("test.o", self.buf.items);
 }
 
 pub fn lookup(self: *Self, addr: usize) usize {

@@ -293,6 +293,28 @@ test "vopper" {
     try expect(f64, 30.75, x);
 }
 
+test "int2float" {
+    var cfo = try parse_test(
+        \\func returner
+        \\  %x = arg
+        \\  %y = arg
+        \\  %z = arg
+        \\  %xf = int2float sd %x
+        \\  %yf = int2float sd %y
+        \\  %za = vop sd div %xf %yf
+        \\  store sd [%z 0] %za
+        \\  ret 0
+        \\end
+    );
+    defer cfo.deinit();
+
+    var z: f64 = undefined;
+    const FFunc = *const fn (x: usize, y: usize, z: *f64) callconv(.C) usize;
+    const fun = cfo.get_ptr(0, FFunc);
+    try expect(usize, 0, fun(3, 4, &z));
+    try expect(f64, 0.75, z);
+}
+
 test "store byte" {
     // TODO: lol obviously support this without %y arg as well
     var cfo = try parse_test(

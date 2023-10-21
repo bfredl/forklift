@@ -307,6 +307,13 @@ pub fn typename(self: *Self) ParseError!?FLIR.SpecType {
     }
 }
 
+fn requireEnumKey(comptime T: type, key: []const u8, klagel: []const u8) !T {
+    return meta.stringToEnum(T, key) orelse {
+        print("{s}: '{s}'\n", .{ klagel, key });
+        return error.ParseError;
+    };
+}
+
 pub fn expr(self: *Self, f: *Func) ParseError!u16 {
     const ir = &self.ir;
     if (try self.call_arg(f)) |arg| {
@@ -329,10 +336,7 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
         } else if (mem.eql(u8, kw, "vop")) {
             // TODO: make this optional, if both op1/op2 share a fmode
             const modename = try require(self.t.keyword(), "fmode");
-            const fmode = meta.stringToEnum(X86Asm.FMode, modename) orelse {
-                print("eioouuu: '{s}'\n", .{modename});
-                return error.ParseError;
-            };
+            const fmode = try requireEnumKey(X86Asm.FMode, modename, "invalid fmode");
             const opname = try require(self.t.keyword(), "vop");
             const mathop = meta.stringToEnum(X86Asm.VMathOp, opname);
             const cmpop = if (mathop == null) meta.stringToEnum(X86Asm.VCmpOp, opname) else null;
@@ -350,13 +354,15 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
             } else {
                 unreachable;
             }
+        } else if (mem.eql(u8, kw, "int2float")) {
+            const modename = try require(self.t.keyword(), "fmode");
+            const fmode = try requireEnumKey(X86Asm.FMode, modename, "invalid fmode");
+            const val = try require(try self.call_arg(f), "val");
+            return ir.int2float(f.curnode, fmode, val);
         } else if (mem.eql(u8, kw, "syscall")) {
             const name = try require(self.t.keyword(), "name");
             // TODO: non-native for
-            const syscall = meta.stringToEnum(std.os.linux.SYS, name) orelse {
-                print("unknown syscall: '{s}'\n", .{name});
-                return error.ParseError;
-            };
+            const syscall = try requireEnumKey(std.os.linux.SYS, name, "unknown syscall");
             const sysnum = try ir.const_int(@intCast(@intFromEnum(syscall)));
 
             try self.parse_args(f);
@@ -371,10 +377,7 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
             return try ir.call(f.curnode, .near, constoff);
         } else if (mem.eql(u8, kw, "call_bpf")) {
             const name = try require(self.t.keyword(), "name");
-            const helper = meta.stringToEnum(BPF.Helper, name) orelse {
-                print("unknown BPF helper: '{s}'\n", .{name});
-                return error.ParseError;
-            };
+            const helper = try requireEnumKey(BPF.Helper, name, "unknown BPF helper");
             try self.parse_args(f);
             return try ir.call(f.curnode, .bpf_helper, @intCast(@intFromEnum(helper)));
         } else if (mem.eql(u8, kw, "alloc")) {
