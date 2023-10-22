@@ -360,7 +360,12 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                         .ipreg => |reg| try cfo.vcvtsi2s_rr(i.fmode_op(), dst, true, r(reg)),
                         .constval => return error.FLIRError, // mandatory cfold for things like this?
                     }
-                    // try int2vf(&cfo, dst, val);
+                },
+                .vf2int => {
+                    const src = self.avxreg(i.op1) orelse return error.FLIRError;
+                    const dst = i.ipreg() orelse return error.FLIRError;
+                    // TODO: more ops than sitosd/sitoss
+                    try cfo.vcvtsx2si_rr(i.fmode_op(), true, r(dst), src);
                 },
                 .call => {
                     const kind: FLIR.CallKind = @enumFromInt(i.spec);

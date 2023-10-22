@@ -315,6 +315,23 @@ test "int2float" {
     try expect(f64, 0.75, z);
 }
 
+test "float2int" {
+    var cfo = try parse_test(
+        \\func returner
+        \\  %x = arg
+        \\  %xa = load sd [%x 0]
+        \\  %y = vop sd mul %xa %xa
+        \\  %res = float2int sd %y
+        \\  ret %res
+        \\end
+    );
+    defer cfo.deinit();
+
+    const FFunc = *const fn (z: *const f64) callconv(.C) usize;
+    const fun = cfo.get_ptr(0, FFunc);
+    try expect(usize, 23, fun(&4.8));
+}
+
 test "store byte" {
     // TODO: lol obviously support this without %y arg as well
     var cfo = try parse_test(

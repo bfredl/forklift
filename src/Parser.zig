@@ -359,6 +359,11 @@ pub fn expr(self: *Self, f: *Func) ParseError!u16 {
             const fmode = try requireEnumKey(X86Asm.FMode, modename, "invalid fmode");
             const val = try require(try self.call_arg(f), "val");
             return ir.int2float(f.curnode, fmode, val);
+        } else if (mem.eql(u8, kw, "float2int")) {
+            const modename = try require(self.t.keyword(), "fmode");
+            const fmode = try requireEnumKey(X86Asm.FMode, modename, "invalid fmode");
+            const val = try require(try self.call_arg(f), "val");
+            return ir.float2int(f.curnode, fmode, val);
         } else if (mem.eql(u8, kw, "syscall")) {
             const name = try require(self.t.keyword(), "name");
             // TODO: non-native for

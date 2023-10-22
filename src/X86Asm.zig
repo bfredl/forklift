@@ -797,6 +797,13 @@ pub fn vcvtsi2s_rr(self: *Self, fmode: FMode, dst: u4, w: bool, src2: IPReg) !vo
     try self.modRm(0b11, @truncate(dst), src2.lowId());
 }
 
+pub fn vcvtsx2si_rr(self: *Self, fmode: FMode, w: bool, dst: IPReg, src: u4) !void {
+    if (!fmode.scalar()) return error.InvalidFMode;
+    try self.vex0f(false, dst.ext(), w, src > 8, 0, false, fmode.pp());
+    try self.wb(0x2D);
+    try self.modRm(0b11, dst.lowId(), @truncate(src));
+}
+
 // integer vector instructions
 pub inline fn vop_i_rr(self: *Self, op: u8, wide: bool, pp: PP, dst: u4, src1: u4, src2: u4) !void {
     try self.new_inst(@returnAddress());

@@ -320,6 +320,7 @@ pub const Inst = struct {
             .vcmpf => .avxval,
             // convert int to float, or move int from gp to vector reg
             .int2vf => .avxval,
+            .vf2int => .intptr,
             .ret => null,
             .call => .intptr,
             .callarg => null,
@@ -353,6 +354,7 @@ pub const Inst = struct {
             .vmath => 2,
             .vcmpf => 2,
             .int2vf => 1,
+            .vf2int => 1,
             .ret => 1,
             .callarg => 1,
             .call => 0, // could be for funptr/dynamic syscall?
@@ -437,6 +439,7 @@ pub const Tag = enum(u8) {
     vmath,
     vcmpf,
     int2vf,
+    vf2int,
     ret,
     call,
     callarg,
@@ -830,6 +833,13 @@ pub fn int2float(self: *Self, node: u16, fmode: FMode, op1: u16) !u16 {
     return self.addInst(node, .{ .tag = .int2vf, .spec = vcvtspec(fmode), .op1 = op1, .op2 = NoRef });
 }
 
+pub fn float2int(self: *Self, node: u16, fmode: FMode, op1: u16) !u16 {
+    // maybe a packed should implicitly convert and then broadcast?
+    if (!fmode.scalar()) return error.FLIRError;
+    return self.addInst(node, .{ .tag = .vf2int, .spec = vcvtspec(fmode), .op1 = op1, .op2 = NoRef });
+}
+
+// TODO: 32bit vs 64bit (also for int in i2f and f2i, and so on)
 pub fn ibinop(self: *Self, node: u16, op: IntBinOp, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .ibinop, .spec = @intFromEnum(op), .op1 = op1, .op2 = op2 });
 }
