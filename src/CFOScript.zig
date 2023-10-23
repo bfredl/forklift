@@ -308,7 +308,6 @@ fn do_parse(self: *Self) !bool {
         }
     }
     const did_ret = self.block();
-    if (self.t.nonws() != null) return error.SyntaxError;
     return did_ret;
 }
 

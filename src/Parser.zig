@@ -90,10 +90,10 @@ pub fn parse(self: *Self, dbg: bool, one: bool) !void {
                 try @import("./CFOScript.zig").parse(&self.ir, &self.t, self.allocator);
                 try self.t.expect_char('}');
                 try self.t.lbrk();
+            } else {
+                try self.t.lbrk();
+                try self.parse_func_body();
             }
-
-            try self.t.lbrk();
-            try self.parse_func_body();
             if (one) {
                 return;
             }

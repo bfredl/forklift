@@ -32,14 +32,11 @@ pub fn main() !void {
     var nextarg: u8 = 1;
     const firstarg = mem.span(argv[nextarg]);
 
-    var script: bool = false;
-
     if (firstarg[0] == '-') {
         if (argv.len < 3) return usage();
         nextarg += 1;
         for (firstarg[1..]) |a| {
             switch (a) {
-                's' => script = true,
                 'i' => options.dbg_raw_ir = true,
                 'a' => options.dbg_analysed_ir = true,
                 'v' => options.dbg_vregs = true,
