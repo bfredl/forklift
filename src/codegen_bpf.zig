@@ -296,6 +296,7 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
                     targets[ni][taken] = pos;
                 },
                 .putphi, .callarg => {
+                    if (i.f.do_swap) return error.NotImplemented;
                     const dest = (try self.movins_dest(i)).ipval() orelse return error.FLIRError;
                     if (try self.movins_read2(i)) |src| {
                         try movmcs(code, dest, src);

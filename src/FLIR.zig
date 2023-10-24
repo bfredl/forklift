@@ -54,8 +54,6 @@ nsave: u8 = 0,
 ndf: u16 = 0,
 call_clobber_mask: u16 = undefined,
 
-pub var noisy: bool = false;
-
 // filler value for unintialized refs. not a sentinel for
 // actually invalid refs!
 pub const DEAD: u16 = 0xFEFF;
@@ -1622,6 +1620,12 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
     self.call_clobber_mask = mask;
 }
 
+pub var noisy: bool = false;
+
+fn mcshow(inst: *Inst) struct { MCKind, u16 } {
+    return .{ inst.mckind, inst.mcidx };
+}
+
 // Resolve a block of parallel moves. Currently supported:
 // callarg instruction: source in i.op1, destination i itself
 // putphi instruction: source in i.op1, destination in i.op2 (the phi instruction)
@@ -1668,8 +1672,37 @@ pub fn resolve_movegroup(self: *Self, pos: *InsIterator, tag: Tag) !void {
         if (px.i.tag != tag) {
             return;
         }
-        std.log.err("TODO: put cycles", .{});
-        return error.FLIRError;
+        _ = pos.next();
+        // we found the end of a swap group when we find a write to this location
+        const group_last_write = try self.movins_read(px.i) orelse @panic("trivial move in cycle group?");
+        var next_read = try self.movins_dest(px.i);
+        if (noisy) print("what will end group: {}\n", .{mcshow(group_last_write)});
+        if (noisy) print("next: {}\n", .{mcshow(next_read)});
+        var phi_1 = pos.*;
+        px.i.f.do_swap = true;
+        while (phi_1.next()) |p1| {
+            if (noisy) print("cecycle nesta: {}\n", .{p1.i.tag});
+            if (p1.i.tag != tag) @panic("naieeee");
+            const p1_read = (try self.movins_read(p1.i)) orelse @panic("trivial mode in cycle group?");
+            if (noisy) print("what is read here: {}\n", .{mcshow(p1_read)});
+            if (mc_equal(p1_read, next_read)) {
+                if (noisy) print("hitta: {}\n", .{p1.i.tag});
+                // we cannot run out of pos as it is a slower (or always equal) iterator
+                const p1_dest = try self.movins_dest(p1.i);
+                const p1iloc = pos.next().?.i;
+                mem.swap(Inst, p1.i, p1iloc);
+                if (mc_equal(p1_dest, group_last_write)) {
+                    if (noisy) print("DONE\n", .{});
+                    p1iloc.f.swap_done = true;
+                    break;
+                } else {
+                    if (noisy) print("HITTA IGEN: {}\n", .{mcshow(p1_dest)});
+                    p1iloc.f.do_swap = true;
+                    next_read = p1_dest;
+                    phi_1 = pos.*;
+                }
+            }
+        }
     }
 }
 
@@ -1712,18 +1745,20 @@ pub fn movins_read2(self: *Self, movins: *Inst) !?IPMCVal {
     };
 }
 
+fn mc_equal(rhs: anytype, lhs: anytype) bool {
+    return (rhs.mckind == lhs.mckind and rhs.mcidx == lhs.mcidx);
+}
+
 pub fn trivial(self: *Self, movins: *Inst) !bool {
     const written = try self.movins_dest(movins);
     const read = try self.movins_read(movins) orelse return false; // in principle moving UNDEF anywhere is trivial, but it doesn't matter here
-    if (written.mckind == read.mckind and written.mcidx == read.mcidx) return true;
-    return false;
+    return mc_equal(written, read);
 }
 
 pub fn conflict(self: *Self, before: *Inst, after: *Inst) !bool {
     const written = try self.movins_dest(before);
     const read = try self.movins_read(after) orelse return false;
-    if (written.mckind == read.mckind and written.mcidx == read.mcidx) return true;
-    return false;
+    return mc_equal(written, read);
 }
 
 const InsIterator = struct {

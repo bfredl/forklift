@@ -608,6 +608,14 @@ pub fn movmr_byte(self: *Self, dst: EAddr, src: IPReg) !void {
     try self.modRmEA(reg.lowId(), ea);
 }
 
+pub fn xchg(self: *Self, lhs: IPReg, rhs: IPReg) !void {
+    try self.op_rr(0x87, lhs, rhs); // XCHG reg, \rm
+}
+
+pub fn xchg_rm(self: *Self, lhs: IPReg, rhs: EAddr) !void {
+    try self.op_rm(0x87, lhs, rhs); // XCHG reg, \rm
+}
+
 pub fn aritrm(self: *Self, op: AOp, dst: IPReg, src: EAddr) !void {
     try self.op_rm(op.off() + 0b11, dst, src);
 }

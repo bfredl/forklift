@@ -23,6 +23,10 @@ fn slotoff(slotid: anytype) i32 {
     return -8 * (1 + @as(i32, @intCast(slotid)));
 }
 
+fn slotea(slotid: anytype) EAddr {
+    return X86Asm.a(.rbp).o(slotoff(slotid));
+}
+
 fn movri_zero(cfo: *X86Asm, dst: IPReg, src: i32) !void {
     if (src != 0) { // TODO: proper constval
         try cfo.movri(r(dst), src);
@@ -34,7 +38,7 @@ fn movri_zero(cfo: *X86Asm, dst: IPReg, src: i32) !void {
 
 fn regmovmc(cfo: *X86Asm, dst: IPReg, src: IPMCVal) !void {
     switch (src) {
-        .frameslot => |f| try cfo.movrm(r(dst), X86Asm.a(.rbp).o(slotoff(f))),
+        .frameslot => |f| try cfo.movrm(r(dst), slotea(f)),
         .ipreg => |reg| if (dst != reg) try cfo.mov(r(dst), r(reg)),
         .constval => |c| try movri_zero(cfo, dst, @intCast(c)),
     }
@@ -50,7 +54,7 @@ fn regaritmc(cfo: *X86Asm, op: AOp, dst: IPReg, src: IPMCVal) !void {
 
 fn mcmovreg(cfo: *X86Asm, dst: IPMCVal, src: IPReg) !void {
     switch (dst) {
-        .frameslot => |f| try cfo.movmr(X86Asm.a(.rbp).o(slotoff(f)), r(src)),
+        .frameslot => |f| try cfo.movmr(slotea(f), r(src)),
         .ipreg => |reg| if (reg != src) try cfo.mov(r(reg), r(src)),
         .constval => return error.AURORA_BOREALIS,
     }
@@ -71,6 +75,23 @@ fn movmcs(cfo: *X86Asm, dst: IPMCVal, src: IPMCVal) !void {
     }
 }
 
+fn regswapmc(cfo: *X86Asm, lhs: IPReg, rhs: IPMCVal) !void {
+    switch (rhs) {
+        .ipreg => |reg| try cfo.xchg(r(lhs), r(reg)),
+        .frameslot => |f| try cfo.xchg_rm(r(lhs), slotea(f)),
+        else => return error.FLIRError,
+    }
+}
+
+fn swapmcs(cfo: *X86Asm, dst: IPMCVal, src: IPMCVal) !void {
+    switch (dst) {
+        .ipreg => |reg| try regswapmc(cfo, reg, src),
+        else => switch (src) {
+            .ipreg => |reg| try regswapmc(cfo, reg, dst),
+            else => return error.SpillError,
+        },
+    }
+}
 pub fn makejmp(self: *FLIR, cfo: *X86Asm, cond: ?X86Asm.Cond, ni: u16, si: u1, labels: []u32, targets: [][2]u32) !void {
     const succ = self.find_nonempty(self.n.items[ni].s[si]);
     // NOTE: we assume blk 0 always has the prologue (push rbp; mov rbp, rsp)
@@ -262,14 +283,18 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                 },
                 // parallel move family
                 .putphi, .callarg => {
-                    // TODO: actually check for parallel-move conflicts
-                    // either here or as an extra deconstruction step
-                    // TODO: phi of avxval
-                    const dest = (try self.movins_dest(i)).ipval() orelse return error.FLIRError;
                     // fubbigt: the idea is than movins_read will return null
                     // exactly when reading an UNDEF, incase this insn becomes a no-op
                     if (try self.movins_read2(i)) |src| {
-                        try movmcs(&cfo, dest, src);
+                        const dest = (try self.movins_dest(i)).ipval() orelse return error.FLIRError;
+                        if (i.f.do_swap) {
+                            try swapmcs(&cfo, dest, src);
+                        } else if (i.f.swap_done) {
+                            // do nothing, for N cyclic values we do N-1 swaps
+                        } else {
+                            // TODO: phi of avxval
+                            try movmcs(&cfo, dest, src);
+                        }
                     }
                 },
                 .load => {
