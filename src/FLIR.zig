@@ -316,8 +316,7 @@ pub const Inst = struct {
             .icmp => null, // technically the FLAG register but anyway
             .vmath => .avxval,
             .vcmpf => .avxval,
-            // convert int to float, or move int from gp to vector reg
-            .int2vf => .avxval,
+            .int2vf => .avxval, // convert int to float, or move int from gp to vector reg
             .vf2int => .intptr,
             .ret => null,
             .call => .intptr,
@@ -434,7 +433,7 @@ pub const Tag = enum(u8) {
     store,
     ibinop,
     icmp,
-    vmath,
+    vmath, // binops specifically
     vcmpf,
     int2vf,
     vf2int,
