@@ -24,11 +24,11 @@ pub fn wbi(self: *Self, imm: i8) !void {
 }
 
 pub fn wd(self: *Self, dword: i32) !void {
-    std.mem.writeIntLittle(i32, try self.code.buf.addManyAsArray(4), dword);
+    std.mem.writeInt(i32, try self.code.buf.addManyAsArray(4), dword, .little);
 }
 
 pub fn wq(self: *Self, qword: u64) !void {
-    std.mem.writeIntLittle(u64, try self.code.buf.addManyAsArray(8), qword);
+    std.mem.writeInt(u64, try self.code.buf.addManyAsArray(8), qword, .little);
 }
 
 const Self = @This();
@@ -494,7 +494,7 @@ pub fn jfwd(self: *Self, cond: ?Cond) !u32 {
 pub fn set_target(self: *Self, pos: u32) !void {
     if (self.long_jump_mode) {
         var off = self.code.get_target() - (pos + 4);
-        std.mem.writeIntLittle(u32, self.code.buf.items[pos..][0..4], off);
+        std.mem.writeInt(u32, self.code.buf.items[pos..][0..4], off, .little);
     } else {
         var off = self.code.get_target() - (pos + 1);
         if (off > 0x7f) {
@@ -511,7 +511,7 @@ pub fn set_lea_target(self: *Self, pos: u32) void {
 pub fn set_lea(self: *Self, pos: u32, target: u32) void {
     var off = target - (pos + 4);
     self.code.buf.items[pos] = @intCast(off);
-    std.mem.writeIntLittle(u32, self.code.buf.items[pos..][0..4], off);
+    std.mem.writeInt(u32, self.code.buf.items[pos..][0..4], off, .little);
 }
 
 // .. and back again
