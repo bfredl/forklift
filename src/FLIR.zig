@@ -34,7 +34,8 @@ preorder: ArrayList(u16),
 blkorder: ArrayList(u16),
 // This only handles int and float64 constants,
 // we need something else for "address into string table"
-constvals: ArrayList(u64), // TODO: make constants typed?
+constvals: ArrayList(ConstVal), // most constants go here, can ref constdata
+constData: ArrayList(u64), // raw data for constants, can contain embedded data
 // This is only used for preds currently, but use it for more stuff??
 refs: ArrayList(u16),
 narg: u16 = 0,
@@ -63,9 +64,16 @@ pub const NoRef: u16 = 0xFFFF;
 // 255 constants should be enough for everyone
 // could be smarter, like dedicated Block type for constants!
 pub const ConstOff: u16 = 0xFF00;
-// 255 vrefs should be enough for everyone
+// 256 vrefs should be enough for everyone
 // could be smarter, like dedicated Block type for vrefs!
 pub const VRefOff: u16 = 0xFE00;
+
+pub const ConstVal = union(enum) {
+    // TODO: separate 32 and 64 bit types formally
+    smallInt: i32, // sign extended
+    bigInt: u16, // index into constval, 64-bit
+    float64: u16, // index into constval, bitcast to f64
+};
 
 pub fn uv(s: usize) u16 {
     return @intCast(s);
@@ -396,7 +404,7 @@ pub const IPMCVal = union(enum) {
     }
 };
 
-pub fn constval(self: *Self, ref: u16) ?u64 {
+pub fn constval(self: *Self, ref: u16) ?ConstVal {
     if (ref == NoRef) return null;
     if (ref >= ConstOff) {
         return self.constvals.items[ref - ConstOff];
@@ -404,8 +412,19 @@ pub fn constval(self: *Self, ref: u16) ?u64 {
     return null;
 }
 
+pub fn intconstval(self: *Self, ref: u16) ?u64 {
+    const val = self.constval(ref) orelse return null;
+    return switch (val) {
+        .smallInt => |i| return @intCast(@as(i64, i)),
+        .bigInt => |idx| return self.constData.items[idx],
+        .float64 => null,
+    };
+}
+
 pub fn ipval(self: *Self, ref: u16) ?IPMCVal {
-    if (self.constval(ref)) |c| return .{ .constval = c };
+    if (self.intconstval(ref)) |val| {
+        return .{ .constval = val };
+    }
     const i = self.iref(ref) orelse return null;
     return i.ipval();
 }
@@ -599,20 +618,25 @@ pub const MCKind = enum(u8) {
     }
 };
 
+fn initConsts(self: *Self) void {
+    self.constvals.appendAssumeCapacity(.{ .smallInt = 0 });
+    self.constvals.appendAssumeCapacity(.{ .smallInt = 1 });
+}
+
 pub fn init(n: u16, allocator: Allocator) !Self {
-    var constvals = try ArrayList(u64).initCapacity(allocator, 8);
-    constvals.appendAssumeCapacity(0);
-    constvals.appendAssumeCapacity(1);
-    return Self{
+    var self = Self{
         .a = allocator,
         .n = try ArrayList(Node).initCapacity(allocator, n),
         .vregs = @TypeOf(@as(Self, undefined).vregs).init(allocator),
         .blkorder = ArrayList(u16).init(allocator),
         .preorder = ArrayList(u16).init(allocator),
         .refs = try ArrayList(u16).initCapacity(allocator, 4 * n),
-        .constvals = constvals,
+        .constvals = try ArrayList(ConstVal).initCapacity(allocator, 8),
+        .constData = ArrayList(u64).init(allocator),
         .b = try ArrayList(Block).initCapacity(allocator, 2 * n),
     };
+    self.initConsts();
+    return self;
 }
 
 pub fn reinit(self: *Self) void {
@@ -631,9 +655,7 @@ pub fn reinit(self: *Self) void {
         }
     }
 
-    // FUBBIT
-    self.constvals.appendAssumeCapacity(0);
-    self.constvals.appendAssumeCapacity(1);
+    self.initConsts();
 }
 
 pub fn deinit(self: *Self) void {
@@ -783,17 +805,34 @@ pub fn preInst(self: *Self, node: u16, inst: Inst) !u16 {
 }
 
 pub fn const_uint(self: *Self, val: u64) !u16 {
+    if (val <= math.maxInt(u31)) {
+        return self.const_int(@intCast(val));
+    }
+
     for (self.constvals.items, 0..) |v, i| {
-        if (v == val) return uv(ConstOff + i);
+        switch (v) {
+            .bigInt => |idx| if (self.constData.items[idx] == val) return uv(ConstOff + i),
+            else => continue,
+        }
     }
     if (self.constvals.items.len == 511) return error.FLIRError;
+    const idx = self.constData.items.len;
+    try self.constData.append(val);
     const ref = ConstOff + self.constvals.items.len;
-    try self.constvals.append(val);
+    try self.constvals.append(.{ .bigInt = uv(idx) });
     return uv(ref);
 }
 
 pub fn const_int(self: *Self, val: i32) !u16 {
-    return const_uint(self, @as(u32, @bitCast(val)));
+    for (self.constvals.items, 0..) |v, i| {
+        switch (v) {
+            .smallInt => |si| if (si == val) return uv(ConstOff + i),
+            else => continue,
+        }
+    }
+    const ref = ConstOff + self.constvals.items.len;
+    try self.constvals.append(.{ .smallInt = val });
+    return uv(ref);
 }
 
 pub fn binop(self: *Self, node: u16, tag: Tag, op1: u16, op2: u16) !u16 {

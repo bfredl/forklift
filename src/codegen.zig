@@ -400,7 +400,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                             try cfo.syscall();
                         },
                         .near => {
-                            const val = self.constval(i.op1) orelse return error.FLIRError;
+                            const val = self.intconstval(i.op1) orelse return error.FLIRError;
                             try cfo.call_rel(@intCast(val));
                         },
                         else => return error.FLIRError,
