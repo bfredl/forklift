@@ -21,7 +21,7 @@ relocations: ArrayList(Relocation),
 // currently only for constant data past "ret", should also be
 // for calls to unemitted functions etc
 pub const Relocation = struct {
-    target: u32,
+    pos: u32,
     idx: u16,
     is_ptr: bool,
 };
@@ -52,6 +52,7 @@ pub fn deinit(self: *Self) void {
     self.buf.deinit();
     self.inst_off.deinit();
     self.inst_dbg.deinit();
+    self.relocations.deinit();
 }
 
 pub fn dump(self: *Self) !void {

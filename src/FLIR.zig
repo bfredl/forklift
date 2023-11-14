@@ -426,12 +426,19 @@ pub fn intconstval(self: *Self, ref: u16) ?u64 {
     };
 }
 
+// if null: still could be a value, just not an ipval
 pub fn ipval(self: *Self, ref: u16) ?IPMCVal {
-    if (self.intconstval(ref)) |val| {
-        return .{ .constval = val };
+    if (self.constval(ref)) |val| {
+        return switch (val) {
+            .smallInt => |i| .{ .constval = @intCast(@as(i64, i)) },
+            .bigInt => |idx| .{ .constref = idx },
+            .float64 => null,
+        };
+    } else if (self.iref(ref)) |i| {
+        return i.ipval();
+    } else {
+        return null;
     }
-    const i = self.iref(ref) orelse return null;
-    return i.ipval();
 }
 
 pub fn ipreg(self: *Self, ref: u16) ?IPReg {
@@ -669,6 +676,7 @@ pub fn deinit(self: *Self) void {
     self.preorder.deinit();
     self.refs.deinit();
     self.constvals.deinit();
+    self.constData.deinit();
     self.b.deinit();
     self.vregs.deinit();
 }

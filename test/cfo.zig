@@ -260,7 +260,7 @@ test "get the maximum of two args" {
     try cfo.arit(.cmp, .rdi, .rsi);
     const jump = try cfo.jfwd(.g);
     try cfo.mov(.rax, .rsi);
-    try cfo.set_target(jump);
+    try cfo.set_target_jmp(jump);
     try cfo.ret();
 
     var retval = try test_call2(&code, 1002, 560);

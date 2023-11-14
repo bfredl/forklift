@@ -500,10 +500,15 @@ pub fn jfwd(self: *Self, cond: ?Cond) !u32 {
     return pos;
 }
 
-pub fn set_target(self: *Self, pos: u32) !void {
+// really i32, but we only use this when "target" was emitted later than "pos"
+pub fn set_target_32(self: *Self, pos: u32, target: u32) void {
+    var off = target - (pos + 4);
+    std.mem.writeInt(u32, self.code.buf.items[pos..][0..4], off, .little);
+}
+
+pub fn set_target_jmp(self: *Self, pos: u32) !void {
     if (self.long_jump_mode) {
-        var off = self.code.get_target() - (pos + 4);
-        std.mem.writeInt(u32, self.code.buf.items[pos..][0..4], off, .little);
+        self.set_target_32(pos, self.code.get_target());
     } else {
         var off = self.code.get_target() - (pos + 1);
         if (off > 0x7f) {

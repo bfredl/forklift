@@ -44,7 +44,7 @@ fn regmovmc(cfo: *X86Asm, dst: IPReg, src: IPMCVal) !void {
         .constref, .constptr => |idx| {
             try cfo.movrm(r(dst), X86Asm.rel_placeholder());
             const is_ptr = (src == .constptr);
-            try cfo.code.relocations.append(.{ .target = cfo.code.get_target(), .idx = idx, .is_ptr = is_ptr });
+            try cfo.code.relocations.append(.{ .pos = cfo.code.get_target() - 4, .idx = idx, .is_ptr = is_ptr });
         },
     }
 }
@@ -158,7 +158,7 @@ pub fn set_pred(self: *FLIR, cfo: *X86Asm, targets: [][2]u32, ni: u16) !void {
         } else {
             const si: u1 = if (pr.s[0] == ni) 0 else 1;
             if (targets[pred][si] != 0) {
-                try cfo.set_target(targets[pred][si]);
+                try cfo.set_target_jmp(targets[pred][si]);
                 targets[pred][si] = 0;
             }
         }
@@ -180,7 +180,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
 
     cfo.long_jump_mode = true; // TODO: as an option
 
-    const target = code.get_target();
+    const entry = code.get_target();
 
     // TODO: bull, this should be an instruction
     if (options.dbg_trap) {
@@ -450,9 +450,29 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
     try cfo.ret();
     if (options.dbg_disasm) try cfo.dbg_nasm(self.a);
 
-    for (cfo.code.relocations.items) |reloc| {
-        _ = reloc;
-        return error.WIPError;
+    if (cfo.code.relocations.items.len > 0) {
+        // TODO: have this as scratch space already in FLIR.constvals
+        var const_targets = try self.a.alloc(?u32, self.constvals.items.len);
+        defer self.a.free(const_targets);
+        @memset(const_targets, null);
+
+        while (cfo.code.buf.items.len & 7 != 0) {
+            try cfo.wb(0);
+        }
+
+        for (cfo.code.relocations.items) |reloc| {
+            const target = found_target: {
+                if (const_targets[reloc.idx]) |t| {
+                    break :found_target t;
+                } else {
+                    const t = cfo.code.get_target();
+                    const_targets[reloc.idx] = t;
+                    try cfo.wq(self.constData.items[reloc.idx]);
+                    break :found_target t;
+                }
+            };
+            cfo.set_target_32(reloc.pos, target);
+        }
     }
-    return target;
+    return entry;
 }
