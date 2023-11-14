@@ -61,6 +61,17 @@ test "returner" {
     try expect(usize, 7, cfo.get_ptr(0, UFunc)());
 }
 
+test "return u64" {
+    var cfo = try parse_test(
+        \\func returner
+        \\  ret 5743024064959639452
+        \\end
+    );
+    defer cfo.deinit();
+
+    try expect(usize, 5743024064959639452, cfo.get_ptr(0, UFunc)());
+}
+
 test "comment" {
     var cfo = try parse_test(
         \\func returner

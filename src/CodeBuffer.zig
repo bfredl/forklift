@@ -16,6 +16,16 @@ buf: ArrayListAligned(u8, page_size),
 inst_off: ArrayList(u32),
 inst_dbg: ArrayList(usize),
 
+relocations: ArrayList(Relocation),
+
+// currently only for constant data past "ret", should also be
+// for calls to unemitted functions etc
+pub const Relocation = struct {
+    target: u32,
+    idx: u16,
+    is_ptr: bool,
+};
+
 pub fn get_target(self: *Self) u32 {
     return @intCast(self.buf.items.len);
 }
@@ -32,6 +42,7 @@ pub fn init(allocator: mem.Allocator) !Self {
         .buf = try ArrayListAligned(u8, page_size).initCapacity(std.heap.page_allocator, page_size),
         .inst_off = ArrayList(u32).init(allocator),
         .inst_dbg = ArrayList(usize).init(allocator),
+        .relocations = ArrayList(Relocation).init(allocator),
     };
 }
 

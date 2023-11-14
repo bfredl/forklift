@@ -102,10 +102,10 @@ pub fn identifier(self: *Self) ParseError!Chunk {
     return self.str[start..self.pos];
 }
 
-pub fn num(self: *Self) ?u32 {
+pub fn num(self: *Self) ?u64 {
     const first = self.nonws() orelse return null;
     if (!('0' <= first and first <= '9')) return null;
-    var val: u32 = 0;
+    var val: u64 = 0;
     while (self.pos < self.str.len) : (self.pos += 1) {
         const next = self.str[self.pos];
         if ('0' <= next and next <= '9') {

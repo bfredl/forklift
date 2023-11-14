@@ -109,6 +109,8 @@ fn regmovmc(code: *BPFCode, dst: IPReg, src: IPMCVal) !void {
         .frameslot => |f| try put(code, I.ldx(.double_word, r(dst), .r10, slotoff(f))),
         .ipreg => |reg| if (dst != reg) try mov(code, dst, r(reg)),
         .constval => |c| try mov(code, dst, @as(i32, @intCast(c))),
+        // need .data segment as a bpftable..
+        .constref, .constptr => return error.FLIRError,
     }
     // .fused => {
     //     if (src.tag != .alloc) return error.BBB_BBB;
@@ -126,6 +128,7 @@ fn regjmpmc(code: *BPFCode, op: Insn.JmpOp, dst: IPReg, src: IPMCVal) !u32 {
         .ipreg => |_| unreachable,
         // TODO: FLIR.ABI needs to encode constraints like "imm which fits in a i32"
         .constval => |_| unreachable,
+        .constref, .constptr => return error.FLIRError,
         //     var inst = I.jmp(op, dst, src.op1, 0x7FFF);
     }
     return pos;
@@ -137,6 +140,7 @@ fn regaritmc(code: *BPFCode, op: Insn.AluOp, dst: IPReg, src: IPMCVal) !void {
         .ipreg => |reg| try put(code, I.alu(64, op, r(dst), r(reg))),
         // TODO: FLIR.ABI needs to encode constraints like "imm which fits in a i32"
         .constval => |c| try put(code, I.alu(64, op, r(dst), @as(i32, @intCast(c)))),
+        .constref, .constptr => return error.FLIRError,
     }
 }
 

@@ -131,7 +131,7 @@ pub fn parse(self: *Self, dbg: bool, one: bool) !void {
                 print("unknown map kind: '{s}'\n", .{kind});
                 return error.ParseError;
             };
-            obj_slot.* = .{ .bpf_map = .{ .fd = -1, .kind = map_kind, .key_size = key_size, .val_size = val_size, .n_entries = n_entries } };
+            obj_slot.* = .{ .bpf_map = .{ .fd = -1, .kind = map_kind, .key_size = @intCast(key_size), .val_size = @intCast(val_size), .n_entries = @intCast(n_entries) } };
             try self.t.lbrk();
         } else {
             return error.ParseError;
@@ -286,7 +286,7 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
 
 pub fn call_arg(self: *Self, f: *Func) ParseError!?u16 {
     if (self.t.num()) |numval| {
-        return try self.ir.const_int(@intCast(numval));
+        return try self.ir.const_uint(numval);
     } else if (try self.varname()) |src| {
         return f.refs.get(src) orelse {
             print("undefined ref %{s}!\n", .{src});

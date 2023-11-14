@@ -393,6 +393,11 @@ pub const IPMCVal = union(enum) {
     ipreg: IPReg,
     constval: u64, // bitcast to i64 for signed
     frameslot: u8,
+    // both these adresses constant data stored in memory
+    // "constref" implies loading the actual value
+    // while "constptr" loads a pointer to the constant memory
+    constref: u16,
+    constptr: u16,
     // frameslot_ptr: u8,
 
     // TODO: this is not a builtin? (or maybe meta)

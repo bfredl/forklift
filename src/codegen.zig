@@ -41,6 +41,11 @@ fn regmovmc(cfo: *X86Asm, dst: IPReg, src: IPMCVal) !void {
         .frameslot => |f| try cfo.movrm(r(dst), slotea(f)),
         .ipreg => |reg| if (dst != reg) try cfo.mov(r(dst), r(reg)),
         .constval => |c| try movri_zero(cfo, dst, @intCast(c)),
+        .constref, .constptr => |idx| {
+            try cfo.movrm(r(dst), X86Asm.rel_placeholder());
+            const is_ptr = (src == .constptr);
+            try cfo.code.relocations.append(.{ .target = cfo.code.get_target(), .idx = idx, .is_ptr = is_ptr });
+        },
     }
 }
 
@@ -49,6 +54,9 @@ fn regaritmc(cfo: *X86Asm, op: AOp, dst: IPReg, src: IPMCVal) !void {
         .frameslot => |f| try cfo.aritrm(op, r(dst), X86Asm.a(.rbp).o(slotoff(f))),
         .ipreg => |reg| try cfo.arit(op, r(dst), r(reg)),
         .constval => |c| try cfo.aritri(op, r(dst), @intCast(c)),
+        .constref, .constptr => {
+            @panic("le wip");
+        },
     }
 }
 
@@ -56,7 +64,7 @@ fn mcmovreg(cfo: *X86Asm, dst: IPMCVal, src: IPReg) !void {
     switch (dst) {
         .frameslot => |f| try cfo.movmr(slotea(f), r(src)),
         .ipreg => |reg| if (reg != src) try cfo.mov(r(reg), r(src)),
-        .constval => return error.AURORA_BOREALIS,
+        .constval, .constref, .constptr => return error.AURORA_BOREALIS,
     }
 }
 
@@ -383,7 +391,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                         // .frameslot => |f| try cfo.movrm(r(dst), X86Asm.a(.rbp).o(slotoff(f))),
                         .frameslot => return error.NotImplemented,
                         .ipreg => |reg| try cfo.vcvtsi2s_rr(i.fmode_op(), dst, true, r(reg)),
-                        .constval => return error.FLIRError, // mandatory cfold for things like this?
+                        .constval, .constref, .constptr => return error.FLIRError, // mandatory cfold for things like this?
                     }
                 },
                 .vf2int => {
@@ -441,5 +449,10 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
     try cfo.leave();
     try cfo.ret();
     if (options.dbg_disasm) try cfo.dbg_nasm(self.a);
+
+    for (cfo.code.relocations.items) |reloc| {
+        _ = reloc;
+        return error.WIPError;
+    }
     return target;
 }

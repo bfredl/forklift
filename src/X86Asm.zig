@@ -298,6 +298,7 @@ pub const EAddr = struct {
     base: ?IPReg, // null for rip[offset]
     index: ?IPReg = null,
     scale: u2 = 0,
+    bluff: bool = false,
     offset: i32 = 0,
 
     pub inline fn b(self: @This()) bool {
@@ -324,6 +325,10 @@ pub fn bo(reg: IPReg, offset: i32) EAddr {
 
 pub fn rel(offset: u32) EAddr {
     return .{ .base = null, .offset = @bitCast(offset) };
+}
+
+pub fn rel_placeholder() EAddr {
+    return .{ .base = null, .bluff = true };
 }
 
 // index quadword array
@@ -370,7 +375,11 @@ pub fn modRmEA(self: *Self, reg_or_opx: u3, ea: EAddr) !void {
     }
     if (ea.base == null) {
         // rip+off32
-        try self.wd(ea.offset - (@as(i32, @bitCast(self.code.get_target())) + 4));
+        if (ea.bluff) {
+            try self.wd(@bitCast(@as(u32, 0xBABABABA))); // placeholder
+        } else {
+            try self.wd(ea.offset - (@as(i32, @bitCast(self.code.get_target())) + 4));
+        }
     } else if (mod != 0b00) {
         try if (offset8) |off| self.wbi(off) else self.wd(ea.offset);
     }
