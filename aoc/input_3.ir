@@ -1,4 +1,4 @@
-func returner
+func main
   var %rowlen
   var %ipos
   var %xpos

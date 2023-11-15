@@ -355,7 +355,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                                 .constval => |c| {
                                     switch (size) {
                                         .byte => {
-                                            try cfo.movmi_byte(eaddr, @truncate(c));
+                                            try cfo.movmi_byte(eaddr, @truncate(@as(u32, @bitCast(c))));
                                         },
                                         .quadword => try cfo.movmi(eaddr, @intCast(c)),
                                         else => return error.NotImplemented,
@@ -408,7 +408,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                             try cfo.syscall();
                         },
                         .near => {
-                            const val = self.intconstval(i.op1) orelse return error.FLIRError;
+                            const val = self.constval(i.op1) orelse return error.FLIRError;
                             try cfo.call_rel(@intCast(val));
                         },
                         else => return error.FLIRError,
@@ -467,7 +467,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                 } else {
                     const t = cfo.code.get_target();
                     const_targets[reloc.idx] = t;
-                    try cfo.wq(self.constData.items[reloc.idx]);
+                    try cfo.wq(self.constvals.items[reloc.idx]);
                     break :found_target t;
                 }
             };

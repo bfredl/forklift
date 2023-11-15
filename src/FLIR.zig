@@ -34,8 +34,7 @@ preorder: ArrayList(u16),
 blkorder: ArrayList(u16),
 // This only handles int and float64 constants,
 // we need something else for "address into string table"
-constvals: ArrayList(ConstVal), // most constants go here, can ref constdata
-constData: ArrayList(u64), // raw data for constants, can contain embedded data
+constvals: ArrayList(u64), // raw data for constants, can contain embedded data
 // This is only used for preds currently, but use it for more stuff??
 refs: ArrayList(u16),
 narg: u16 = 0,
@@ -67,13 +66,6 @@ pub const ConstOff: u16 = 0xFF00;
 // 256 vrefs should be enough for everyone
 // could be smarter, like dedicated Block type for vrefs!
 pub const VRefOff: u16 = 0xFE00;
-
-pub const ConstVal = union(enum) {
-    // TODO: separate 32 and 64 bit types formally
-    smallInt: i32, // sign extended
-    bigInt: u16, // index into constval, 64-bit
-    float64: u16, // index into constval, bitcast to f64
-};
 
 pub fn uv(s: usize) u16 {
     return @intCast(s);
@@ -391,7 +383,7 @@ pub const Inst = struct {
 
 pub const IPMCVal = union(enum) {
     ipreg: IPReg,
-    constval: u64, // bitcast to i64 for signed
+    constval: i32, //sign extended in 64-bit context
     frameslot: u8,
     // both these adresses constant data stored in memory
     // "constref" implies loading the actual value
@@ -409,31 +401,31 @@ pub const IPMCVal = union(enum) {
     }
 };
 
-pub fn constval(self: *Self, ref: u16) ?ConstVal {
+pub fn constidx(ref: u16) ?u16 {
     if (ref == NoRef) return null;
     if (ref >= ConstOff) {
-        return self.constvals.items[ref - ConstOff];
+        return ref - ConstOff;
     }
     return null;
 }
 
-pub fn intconstval(self: *Self, ref: u16) ?u64 {
-    const val = self.constval(ref) orelse return null;
-    return switch (val) {
-        .smallInt => |i| return @intCast(@as(i64, i)),
-        .bigInt => |idx| return self.constData.items[idx],
-        .float64 => null,
-    };
+pub fn constval(self: *Self, ref: u16) ?u64 {
+    const idx = constidx(ref) orelse return null;
+    return self.constvals.items[idx];
 }
 
 // if null: still could be a value, just not an ipval
 pub fn ipval(self: *Self, ref: u16) ?IPMCVal {
-    if (self.constval(ref)) |val| {
-        return switch (val) {
-            .smallInt => |i| .{ .constval = @intCast(@as(i64, i)) },
-            .bigInt => |idx| .{ .constref = idx },
-            .float64 => null,
-        };
+    if (constidx(ref)) |idx| {
+        const val: u64 = self.constvals.items[idx];
+        const vali32: i32 = @bitCast(@as(u32, @truncate(val)));
+        // this is a silly way of saing "is there a i32,
+        // which sign-extended to i64 is bit-equal to this value?"
+        if (@as(i64, @bitCast(val)) == vali32) {
+            return .{ .constval = vali32 };
+        } else {
+            return .{ .constref = idx };
+        }
     } else if (self.iref(ref)) |i| {
         return i.ipval();
     } else {
@@ -631,8 +623,8 @@ pub const MCKind = enum(u8) {
 };
 
 fn initConsts(self: *Self) void {
-    self.constvals.appendAssumeCapacity(.{ .smallInt = 0 });
-    self.constvals.appendAssumeCapacity(.{ .smallInt = 1 });
+    self.constvals.appendAssumeCapacity(0);
+    self.constvals.appendAssumeCapacity(1);
 }
 
 pub fn init(n: u16, allocator: Allocator) !Self {
@@ -643,8 +635,7 @@ pub fn init(n: u16, allocator: Allocator) !Self {
         .blkorder = ArrayList(u16).init(allocator),
         .preorder = ArrayList(u16).init(allocator),
         .refs = try ArrayList(u16).initCapacity(allocator, 4 * n),
-        .constvals = try ArrayList(ConstVal).initCapacity(allocator, 8),
-        .constData = ArrayList(u64).init(allocator),
+        .constvals = try ArrayList(u64).initCapacity(allocator, 8),
         .b = try ArrayList(Block).initCapacity(allocator, 2 * n),
     };
     self.initConsts();
@@ -676,7 +667,6 @@ pub fn deinit(self: *Self) void {
     self.preorder.deinit();
     self.refs.deinit();
     self.constvals.deinit();
-    self.constData.deinit();
     self.b.deinit();
     self.vregs.deinit();
 }
@@ -818,34 +808,23 @@ pub fn preInst(self: *Self, node: u16, inst: Inst) !u16 {
 }
 
 pub fn const_uint(self: *Self, val: u64) !u16 {
-    if (val <= math.maxInt(u31)) {
-        return self.const_int(@intCast(val));
-    }
-
     for (self.constvals.items, 0..) |v, i| {
-        switch (v) {
-            .bigInt => |idx| if (self.constData.items[idx] == val) return uv(ConstOff + i),
-            else => continue,
-        }
+        if (v == val) return uv(ConstOff + i);
     }
     if (self.constvals.items.len == 511) return error.FLIRError;
-    const idx = self.constData.items.len;
-    try self.constData.append(val);
     const ref = ConstOff + self.constvals.items.len;
-    try self.constvals.append(.{ .bigInt = uv(idx) });
+    try self.constvals.append(val);
     return uv(ref);
 }
 
 pub fn const_int(self: *Self, val: i32) !u16 {
-    for (self.constvals.items, 0..) |v, i| {
-        switch (v) {
-            .smallInt => |si| if (si == val) return uv(ConstOff + i),
-            else => continue,
-        }
-    }
-    const ref = ConstOff + self.constvals.items.len;
-    try self.constvals.append(.{ .smallInt = val });
-    return uv(ref);
+    return const_uint(self, @as(u32, @bitCast(val)));
+}
+
+// TODO: f64 vs f32
+// TODO: special case zero, one, mayhaps?
+pub fn const_float(self: *Self, val: f64) !u16 {
+    return self.const_uint(@bitCast(val));
 }
 
 pub fn binop(self: *Self, node: u16, tag: Tag, op1: u16, op2: u16) !u16 {
