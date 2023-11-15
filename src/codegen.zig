@@ -228,7 +228,13 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                 },
                 // lea relative RBP when used
                 .alloc => {},
-                .ret => try regmovmc(&cfo, X86Asm.IPReg.rax.into(), self.ipval(i.op1).?),
+                .ret => {
+                    if (self.ipval(i.op1)) |ipval| {
+                        try regmovmc(&cfo, X86Asm.IPReg.rax.into(), ipval);
+                    } else {
+                        return error.WIPError;
+                    }
+                },
                 .ibinop => {
                     var lhs = self.ipval(i.op1) orelse return error.FLIRError;
                     var rhs = self.ipval(i.op2) orelse return error.FLIRError;
@@ -369,6 +375,9 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                             try cfo.vmovumr(fmode, eaddr, src);
                         },
                     }
+                },
+                .vconst => {
+                    return error.WIPError;
                 },
                 .vmath => {
                     const x = self.avxreg(i.op1) orelse return error.FLIRError;

@@ -317,6 +317,7 @@ pub const Inst = struct {
             .vmath => .avxval,
             .vcmpf => .avxval,
             .int2vf => .avxval, // convert int to float, or move int from gp to vector reg
+            .vconst => .avxval,
             .vf2int => .intptr,
             .ret => null,
             .call => .intptr,
@@ -351,6 +352,7 @@ pub const Inst = struct {
             .vmath => 2,
             .vcmpf => 2,
             .int2vf => 1,
+            .vconst => 1, // but note: always a constval
             .vf2int => 1,
             .ret => 1,
             .callarg => 1,
@@ -456,6 +458,9 @@ pub const Tag = enum(u8) {
     store,
     ibinop,
     icmp,
+    // in theory same as "intval to float bitcast", but separate vconst
+    // make life easier. add a int2vf mode for bitcasts
+    vconst, // op1 is a constref, opspec for type
     vmath, // binops specifically
     vcmpf,
     int2vf,
@@ -611,6 +616,9 @@ pub const MCKind = enum(u8) {
     // not stored as such, will be emitted togheter with the next inst
     // example "lea" and then "store", or "load" and then ibinop/vmath
     fused,
+
+    constval, // constvals[i] interpreted as "data"
+    constptr, // pointer to a constvals[i] emitted value
 
     pub fn unallocated(self: MCKind) bool {
         return switch (self) {
@@ -823,8 +831,10 @@ pub fn const_int(self: *Self, val: i32) !u16 {
 
 // TODO: f64 vs f32
 // TODO: special case zero, one, mayhaps?
-pub fn const_float(self: *Self, val: f64) !u16 {
-    return self.const_uint(@bitCast(val));
+// TODO: tricky with vectors, we might both simple broadcast and vector constants.
+pub fn const_float(self: *Self, node: u16, val: f64) !u16 {
+    const constref = self.const_uint(@bitCast(val));
+    return self.addInst(node, .{ .tag = .vconst, .op1 = constref, .op2 = NoRef, .spec = sphigh(@intFromEnum(FMode.sd), 0) });
 }
 
 pub fn binop(self: *Self, node: u16, tag: Tag, op1: u16, op2: u16) !u16 {
