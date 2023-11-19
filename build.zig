@@ -3,7 +3,7 @@ pub fn build(b: *std.Build) void {
     const opt = b.standardOptimizeOption(.{});
 
     const ir = b.step("ir", "run some ir");
-    var exe_ir = b.addExecutable(.{
+    const exe_ir = b.addExecutable(.{
         .name = "run",
         .root_source_file = .{ .path = "src/run_ir.zig" },
         .optimize = opt,
@@ -15,7 +15,7 @@ pub fn build(b: *std.Build) void {
         .source_file = .{ .path = "src/forklift.zig" },
     });
 
-    var exe_bpf = b.addExecutable(.{
+    const exe_bpf = b.addExecutable(.{
         .name = "run_bpf",
         .root_source_file = .{ .path = "src/main_bpf.zig" },
         .optimize = opt,

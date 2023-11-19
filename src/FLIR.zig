@@ -729,8 +729,8 @@ pub fn vcvtspec(fmode: FMode) u8 {
 pub fn addNode(self: *Self) !u16 {
     const n = try self.n.addOne();
     const b = try self.b.addOne();
-    var nodeid = uv(self.n.items.len - 1);
-    var blkid = uv(self.b.items.len - 1);
+    const nodeid = uv(self.n.items.len - 1);
+    const blkid = uv(self.b.items.len - 1);
     n.* = .{ .firstblk = blkid, .lastblk = blkid };
     b.* = .{ .node = nodeid };
     return nodeid;
@@ -1543,7 +1543,7 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
 
             var usable_regs: [16]bool = undefined;
             var free_regs = if (is_avx) &free_regs_avx else &free_regs_ip;
-            var reg_kind: MCKind = if (is_avx) .vfreg else .ipreg;
+            const reg_kind: MCKind = if (is_avx) .vfreg else .ipreg;
 
             @memcpy(&usable_regs, free_regs);
             var conflicts: u16 = 0;

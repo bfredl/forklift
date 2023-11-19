@@ -31,7 +31,7 @@ pub fn get_target(self: *Self) u32 {
 }
 
 pub fn new_inst(self: *Self, addr: usize) !void {
-    var size = @as(u32, @intCast(self.get_target()));
+    const size = @as(u32, @intCast(self.get_target()));
     try self.inst_off.append(size);
     try self.inst_dbg.append(addr);
 }

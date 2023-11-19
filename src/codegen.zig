@@ -169,8 +169,8 @@ pub fn set_pred(self: *FLIR, cfo: *X86Asm, targets: [][2]u32, ni: u16) !void {
 const ABI = FLIR.X86ABI;
 
 pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
-    var labels = try self.a.alloc(u32, self.n.items.len);
-    var targets = try self.a.alloc([2]u32, self.n.items.len);
+    const labels = try self.a.alloc(u32, self.n.items.len);
+    const targets = try self.a.alloc([2]u32, self.n.items.len);
     defer self.a.free(labels);
     defer self.a.free(targets);
 
@@ -312,7 +312,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     }
                 },
                 .load => {
-                    var eaddr = try get_eaddr_load_or_lea(self, i.*);
+                    const eaddr = try get_eaddr_load_or_lea(self, i.*);
                     const mem_type = i.mem_type();
                     switch (mem_type) {
                         .intptr => |size| {
@@ -344,7 +344,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     }
                 },
                 .store => {
-                    var eaddr = try get_eaddr(self, i.op1);
+                    const eaddr = try get_eaddr(self, i.op1);
                     switch (i.mem_type()) {
                         .intptr => |size| {
                             const val = self.ipval(i.op2) orelse return error.FLIRError;

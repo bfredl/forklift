@@ -62,7 +62,7 @@ pub fn get_target(code: *BPFCode) u32 {
 }
 
 pub fn set_target(code: *BPFCode, pos: u32) void {
-    var off = get_target(code) - (pos + 1);
+    const off = get_target(code) - (pos + 1);
     code.items[pos].off = @intCast(off);
 }
 
@@ -93,7 +93,7 @@ pub fn ld_map_fd(code: *BPFCode, reg: IPReg, map_fd: fd_t, spec: u8) !void {
 }
 
 pub fn jeq(code: *BPFCode, src: IPReg, dst: anytype) !u32 {
-    var pos = get_target(code);
+    const pos = get_target(code);
     try put(code, I.jeq(src, dst, -0x7FFF));
     return pos;
 }

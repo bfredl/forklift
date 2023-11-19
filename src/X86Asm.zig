@@ -262,8 +262,8 @@ pub const VMathOp = enum(u3) {
 };
 
 pub fn set_align(self: *Self, alignment: u32) !void {
-    var residue = self.code.get_target() & (alignment - 1);
-    var padding = alignment - residue;
+    const residue = self.code.get_target() & (alignment - 1);
+    const padding = alignment - residue;
     if (padding != 0 and padding != alignment) {
         try self.code.buf.appendNTimes(0x90, padding);
     }
@@ -341,7 +341,7 @@ pub fn bi(base: IPReg, index: IPReg) EAddr {
 }
 
 pub fn maybe_imm8(imm: i32) ?i8 {
-    var imm8: i8 = @truncate(imm);
+    const imm8: i8 = @truncate(imm);
     return if (imm == imm8) imm8 else null;
 }
 
@@ -502,7 +502,7 @@ pub fn jfwd(self: *Self, cond: ?Cond) !u32 {
 
 // really i32, but we only use this when "target" was emitted later than "pos"
 pub fn set_target_32(self: *Self, pos: u32, target: u32) void {
-    var off = target - (pos + 4);
+    const off = target - (pos + 4);
     std.mem.writeInt(u32, self.code.buf.items[pos..][0..4], off, .little);
 }
 
@@ -510,7 +510,7 @@ pub fn set_target_jmp(self: *Self, pos: u32) !void {
     if (self.long_jump_mode) {
         self.set_target_32(pos, self.code.get_target());
     } else {
-        var off = self.code.get_target() - (pos + 1);
+        const off = self.code.get_target() - (pos + 1);
         if (off > 0x7f) {
             return error.InvalidNearJump;
         }
@@ -523,7 +523,7 @@ pub fn set_lea_target(self: *Self, pos: u32) void {
 }
 
 pub fn set_lea(self: *Self, pos: u32, target: u32) void {
-    var off = target - (pos + 4);
+    const off = target - (pos + 4);
     self.code.buf.items[pos] = @intCast(off);
     std.mem.writeInt(u32, self.code.buf.items[pos..][0..4], off, .little);
 }
@@ -531,7 +531,7 @@ pub fn set_lea(self: *Self, pos: u32, target: u32) void {
 // .. and back again
 pub fn jbck(self: *Self, cond: ?Cond, target: u32) !void {
     try self.new_inst(@returnAddress());
-    var off = @as(i32, @intCast(target)) - (@as(i32, @intCast(self.code.buf.items.len)) + 2);
+    const off = @as(i32, @intCast(target)) - (@as(i32, @intCast(self.code.buf.items.len)) + 2);
     if (maybe_imm8(off)) |off8| {
         try self.wb(if (cond) |c| 0x70 + c.off() else 0xEB);
         try self.wbi(off8);

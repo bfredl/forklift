@@ -257,7 +257,7 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
         return true;
     } else if (self.t.nonws() == @as(u8, ':')) {
         self.t.pos += 1;
-        var nextnode: u16 = next: {
+        const nextnode: u16 = next: {
             if (Tokenizer.idlike(self.t.nonws() orelse return error.ParseError)) {
                 const label = try self.t.identifier();
                 const item = try f.labels.getOrPut(label);

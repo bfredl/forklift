@@ -47,7 +47,7 @@ pub fn main() !void {
         }
     }
 
-    var filearg = mem.span(argv[nextarg]);
+    const filearg = mem.span(argv[nextarg]);
     nextarg += 1;
 
     const mode = @import("builtin").mode;
