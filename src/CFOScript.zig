@@ -179,7 +179,6 @@ pub fn braced_block(self: *Self) !?bool {
     const did_ret = try self.scoped_block();
 
     try self.t.expect_char('}');
-    try self.t.lbrk();
     return did_ret;
 }
 
@@ -192,6 +191,7 @@ pub fn loop(self: *Self) !void {
     self.curloop = exit;
 
     _ = try self.braced_block();
+    try self.t.lbrk();
 
     try self.ir.addLink(self.curnode, 0, entry);
     self.curnode = exit;
@@ -204,13 +204,14 @@ pub fn if_stmt(self: *Self) !void {
     _ = try self.cond_expr();
     try self.t.expect_char(')');
     const prev_node = self.curnode;
-    const after = try self.ir.addNodeAfter(prev_node);
+    const other = try self.ir.addNodeAfter(prev_node);
     if (self.t.keyword()) |kw2| {
         if (mem.eql(u8, kw2, "break")) {
             try self.t.expect_char(';');
             try self.t.lbrk();
             if (self.curloop == 0) return error.SyntaxError;
             try self.ir.addLink(prev_node, 1, self.curloop);
+            self.curnode = other;
         } else {
             return error.SyntaxError;
         }
@@ -219,15 +220,30 @@ pub fn if_stmt(self: *Self) !void {
         self.curnode = then;
         try self.ir.addLink(prev_node, 1, then);
         _ = (try self.braced_block()) orelse return error.SyntaxError;
-        // TODO: actual else block, this is just the codes below
-        try self.ir.addLink(self.curnode, 0, after);
+        if (self.t.keyword()) |kw| {
+            if (mem.eql(u8, kw, "else")) {
+                const after = try self.ir.addNodeAfter(self.curnode);
+                self.curnode = other;
+                _ = (try self.braced_block()) orelse return error.SyntaxError;
+                try self.t.lbrk();
+                try self.ir.addLink(self.curnode, 0, after);
+                self.curnode = after;
+            } else {
+                return error.SyntaxError;
+            }
+        } else {
+            try self.t.lbrk();
+            try self.ir.addLink(self.curnode, 0, other);
+            self.curnode = other;
+        }
     }
-    self.curnode = after;
 }
 
 pub fn stmt(self: *Self) !?bool {
     const kw = self.t.keyword() orelse {
-        return self.braced_block();
+        const ret = try self.braced_block();
+        if (ret) |_| try self.t.lbrk();
+        return ret;
     };
     var did_ret = false;
     if (mem.eql(u8, kw, "return")) {
@@ -248,7 +264,7 @@ pub fn stmt(self: *Self) !?bool {
         return false;
     } else {
         // try var assignment
-        const v = self.vars.get(kw) orelse return error.SyntaxError;
+        const v = self.vars.get(kw) orelse return error.UndefinedName;
         if (!v.is_mut) {
             return error.SyntaxError;
         }

@@ -1,0 +1,29 @@
+func main {
+  args data len table tablelen;
+  vars x tpos i imatch scan result;
+  tpos := 0;
+  i := 0;
+  result := 200;
+  loop {
+    scan := 0;
+    imatch := 1;
+    loop {
+      let tval = table[tpos];
+      tpos := tpos + 1;
+      if (tval == 10) break;
+      if (scan >= len) break;
+      if (tval != data[scan]) {
+        imatch := 0;
+      }
+      scan := scan + 1;
+    }
+    if (imatch == 1) {
+      result := i;
+    }
+    if (imatch == 1) break; // BULL
+    // if (tpos >= tablelen) break;
+    if (table[tpos] == 0) break;
+    i := i + 1;
+  }
+  return result;
+}

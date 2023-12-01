@@ -1,0 +1,54 @@
+func main {
+  args data len table tablelen;
+  vars x first current sum y tpos i imatch scan;
+  x := 0;
+  sum := 0;
+  loop {
+    if (x >= len) break;
+    first := 10;
+    current := 0; // dummy init
+    loop {
+      if (x >= len) break;
+      let byteval = data[x];
+      let trydigit = byteval - 48;
+      if (trydigit <|= 9) {
+        current := trydigit;
+        if (first >= 10) {
+          first := trydigit;
+        }
+      } else {
+        tpos := 0;
+        i := 0;
+        loop {
+          scan := x;
+          imatch := 1;
+          loop {
+            let tval = table[tpos];
+            tpos := tpos + 1;
+            if (tval == 10) break;
+            if (scan >= len) break;
+            if (tval != data[scan]) {
+              imatch := 0;
+            }
+            scan := scan + 1;
+          }
+          if (imatch == 1) {
+            current := i;
+            if (first >= 10) {
+              first := i;
+            }
+          }
+          if (imatch == 1) break; // BULL
+          // if (tpos >= tablelen) break;
+          if (table[tpos] == 0) break;
+          i := i + 1;
+        }
+      }
+      x := x + 1;
+      if (byteval == 10) break;
+    }
+    let item = 10*first+current;
+    sum := sum + item;
+  }
+  return sum;
+}

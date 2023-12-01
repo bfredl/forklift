@@ -1,0 +1,5 @@
+func main {
+  args data len table tablelen;
+  let summa = len + tablelen;
+  return summa;
+}

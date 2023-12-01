@@ -693,12 +693,16 @@ fn fromref(ref: u16) struct { block: u16, idx: u16 } {
     };
 }
 
+pub fn unvref(self: *Self, ref: u16) u16 {
+    return if (ref >= VRefOff and ref < ConstOff) self.vregs.items[ref - VRefOff].ref else ref;
+}
+
 const BIREF = struct { n: u16, i: *Inst };
 pub fn biref(self: *Self, ref: u16) ?BIREF {
     if (ref >= ConstOff) {
         return null;
     }
-    const blkref = if (ref >= VRefOff) self.vregs.items[ref - VRefOff].ref else ref;
+    const blkref = self.unvref(ref);
     if (blkref >= VRefOff) @panic("NOT LIKE THIS");
     const r = fromref(blkref);
     const blk = &self.b.items[r.block];

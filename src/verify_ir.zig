@@ -251,7 +251,8 @@ fn print_op(self: *FLIR, pre: []const u8, kill: bool, ref: u16) void {
         print("const {}", .{c});
     } else {
         const k = if (kill) "!" else "";
-        print("{s}%{}", .{ k, ref });
+        const bref = self.unvref(ref);
+        print("{s}%{}", .{ k, bref });
     }
 }
 

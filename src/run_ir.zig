@@ -17,10 +17,11 @@ pub fn readall(allocator: mem.Allocator, filename: []u8) ![]u8 {
     const fil = try std.fs.cwd().openFile(filename, .{});
     const stat = try os.fstat(fil.handle);
     const size = std.math.cast(usize, stat.size) orelse return error.FileTooBig;
-    const buf = try allocator.alloc(u8, size);
+    const buf = try allocator.alloc(u8, size + 1);
     if (try fil.readAll(buf) < size) {
         return error.IOError;
     }
+    buf[size] = 0;
     return buf;
 }
 
