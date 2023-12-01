@@ -62,6 +62,9 @@ pub fn main() !void {
 
     const inbuf = if (argv.len > nextarg) try readall(allocator, mem.span(argv[nextarg])) else null;
     defer if (inbuf) |b| allocator.free(b);
+    nextarg += 1;
+    const inbuf2 = if (argv.len > nextarg) try readall(allocator, mem.span(argv[nextarg])) else null;
+    defer if (inbuf2) |b| allocator.free(b);
 
     var module = try @import("./CFOModule.zig").init(allocator);
     var parser = try Parser.init(buf, allocator, &module);
@@ -75,8 +78,9 @@ pub fn main() !void {
 
     if (inbuf) |b| {
         try module.code.finalize();
-        const SFunc = *const fn (arg1: [*]u8, arg2: usize) callconv(.C) usize;
+        const SFunc = *const fn (arg1: [*]u8, arg2: usize, arg3: ?[*]u8, arg4: usize) callconv(.C) usize;
         const fun = try module.get_func_ptr("main", SFunc);
-        print("res: {}\n", .{fun(b.ptr, b.len)});
+        const ptr2, const len2 = if (inbuf2) |b2| .{ b2.ptr, b2.len } else .{ null, 0 };
+        print("res: {}\n", .{fun(b.ptr, b.len, ptr2, len2)});
     }
 }
