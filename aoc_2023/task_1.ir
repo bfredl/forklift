@@ -1,0 +1,27 @@
+func main {
+  args data len;
+  vars x first current sum;
+  x := 0;
+  sum := 0;
+  loop {
+    if (x >= len) break;
+    first := 10;
+    current := 0; // dummy init
+    loop {
+      if (x >= len) break;
+      let byteval = data[x];
+      let trydigit = byteval - 48;
+      if (trydigit <|= 9) {
+        current := trydigit;
+        if (first >= 10) {
+          first := trydigit;
+        }
+      }
+      x := x + 1;
+      if (byteval == 10) break;
+    }
+    let item = 10*first+current;
+    sum := sum + item;
+  }
+  return sum;
+}

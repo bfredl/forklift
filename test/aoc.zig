@@ -332,3 +332,38 @@ test "score pairs" {
     try expect(usize, 'p', s_call(func, "vJrwpWtwJgWrhcsFMMfFFhFp\njqHRN"));
     try expect(usize, 5000, s_call(func, "vJrwxWtwJgWrhcsFMMfFFhFp\njqHRN"));
 }
+
+test "aoc 2023 day 1 part one" {
+    var cfo = try parse_test(
+        \\func main {
+        \\  args data len;
+        \\  vars x first current sum;
+        \\  x := 0;
+        \\  sum := 0;
+        \\  loop {
+        \\    if (x >= len) break;
+        \\    first := 10;
+        \\    current := 0; // dummy init
+        \\    loop {
+        \\      if (x >= len) break;
+        \\      let byteval = data[x];
+        \\      let trydigit = byteval - 48;
+        \\      if (trydigit <|= 9) {
+        \\        current := trydigit;
+        \\        if (first >= 10) {
+        \\          first := trydigit;
+        \\        }
+        \\      }
+        \\      x := x + 1;
+        \\      if (byteval == 10) break;
+        \\    }
+        \\    let item = 10*first+current;
+        \\    sum := sum + item;
+        \\  }
+        \\  return sum;
+        \\}
+    );
+    defer cfo.deinit();
+    const func = cfo.get_ptr(0, SFunc);
+    try expect(usize, 142, s_call(func, "1abc2\n pqr3stu8vwx\n a1b2c3d4e5f\ntreb7uchet\n"));
+}

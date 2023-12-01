@@ -135,9 +135,10 @@ pub fn cond_op(op: []const u8) ?FLIR.IntCond {
         return switch (op[0]) {
             '<' => .lt,
             '>' => .gt,
-            '=' => .eq,
             else => null,
         };
+    } else if (mem.eql(u8, op, "==")) {
+        return .eq;
     } else if (mem.eql(u8, op, ">=")) {
         return .ge;
     } else if (mem.eql(u8, op, "<=")) {
@@ -234,7 +235,7 @@ pub fn stmt(self: *Self) !?bool {
             try self.ir.addLink(prev_node, 1, then);
             _ = (try self.braced_block()) orelse return error.SyntaxError;
             // TODO: actual else block, this is just the codes below
-            try self.ir.addLink(then, 0, after);
+            try self.ir.addLink(self.curnode, 0, after);
         }
         self.curnode = after;
         return false;

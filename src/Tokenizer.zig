@@ -30,7 +30,8 @@ pub fn nonws(self: *Self) ?u8 {
 pub fn lbrk(self: *Self) ParseError!void {
     var val = self.nonws() orelse return;
     while (true) {
-        if (val == ';') {
+        if (val == '/' and self.pos < self.str.len - 1 and self.str[self.pos + 1] == '/') {
+            self.pos += 2;
             while (self.str[self.pos] != '\n') : (self.pos += 1) {
                 if (self.pos >= self.str.len - 1) return;
             }
@@ -42,7 +43,7 @@ pub fn lbrk(self: *Self) ParseError!void {
         self.lpos = self.pos;
 
         val = self.nonws() orelse return;
-        if (val != '\n' and val != ';') return;
+        if (val != '\n' and val != '/') return;
     }
 }
 
@@ -51,7 +52,7 @@ pub fn idlike(c: u8) bool {
 }
 
 pub fn oplike(c: u8) bool {
-    return (c == '+' or c == '-' or c == '/' or c == '*' or c == '=' or c == '<' or c == '>' or c == '!');
+    return (c == '+' or c == '-' or c == '/' or c == '*' or c == '=' or c == '<' or c == '>' or c == '!' or c == '|');
 }
 
 pub const Chunk = []const u8;

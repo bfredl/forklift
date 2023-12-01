@@ -75,7 +75,7 @@ test "return u64" {
 test "comment" {
     var cfo = try parse_test(
         \\func returner
-        \\  ret 7 ; this is a comment
+        \\  ret 7 // this is a comment
         \\end
     );
     defer cfo.deinit();
