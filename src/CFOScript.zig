@@ -42,11 +42,17 @@ pub fn expr_0(self: *Self) !?u16 {
             const i = self.t.num() orelse return error.SyntaxError;
             return try self.ir.const_int(@intCast(i));
         },
+        '(' => {
+            self.t.pos += 1;
+            const val = try self.arg_expr();
+            try self.t.expect_char(')');
+            return val;
+        },
         else => return null,
     }
 }
 
-pub fn expr_1(self: *Self) ParseError!?u16 {
+pub fn expr_1(self: *Self) !?u16 {
     var val = (try self.expr_0()) orelse return null;
     while (self.t.nonws()) |char| {
         if (char == '[') {
@@ -80,10 +86,16 @@ pub fn expr_2(self: *Self) !?u16 {
 pub fn expr_3(self: *Self) !?u16 {
     var val = (try self.expr_2()) orelse return null;
     while (self.t.nonws()) |char| {
+        if (self.t.peek_operator()) |op| {
+            // tricky: don't confuse  with |>
+            if (op.len > 1) break;
+        }
+
         const theop: FLIR.IntBinOp = switch (char) {
             '+' => .add,
             '-' => .sub,
-            else => return val,
+            '|' => .@"or",
+            else => break,
         };
         self.t.pos += 1;
         const op = (try self.expr_1()) orelse return error.SyntaxError;
@@ -93,7 +105,7 @@ pub fn expr_3(self: *Self) !?u16 {
 }
 
 // BULL: not even used for args..
-pub fn arg_expr(self: *Self) !u16 {
+pub fn arg_expr(self: *Self) ParseError!u16 {
     return (try self.expr_3()) orelse return error.SyntaxError;
 }
 
@@ -199,6 +211,13 @@ pub fn loop(self: *Self) !void {
     self.curloop = save_curloop;
 }
 
+pub fn break_stmt(self: *Self, branch: u1) !void {
+    if (self.curloop == 0) return error.SyntaxError;
+    try self.t.expect_char(';');
+    try self.t.lbrk();
+    try self.ir.addLink(self.curnode, branch, self.curloop);
+}
+
 pub fn if_stmt(self: *Self) !void {
     try self.t.expect_char('(');
     _ = try self.cond_expr();
@@ -207,10 +226,7 @@ pub fn if_stmt(self: *Self) !void {
     const other = try self.ir.addNodeAfter(prev_node);
     if (self.t.keyword()) |kw2| {
         if (mem.eql(u8, kw2, "break")) {
-            try self.t.expect_char(';');
-            try self.t.lbrk();
-            if (self.curloop == 0) return error.SyntaxError;
-            try self.ir.addLink(prev_node, 1, self.curloop);
+            try self.break_stmt(1);
             self.curnode = other;
         } else {
             return error.SyntaxError;
@@ -222,20 +238,28 @@ pub fn if_stmt(self: *Self) !void {
         _ = (try self.braced_block()) orelse return error.SyntaxError;
         if (self.t.keyword()) |kw| {
             if (mem.eql(u8, kw, "else")) {
+                // TODO: support if (foo) { stuff; break;} else {bar;} even tho it is technically redundant
                 const after = try self.ir.addNodeAfter(self.curnode);
                 self.curnode = other;
                 _ = (try self.braced_block()) orelse return error.SyntaxError;
                 try self.t.lbrk();
-                try self.ir.addLink(self.curnode, 0, after);
+                if (self.curnode != FLIR.NoRef) {
+                    try self.ir.addLink(self.curnode, 0, after);
+                }
                 self.curnode = after;
             } else {
                 return error.SyntaxError;
             }
         } else {
             try self.t.lbrk();
-            try self.ir.addLink(self.curnode, 0, other);
+            if (self.curnode != FLIR.NoRef) {
+                try self.ir.addLink(self.curnode, 0, other);
+            }
             self.curnode = other;
         }
+    }
+    if (self.curnode == FLIR.NoRef) {
+        return error.SyntaxError;
     }
 }
 
@@ -258,6 +282,11 @@ pub fn stmt(self: *Self) !?bool {
         item.* = .{ .ref = val, .is_mut = false };
     } else if (mem.eql(u8, kw, "if")) {
         try self.if_stmt();
+        return false;
+    } else if (mem.eql(u8, kw, "break")) {
+        try self.break_stmt(0);
+        // TODO: crufty, really assumes this is right in an if-statement
+        self.curnode = FLIR.NoRef;
         return false;
     } else if (mem.eql(u8, kw, "loop")) {
         try self.loop();

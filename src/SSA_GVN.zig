@@ -124,8 +124,10 @@ fn resolve_phi(self: Self, n: u16, i: FLIR.Inst, iref: u16) !bool {
     if (i.op2 == 1) return false;
     const ivar = (self.f.iref(i.op1) orelse return error.GLUGG).*;
     var onlyref: ?u16 = null;
+    const op1 = i.op1; // TRICKY: i might be hidden pointer to f.b.items
     for (self.f.preds(n)) |v| {
-        const ref = try self.read_var(v, i.op1, ivar);
+        const ref = try self.read_var(v, op1, ivar);
+        std.debug.print("ref .{}\n", .{ref});
 
         _ = try self.f.binop(v, .putphi, ref, iref);
         onlyref = if (onlyref) |only| if (only == ref) only else FLIR.NoRef else ref;
