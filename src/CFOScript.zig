@@ -77,7 +77,7 @@ pub fn expr_2(self: *Self) !?u16 {
             else => return val,
         };
         self.t.pos += 1;
-        const op = (try self.expr_0()) orelse return error.SyntaxError;
+        const op = (try self.expr_1()) orelse return error.SyntaxError;
         val = try self.ir.ibinop(self.curnode, theop, val, op);
     }
     return val;
@@ -98,7 +98,7 @@ pub fn expr_3(self: *Self) !?u16 {
             else => break,
         };
         self.t.pos += 1;
-        const op = (try self.expr_1()) orelse return error.SyntaxError;
+        const op = (try self.expr_2()) orelse return error.SyntaxError;
         val = try self.ir.ibinop(self.curnode, theop, val, op);
     }
     return val;
