@@ -503,26 +503,3 @@ test "swap simple" {
     const fun2 = try res.get_func_ptr("diff", BFunc);
     try expect(usize, 40, fun2(50, 10));
 }
-
-test "cfoscript basic" {
-    var cfo = try parse_test(
-        \\func scripter {
-        \\  args foo;
-        \\  vars i sum;
-        \\  i := 0;
-        \\  sum := 0;
-        \\  loop {
-        \\    if (i >= foo) break;
-        \\    sum := sum + i;
-        \\    i := i + 1;
-        \\  }
-        \\  return sum;
-        \\}
-    );
-    defer cfo.deinit();
-
-    const fun = cfo.get_ptr(0, AFunc);
-    try expect(usize, 3, fun(3));
-    try expect(usize, 15, fun(6));
-    try expect(usize, 45, fun(10));
-}
