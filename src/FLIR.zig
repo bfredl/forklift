@@ -1838,10 +1838,39 @@ const InsIterator = struct {
             }
         }
     }
+
+    /// NB: semantics of using _both_ forward and rev on the same iterator has not been checked
+    pub fn next_rev(it: *InsIterator) ?IYtem {
+        return it.get_rev(true);
+    }
+
+    fn get_rev(it: *InsIterator, advance: bool) ?IYtem {
+        while (true) {
+            if (it.cur_blk == NoRef) return null;
+            if (it.idx == 0) {
+                it.idx = BLK_SIZE;
+                it.cur_blk = it.self.b.items[it.cur_blk].pred;
+                if (it.cur_blk == NoRef) return null;
+            }
+
+            const myidx = it.idx - 1;
+            const retval = IYtem{ .i = &it.self.b.items[it.cur_blk].i[myidx], .ref = toref(it.cur_blk, myidx) };
+            if (advance or retval.i.tag == .empty) {
+                it.idx = myidx;
+            }
+            if (retval.i.tag != .empty) {
+                return retval;
+            }
+        }
+    }
 };
 
 pub fn ins_iterator(self: *Self, first_blk: u16) InsIterator {
     return .{ .self = self, .cur_blk = first_blk, .idx = 0 };
+}
+
+pub fn ins_iterator_rev(self: *Self, last_blk: u16) InsIterator {
+    return .{ .self = self, .cur_blk = last_blk, .idx = BLK_SIZE };
 }
 
 // TODO: not yet sure if ABI should be comptime or runtime struct. this works for now

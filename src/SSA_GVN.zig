@@ -190,34 +190,24 @@ fn cleanup_trivial_phi(self: Self) !void {
     while (true) : (ni -= 1) {
         if (ni == 0) break;
         const n = &self.f.n.items[ni];
-
-        // TODO: archetypical example of an insn _backwards_ iterator
-        var cur_blk: ?u16 = n.lastblk;
-        while (cur_blk) |blk| {
-            var b = &self.f.b.items[blk];
-            var idx: u16 = FLIR.BLK_SIZE;
-            while (idx > 0) {
-                idx -= 1;
-                const i = &b.i[idx];
-
-                // phi reading phi was already handled in resolve_phi()
-                if (i.tag != .phi) {
-                    const nop = i.n_op(false);
-                    if (nop > 0) {
-                        i.op1 = self.check_trivial(i.op1);
-                        if (nop > 1) {
-                            i.op2 = self.check_trivial(i.op2);
-                        }
-                    }
-                } else {
-                    if (i.op2 == 2) {
-                        // by effect by reverse traversal, have already fixed any uses
-                        i.tag = .empty;
+        var it = self.f.ins_iterator_rev(n.lastblk);
+        while (it.next_rev()) |item| {
+            const i = item.i;
+            // phi reading phi was already handled in resolve_phi()
+            if (i.tag != .phi) {
+                const nop = i.n_op(false);
+                if (nop > 0) {
+                    i.op1 = self.check_trivial(i.op1);
+                    if (nop > 1) {
+                        i.op2 = self.check_trivial(i.op2);
                     }
                 }
+            } else {
+                if (i.op2 == 2) {
+                    // by effect by reverse traversal, have already fixed any uses
+                    i.tag = .empty;
+                }
             }
-
-            cur_blk = b.prev();
         }
     }
 }
