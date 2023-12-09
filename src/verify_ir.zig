@@ -55,6 +55,16 @@ pub fn get_jmp_or_last(self: *FLIR, n: *FLIR.Node) !?Tag {
     return last_inst;
 }
 
+pub fn check_inst(self: *FLIR, i: *FLIR.Inst) !void {
+    for (i.ops(false)) |op| {
+        if (self.iref(op)) |ref| {
+            if (ref.tag == .empty) {
+                return error.FLIRError;
+            }
+        }
+    }
+}
+
 /// does not use or verify node.npred
 pub fn check_ir_valid(self: *FLIR) !void {
     const reached = try self.a.alloc(bool, self.n.items.len);
@@ -85,6 +95,9 @@ pub fn check_ir_valid(self: *FLIR) !void {
         while (blk != NoRef) {
             const b = &self.b.items[blk];
             if (b.pred != prev_blk) return error.InvalidCFG;
+            for (&b.i) |*i| {
+                try self.check_inst(i);
+            }
             prev_blk = blk;
             blk = b.succ;
         }

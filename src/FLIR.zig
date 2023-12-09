@@ -788,7 +788,7 @@ pub fn addInst(self: *Self, node: u16, inst: Inst) !u16 {
     return toref(blkid, lastfree);
 }
 
-// add inst to the beginning of the block, _without_ renumbering any exiting instruction
+// add inst to the beginning of the block, _without_ renumbering any existing instruction
 pub fn preInst(self: *Self, node: u16, inst: Inst) !u16 {
     const n = &self.n.items[node];
     var blkid = n.firstblk;
