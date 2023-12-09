@@ -39,6 +39,9 @@ constvals: ArrayList(u64), // raw data for constants, can contain embedded data
 refs: ArrayList(u16),
 narg: u16 = 0,
 
+// free list for blocks. single linked, only use b.items[b_free].pred !
+b_free: u16 = NoRef,
+
 // variables are references which do not fullfill the SSA-property.
 // we eleminate these early on in the ssa_gvn pass
 nvar: u16 = 0,
@@ -148,6 +151,7 @@ pub const Block = struct {
     node: u16,
     succ: u16 = NoRef,
     pred: u16 = NoRef,
+    fakenum_: u16 = undefined, // only used for printing. could be eliminated if we really need it
     i: [BLK_SIZE]Inst = .{EMPTY} ** BLK_SIZE,
 
     pub fn next(self: @This()) ?u16 {
@@ -684,7 +688,7 @@ pub fn toref(blkid: u16, idx: u16) u16 {
     return (blkid << BLK_SHIFT) | idx;
 }
 
-fn fromref(ref: u16) struct { block: u16, idx: u16 } {
+pub fn fromref(ref: u16) struct { block: u16, idx: u16 } {
     const IDX_MASK: u16 = BLK_SIZE - 1;
     const BLK_MASK: u16 = ~IDX_MASK;
     return .{
@@ -758,13 +762,12 @@ pub fn addInst(self: *Self, node: u16, inst: Inst) !u16 {
     const n = &self.n.items[node];
     // must exist:
     var blkid = n.lastblk;
-    var blk = &self.b.items[blkid];
 
     // TODO: later we can add more constraints for where "empty" ins can be
     var lastfree: u8 = BLK_SIZE;
     var i: u8 = BLK_SIZE - 1;
     while (true) : (i -= 1) {
-        if (blk.i[@as(u8, @intCast(i))].free()) {
+        if (self.b.items[blkid].i[@as(u8, @intCast(i))].free()) {
             lastfree = i;
         } else {
             break;
@@ -776,15 +779,14 @@ pub fn addInst(self: *Self, node: u16, inst: Inst) !u16 {
 
     if (lastfree == BLK_SIZE) {
         const prevblk = blkid;
-        blkid = uv(self.b.items.len);
-        blk.succ = blkid;
-        blk = try self.b.addOne();
-        blk.* = .{ .node = node, .pred = prevblk };
+        blkid = try self.new_blk();
+        self.b.items[prevblk].succ = blkid;
+        self.b.items[blkid] = .{ .node = node, .pred = prevblk };
         n.lastblk = blkid;
         lastfree = 0;
     }
 
-    blk.i[lastfree] = inst;
+    self.b.items[blkid].i[lastfree] = inst;
     return toref(blkid, lastfree);
 }
 
@@ -792,11 +794,10 @@ pub fn addInst(self: *Self, node: u16, inst: Inst) !u16 {
 pub fn preInst(self: *Self, node: u16, inst: Inst) !u16 {
     const n = &self.n.items[node];
     var blkid = n.firstblk;
-    var blk = &self.b.items[blkid];
 
     var firstfree: i8 = -1;
     for (0..BLK_SIZE) |i| {
-        if (blk.i[i].free()) {
+        if (self.b.items[blkid].i[i].free()) {
             firstfree = @intCast(i);
         } else {
             break;
@@ -805,18 +806,29 @@ pub fn preInst(self: *Self, node: u16, inst: Inst) !u16 {
 
     if (firstfree == -1) {
         const nextblk = blkid;
-        blkid = uv(self.b.items.len);
-        blk.pred = blkid;
-        blk = try self.b.addOne();
-        blk.* = .{ .node = node, .succ = nextblk };
+        blkid = try self.new_blk();
+        self.b.items[nextblk].pred = blkid;
+        self.b.items[blkid] = .{ .node = node, .succ = nextblk };
         n.firstblk = blkid;
         firstfree = BLK_SIZE - 1;
     }
 
     const free: u8 = @intCast(firstfree);
 
-    blk.i[free] = inst;
+    self.b.items[blkid].i[free] = inst;
     return toref(blkid, free);
+}
+
+pub fn new_blk(self: *Self) !u16 {
+    if (self.b_free != NoRef) {
+        const blkid = self.b_free;
+        self.b_free = self.b.items[blkid].pred;
+        return blkid;
+    }
+
+    const blkid = uv(self.b.items.len);
+    _ = try self.b.addOne();
+    return blkid;
 }
 
 pub fn const_uint(self: *Self, val: u64) !u16 {
@@ -1123,7 +1135,7 @@ pub fn reorder_nodes(self: *Self) !void {
 
         var cur_blk: ?u16 = n.firstblk;
         while (cur_blk) |blk| {
-            var b = &self.b.items[blk];
+            const b = &self.b.items[blk];
             b.node = uv(ni);
 
             cur_blk = b.next();
@@ -1837,12 +1849,47 @@ const InsIterator = struct {
         return it.get_rev(true);
     }
 
+    fn check_empty(self: *Self, blk: u16, pred: u16) void {
+        const first = (pred == NoRef);
+        const b = &self.b.items[blk];
+        const succ = b.succ;
+        const last = (succ == NoRef);
+        // cannot remove the only block
+        if (first and last) return;
+
+        for (b.i) |i| {
+            if (i.tag != .empty) return; // not empty
+        }
+
+        if (true) return;
+        print("BEEEG {}\n", .{b.node});
+
+        const n = &self.n.items[b.node];
+        if (first) {
+            n.firstblk = succ;
+        } else {
+            self.b.items[pred].succ = succ;
+        }
+
+        if (last) {
+            n.lastblk = pred;
+        } else {
+            self.b.items[succ].pred = pred;
+        }
+
+        b.pred = self.b_free;
+        self.b_free = blk;
+    }
+
     fn get_rev(it: *InsIterator, advance: bool) ?IYtem {
         while (true) {
             if (it.cur_blk == NoRef) return null;
             if (it.idx == 0) {
                 it.idx = BLK_SIZE;
+                const old = it.cur_blk;
                 it.cur_blk = it.self.b.items[it.cur_blk].pred;
+                check_empty(it.self, old, it.cur_blk);
+
                 if (it.cur_blk == NoRef) return null;
             }
 

@@ -144,7 +144,29 @@ pub fn check_vregs(self: *FLIR) !void {
 
 // debug print functions
 
+fn fake_ref(self: *FLIR, ref: u16) u16 {
+    if (ref >= FLIR.ConstOff) {
+        return ref;
+    }
+    const both = FLIR.fromref(ref);
+    const blk = self.b.items[both.block];
+    return FLIR.toref(blk.fakenum_, both.idx);
+}
+
 pub fn debug_print(self: *FLIR) void {
+    var fake_idx: u16 = 0;
+    // TODO: something like %nodeid.ref_in_node might be preferrable
+    for (self.n.items) |*n| {
+        var cur_blk: ?u16 = n.firstblk;
+        while (cur_blk) |blk| {
+            const b = &self.b.items[blk];
+            b.fakenum_ = fake_idx;
+            fake_idx += 1;
+
+            cur_blk = b.next();
+        }
+    }
+
     print("\n", .{});
     for (self.n.items, 0..) |*n, i| {
         print("node {} (npred {}, loop {}):", .{ i, n.npred, n.loop });
@@ -155,7 +177,7 @@ pub fn debug_print(self: *FLIR) void {
             while (ireg < self.nvreg) : (ireg += 1) {
                 const live = (n.live_in & (@as(usize, 1) << @as(u6, @intCast(ireg)))) != 0;
                 if (live) {
-                    print(" %{}", .{self.vregs.items[ireg].ref});
+                    print(" %{}", .{fake_ref(self, self.vregs.items[ireg].ref)});
                 }
             }
         }
@@ -167,7 +189,7 @@ pub fn debug_print(self: *FLIR) void {
 
         print("\n", .{});
 
-        self.print_blk(n.firstblk);
+        self.print_node(n.firstblk);
 
         // only print liveout if we have more than one sucessor, otherwise it is BOOORING
         if (n.s[1] != 0) {
@@ -180,7 +202,7 @@ pub fn debug_print(self: *FLIR) void {
                 while (ireg < self.nvreg) : (ireg += 1) {
                     const live = (live_out & (@as(usize, 1) << @as(u6, @intCast(ireg)))) != 0;
                     if (live) {
-                        print(" %{}", .{self.vregs.items[ireg].ref});
+                        print(" %{}", .{fake_ref(self, self.vregs.items[ireg].ref)});
                     }
                 }
             }
@@ -199,14 +221,14 @@ pub fn debug_print(self: *FLIR) void {
     }
 }
 
-pub fn print_blk(self: *FLIR, firstblk: u16) void {
+pub fn print_node(self: *FLIR, firstblk: u16) void {
     var it = self.ins_iterator(firstblk);
     while (it.next()) |item| {
         const i = item.i.*;
         const chr: u8 = if (i.has_res()) '=' else ' ';
         var name = @tagName(i.tag);
         if (i.tag == .ibinop) name = "i";
-        print("  %{} {c} {s}", .{ item.ref, chr, name });
+        print("  %{} {c} {s}", .{ fake_ref(self, item.ref), chr, name });
 
         if (i.tag == .variable) {
             print(" {s}", .{@tagName(i.mem_type())});
@@ -221,7 +243,7 @@ pub fn print_blk(self: *FLIR, firstblk: u16) void {
         } else if (i.tag == .icmp) {
             print(".{s}", .{@tagName(@as(X86Asm.Cond, @enumFromInt(i.spec)))});
         } else if (i.tag == .putphi) {
-            print(" %{} <-", .{i.op2});
+            print(" %{} <-", .{fake_ref(self, i.op2)});
         }
         const nop = i.n_op(false);
         if (nop > 0) {
@@ -265,7 +287,7 @@ fn print_op(self: *FLIR, pre: []const u8, kill: bool, ref: u16) void {
     } else {
         const k = if (kill) "!" else "";
         const bref = self.unvref(ref);
-        print("{s}%{}", .{ k, bref });
+        print("{s}%{}", .{ k, fake_ref(self, bref) });
     }
 }
 
@@ -373,7 +395,7 @@ pub fn print_intervals(self: *FLIR) void {
             const show_temp = i.f.killed and true;
             if (vreg or show_temp) {
                 if (!vreg and !is_phi) print("\x1b[38;5;244m", .{});
-                print("{s}: %{:3} ", .{ if (vreg) "VREG" else "TEMP", item.ref });
+                print("{s}: %{:3} ", .{ if (vreg) "VREG" else "TEMP", fake_ref(self, item.ref) });
                 self.print_interval(item.ref);
             }
         }
