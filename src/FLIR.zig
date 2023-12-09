@@ -1861,9 +1861,6 @@ const InsIterator = struct {
             if (i.tag != .empty) return; // not empty
         }
 
-        if (true) return;
-        print("BEEEG {}\n", .{b.node});
-
         const n = &self.n.items[b.node];
         if (first) {
             n.firstblk = succ;
