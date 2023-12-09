@@ -1188,78 +1188,71 @@ pub fn calc_use(self: *Self) !void {
             var neg_counter: u16 = 0;
             var last_clobber: [n_ipreg]u16 = .{0} ** n_ipreg;
 
-            var blk_has_clobber: bool = false;
+            var node_has_clobber: bool = false;
 
-            var cur_blk: ?u16 = n.lastblk;
-            while (cur_blk) |blk| {
-                var b = &self.b.items[blk];
-                var idx: u16 = BLK_SIZE;
-                while (idx > 0) {
-                    idx -= 1;
-                    neg_counter += 1;
-                    const i = &b.i[idx];
+            var it = self.ins_iterator_rev(n.lastblk);
+            while (it.next_rev()) |item| {
+                neg_counter += 1;
+                const i = item.i;
 
-                    if (i.vreg()) |vreg| {
-                        live &= ~vreg_flag(@intCast(vreg));
-                    } else {
-                        if (i.vreg_scratch != NoRef) {
-                            if (blk_has_clobber) { // quick skipahead when no clobbers
-                                var conflicts: u16 = 0;
-                                for (0..n_ipreg) |r| {
-                                    // negative counter: is the last_clobber _before_ the kill position
-                                    if (i.vreg_scratch < last_clobber[r]) {
-                                        conflicts |= ipreg_flag(@intCast(r));
-                                    }
-                                }
-                                if (conflicts != 0) {
-                                    i.f.conflicts = true;
-                                }
-                                i.vreg_scratch = conflicts;
-                            } else {
-                                i.vreg_scratch = 0;
-                            }
-                        }
-                    }
-
-                    for (i.ops(false)) |op| {
-                        if (self.iref(op)) |ref| {
-                            if (ref.vreg()) |vreg| {
-                                live |= vreg_flag(@intCast(vreg));
-                            } else {
-                                if (ref.vreg_scratch == NoRef) {
-                                    ref.vreg_scratch = neg_counter;
+                if (i.vreg()) |vreg| {
+                    live &= ~vreg_flag(@intCast(vreg));
+                } else {
+                    if (i.vreg_scratch != NoRef) {
+                        if (node_has_clobber) { // quick skipahead when no clobbers
+                            var conflicts: u16 = 0;
+                            for (0..n_ipreg) |r| {
+                                // negative counter: is the last_clobber _before_ the kill position
+                                if (i.vreg_scratch < last_clobber[r]) {
+                                    conflicts |= ipreg_flag(@intCast(r));
                                 }
                             }
-                        }
-                    }
-
-                    // registers clobbered by this instruction
-                    // TOOO: or having it as a fixed input, which is not ALWAYS a clobber
-                    // (like two shr intructions in a row sharing the same ecx input)
-                    var clobber_mask: u16 = 0;
-
-                    // call: result not considered live.
-                    // arguments are handled in callarg and are also not conflicting
-                    if (i.tag == .call) {
-                        clobber_mask |= self.call_clobber_mask;
-                    }
-
-                    if (clobber_mask != 0) {
-                        blk_has_clobber = true; // quick skipahead
-                        for (self.vregs.items, 0..) |*v, vi| {
-                            if (live & vreg_flag(@as(u6, @intCast(vi))) != 0) {
-                                v.conflicts |= clobber_mask;
+                            if (conflicts != 0) {
+                                i.f.conflicts = true;
                             }
+                            i.vreg_scratch = conflicts;
+                        } else {
+                            i.vreg_scratch = 0;
                         }
-                        for (0..n_ipreg) |r| {
-                            if ((clobber_mask & ipreg_flag(@intCast(r))) != 0) {
-                                last_clobber[r] = neg_counter;
+                    }
+                }
+
+                for (i.ops(false)) |op| {
+                    if (self.iref(op)) |ref| {
+                        if (ref.vreg()) |vreg| {
+                            live |= vreg_flag(@intCast(vreg));
+                        } else {
+                            if (ref.vreg_scratch == NoRef) {
+                                ref.vreg_scratch = neg_counter;
                             }
                         }
                     }
                 }
 
-                cur_blk = b.prev();
+                // registers clobbered by this instruction
+                // TOOO: or having it as a fixed input, which is not ALWAYS a clobber
+                // (like two shr intructions in a row sharing the same ecx input)
+                var clobber_mask: u16 = 0;
+
+                // call: result not considered live.
+                // arguments are handled in callarg and are also not conflicting
+                if (i.tag == .call) {
+                    clobber_mask |= self.call_clobber_mask;
+                }
+
+                if (clobber_mask != 0) {
+                    node_has_clobber = true; // quick skipahead
+                    for (self.vregs.items, 0..) |*v, vi| {
+                        if (live & vreg_flag(@as(u6, @intCast(vi))) != 0) {
+                            v.conflicts |= clobber_mask;
+                        }
+                    }
+                    for (0..n_ipreg) |r| {
+                        if ((clobber_mask & ipreg_flag(@intCast(r))) != 0) {
+                            last_clobber[r] = neg_counter;
+                        }
+                    }
+                }
             }
 
             n.live_in = live;
