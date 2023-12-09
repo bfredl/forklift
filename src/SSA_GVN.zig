@@ -83,7 +83,7 @@ fn vdi(self: Self, node: u16, v: u16) *u16 {
 fn read_ref(self: Self, node: u16, ref: u16) !u16 {
     const i = self.f.iref(ref) orelse return ref;
     if (i.tag == .variable) {
-        return try self.read_var(node, ref, i.*);
+        return try self.read_var(node, ref, i.op1);
     } else {
         // already on SSA-form, nothing to do
         return ref;
@@ -91,9 +91,9 @@ fn read_ref(self: Self, node: u16, ref: u16) !u16 {
 }
 
 const MaybePhi = @typeInfo(@TypeOf(FLIR.prePhi)).Fn.return_type.?;
-fn read_var(self: Self, node: u16, vref: u16, v: FLIR.Inst) MaybePhi {
+fn read_var(self: Self, node: u16, vref: u16, vop1: u16) MaybePhi {
     // It matters where you are
-    const vd = self.vdi(node, v.op1);
+    const vd = self.vdi(node, vop1);
     if (vd.* != NoRef) {
         return self.check_trivial(vd.*);
     }
@@ -106,7 +106,7 @@ fn read_var(self: Self, node: u16, vref: u16, v: FLIR.Inst) MaybePhi {
             const pred = self.f.refs.items[n.predref];
             // assert recursion eventually terminates
             assert(self.f.n.items[pred].dfnum < n.dfnum);
-            break :thedef try self.read_var(pred, vref, v);
+            break :thedef try self.read_var(pred, vref, vop1);
         } else {
             // as an optimization, we could check if all predecessors
             // are filled (pred[i].dfnum < n.dfnum), and in that case
@@ -134,23 +134,23 @@ fn resolve_blk(self: Self, node: u16, first_blk: u16) !bool {
     var any = false;
     while (it.next()) |item| {
         if (item.i.tag == .phi) {
-            any = any or try self.resolve_phi(node, item.i.*, item.ref);
+            any = any or try self.resolve_phi(node, item.i, item.ref);
         }
     }
     return any;
 }
 
-fn resolve_phi(self: Self, n: u16, i: FLIR.Inst, iref: u16) !bool {
+fn resolve_phi(self: Self, n: u16, i: *FLIR.Inst, iref: u16) !bool {
     var changed: bool = false;
     if (i.op2 == 0) {
         // not resolved
         changed = true;
         // NoRef: no values seen yet, null: contradiction seen
         var onlyref: ?u16 = NoRef;
-        const ivar = (self.f.iref(i.op1) orelse return error.GLUGG).*;
-        const op1 = i.op1; // TRICKY: i might be hidden pointer to f.b.items
+        const vref = i.op1; // TRICKY: i pointer might get invalidated by read_var()
+        const vop1 = (self.f.iref(vref) orelse return error.GLUGG).op1;
         for (self.f.preds(n), 0..) |v, vi| {
-            const ref = try self.read_var(v, op1, ivar);
+            const ref = try self.read_var(v, vref, vop1);
             // XX: In principle we could already handle "Undefined" being represented
             // as NoRef, but we don't support undefined yets and we likely want
             // another sentinel value than Noref, to catch mistakes easier.
@@ -172,7 +172,24 @@ fn resolve_phi(self: Self, n: u16, i: FLIR.Inst, iref: u16) !bool {
             i_ref.op2 = 1; // flag for "resolved"
         }
     } else if (i.op2 == 1) {
-        // TODO: check if was trivialized
+        const onlyref: ?u16 = theref: {
+            var seen_ref: ?u16 = null;
+            for (self.f.preds(n)) |v| {
+                const phiref = self.read_putphi(v, iref) orelse return error.FLIRError;
+                const ref = self.check_trivial(phiref);
+                if (seen_ref) |seen| {
+                    if (seen != ref) break :theref null;
+                } else {
+                    seen_ref = ref;
+                }
+            }
+            break :theref seen_ref;
+        };
+        if (onlyref) |ref| {
+            i.op1 = ref;
+            i.op2 = 2; // flag for "trivial phi"
+            changed = true;
+        }
     }
 
     return changed;
@@ -187,6 +204,16 @@ fn delete_vars(self: Self, first_blk: u16) !void {
     }
 }
 
+pub fn read_putphi(self: Self, ni: u16, phiref: u16) ?u16 {
+    const n = &self.f.n.items[ni];
+    var it = self.f.ins_iterator_rev(n.lastblk);
+    while (it.next_rev()) |item| {
+        if (item.i.tag != .putphi) break;
+        if (item.i.op2 == phiref) return item.i.op1;
+    }
+    return null;
+}
+
 // TODO: this can be merged with a general copy-propagation pass (IF WE HAD ONE!!)
 fn cleanup_trivial_phi(self: Self) !void {
     var ni = self.f.n.items.len - 1;
@@ -197,19 +224,28 @@ fn cleanup_trivial_phi(self: Self) !void {
         var it = self.f.ins_iterator_rev(n.lastblk);
         while (it.next_rev()) |item| {
             const i = item.i;
-            // phi reading phi was already handled in resolve_phi()
-            if (i.tag != .phi) {
+            if (i.tag == .phi) {
+                // phi reading phi was already handled in resolve_phi()
+                if (i.op2 == 2) {
+                    // by effect by reverse traversal, have already fixed any uses
+                    i.tag = .empty;
+                }
+            } else if (i.tag == .putphi) {
+                const ref = self.f.iref(i.op2) orelse return error.FLIRError;
+                // Not really robust, just assume any .empty seen here must have been
+                // from deleted phi/op2=2 nodes above. Because YOLO.
+                if (ref.tag == .empty or ref.op2 == 2) {
+                    i.tag = .empty;
+                } else {
+                    i.op1 = self.check_trivial(i.op1);
+                }
+            } else {
                 const nop = i.n_op(false);
                 if (nop > 0) {
                     i.op1 = self.check_trivial(i.op1);
                     if (nop > 1) {
                         i.op2 = self.check_trivial(i.op2);
                     }
-                }
-            } else {
-                if (i.op2 == 2) {
-                    // by effect by reverse traversal, have already fixed any uses
-                    i.tag = .empty;
                 }
             }
         }
