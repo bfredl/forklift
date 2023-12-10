@@ -447,13 +447,24 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
             }
         }
 
-        // TODO: handle trivial critical-edge block.
-        const fallthru = ni + 1;
         if (n.s[1] != 0) {
             try makejmp(self, &cfo, cond.?, uv(ni), 1, labels, targets);
         }
-        if (n.s[0] != fallthru and n.s[0] != 0) {
-            try makejmp(self, &cfo, null, uv(ni), 0, labels, targets);
+        if (n.s[0] != 0) {
+            var fallthru = uv(ni + 1);
+            // TODO: This is quite ad-hoc. need a proper CFG clean-up pass
+            // post-resolution (including reversing conditions if s[1] is fallthrough)
+            while (fallthru < n.s[0]) {
+                if (fallthru >= self.n.items.len) @panic("le banik");
+                if (self.empty(fallthru, true)) {
+                    fallthru = self.n.items[fallthru].s[0];
+                } else {
+                    break;
+                }
+            }
+            if (n.s[0] != fallthru) {
+                try makejmp(self, &cfo, null, uv(ni), 0, labels, targets);
+            }
         }
     }
 

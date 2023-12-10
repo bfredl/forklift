@@ -156,7 +156,7 @@ pub fn cond_op(op: []const u8) ?FLIR.IntCond {
     } else if (mem.eql(u8, op, "<=")) {
         return .le;
     } else if (mem.eql(u8, op, "!=")) {
-        return .ge;
+        return .neq;
         // unsigned variants (as a treat™)
     } else if (mem.eql(u8, op, "|>")) {
         return .a;

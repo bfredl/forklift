@@ -18,7 +18,7 @@ func main {
       scan := scan + 1;
     }
     if (imatch == 1) {
-      result := i+0;
+      result := i;
     }
     // if (tpos >= tablelen) break;
     if (table[tpos] == 0) break;
