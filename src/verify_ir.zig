@@ -241,7 +241,7 @@ pub fn print_node(self: *FLIR, firstblk: u16) void {
         } else if (i.tag == .ibinop) {
             print(".{s}", .{@tagName(@as(FLIR.IntBinOp, @enumFromInt(i.spec)))});
         } else if (i.tag == .icmp) {
-            print(".{s}", .{@tagName(@as(X86Asm.Cond, @enumFromInt(i.spec)))});
+            print(".{s}", .{@tagName(@as(FLIR.IntCond, @enumFromInt(i.spec)))});
         } else if (i.tag == .putphi) {
             print(" %{} <-", .{fake_ref(self, i.op2)});
         }

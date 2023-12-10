@@ -1,13 +1,18 @@
 const testutil = @import("./flir.zig");
 const parse_test = testutil.parse_test;
 const expect = testutil.expect;
+const std = @import("std");
 
 const SFunc = *const fn (arg1: [*]const u8, arg2: usize) callconv(.C) usize;
+const TFunc = *const fn (arg1: [*]const u8, arg2: usize, arg3: [*]const u8, arg4: usize) callconv(.C) usize;
 
 fn s_call(func: SFunc, str: []const u8) usize {
     return func(str.ptr, str.len);
 }
 
+fn t_call(func: TFunc, str: []const u8, tab: []const u8) usize {
+    return func(str.ptr, str.len, tab.ptr, tab.len);
+}
 // aoc 2022 1
 
 test "parse digit" {
@@ -366,4 +371,59 @@ test "aoc 2023 day 1 part one" {
     defer cfo.deinit();
     const func = cfo.get_ptr(0, SFunc);
     try expect(usize, 142, s_call(func, "1abc2\n pqr3stu8vwx\n a1b2c3d4e5f\ntreb7uchet\n"));
+}
+
+const table =
+    \\zero
+    \\one
+    \\two
+    \\three
+    \\four
+    \\five
+    \\six
+    \\seven
+    \\eight
+    \\nine
+    \\
+;
+
+test "numberfinderer borked" {
+    // case where the OOB check is slightly wrong so that "ze" maps to zero and so on
+    var cfo = try parse_test(
+        \\func main {
+        \\  args data len table tablelen;
+        \\  vars x tpos i imatch scan result;
+        \\  tpos := 0;
+        \\  i := 0;
+        \\  result := 200;
+        \\  loop {
+        \\    scan := 0;
+        \\    imatch := 1;
+        \\    loop {
+        \\      let tval = table[tpos];
+        \\      tpos := tpos + 1;
+        \\      if (tval == 10) break;
+        \\      if (scan >= len) break;
+        \\      if (tval != data[scan]) {
+        \\        imatch := 0;
+        \\      }
+        \\      scan := scan + 1;
+        \\    }
+        \\    if (imatch == 1) {
+        \\      result := i;
+        \\    }
+        \\    if (tpos >= tablelen) break;
+        \\    i := i + 1;
+        \\  }
+        \\  return result;
+        \\}
+    );
+    defer cfo.deinit();
+    const func = cfo.get_ptr(0, TFunc);
+    try expect(usize, 0, t_call(func, "zero\n", table));
+    try expect(usize, 3, t_call(func, "three\n", table));
+    try expect(usize, 0, t_call(func, "zero", table));
+    try expect(usize, 3, t_call(func, "three", table));
+    try expect(usize, 0, t_call(func, "ze", table));
+    try expect(usize, 3, t_call(func, "thr", table));
 }

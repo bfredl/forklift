@@ -19,7 +19,7 @@ ir: *FLIR,
 // tmp: [10]?u16 = .{null} ** 10,
 tmp: [10]?u16 = ([1]?u16{null}) ** 10,
 curnode: u16,
-curloop: u16 = 0,
+curloop_exit: u16 = 0,
 
 t: Tokenizer,
 
@@ -198,9 +198,9 @@ pub fn loop(self: *Self) !void {
     const entry = try self.ir.addNodeAfter(self.curnode);
     const exit = try self.ir.addNode();
 
-    const save_curloop = self.curloop;
+    const save_curloop = self.curloop_exit;
     self.curnode = entry;
-    self.curloop = exit;
+    self.curloop_exit = exit;
 
     _ = try self.braced_block();
     try self.t.lbrk();
@@ -208,14 +208,14 @@ pub fn loop(self: *Self) !void {
     try self.ir.addLink(self.curnode, 0, entry);
     self.curnode = exit;
 
-    self.curloop = save_curloop;
+    self.curloop_exit = save_curloop;
 }
 
 pub fn break_stmt(self: *Self, branch: u1) !void {
-    if (self.curloop == 0) return error.SyntaxError;
+    if (self.curloop_exit == 0) return error.SyntaxError;
     try self.t.expect_char(';');
     try self.t.lbrk();
-    try self.ir.addLink(self.curnode, branch, self.curloop);
+    try self.ir.addLink(self.curnode, branch, self.curloop_exit);
 }
 
 pub fn if_stmt(self: *Self) !void {

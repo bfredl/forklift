@@ -456,7 +456,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
             // post-resolution (including reversing conditions if s[1] is fallthrough)
             while (fallthru < n.s[0]) {
                 if (fallthru >= self.n.items.len) @panic("le banik");
-                if (self.empty(fallthru, true)) {
+                if (self.n.items[fallthru].is_empty) {
                     fallthru = self.n.items[fallthru].s[0];
                 } else {
                     break;

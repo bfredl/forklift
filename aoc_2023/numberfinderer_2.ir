@@ -20,8 +20,8 @@ func main {
     if (imatch == 1) {
       result := i;
     }
-    // if (tpos >= tablelen) break;
-    if (table[tpos] == 0) break;
+    if (tpos >= tablelen) break;
+    // if (table[tpos] == 0) break;
     i := i + 1;
   }
   return result;
