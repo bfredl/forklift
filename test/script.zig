@@ -4,6 +4,7 @@ const expect = testutil.expect;
 
 const AFunc = *const fn (arg1: usize) callconv(.C) usize;
 const PFunc = *const fn (arg1: [*]const u8) callconv(.C) usize;
+const SFunc = *const fn (arg1: [*]const u8, arg2: usize) callconv(.C) usize;
 
 test "cfoscript basic" {
     var cfo = try parse_test(
@@ -53,4 +54,60 @@ test "break in else" {
     const fun = cfo.get_ptr(0, PFunc);
     try expect(usize, 20003, fun(&[_]u8{ 1, 2, 20 }));
     try expect(usize, 234021, fun(&[_]u8{ 8, 7, 6, 234 }));
+}
+
+test "break at end" {
+    var cfo = try parse_test(
+        \\func main {
+        \\  args data len;
+        \\  vars i imatch result;
+        \\  i := 0;
+        \\  result := 0;
+        \\  loop {
+        \\    result := data[i];
+        \\    i := i + 1;
+        \\    if (i >= len) break;
+        \\  }
+        \\  return result;
+        \\}
+    );
+    defer cfo.deinit();
+    const func = cfo.get_ptr(0, SFunc);
+    const data1 = [_]u8{ 23, 28, 2, 30 };
+    try expect(usize, 30, func(&data1, 4));
+    try expect(usize, 2, func(&data1, 3));
+    try expect(usize, 23, func(&data1, 1));
+    try expect(usize, 23, func(&data1, 0));
+}
+
+test "complex control flow" {
+    var cfo = try parse_test(
+        \\func main {
+        \\  args data len;
+        \\  vars i imatch result;
+        \\  i := 0;
+        \\  result := 0;
+        \\  loop {
+        \\    let val = data[i];
+        \\    i := i + 1;
+        \\    if (val < 3) break;
+        \\    if (val > 20) {
+        \\      result := val;
+        \\    }
+        \\    if (val == 25) break;
+        \\    if (i >= len) break;
+        \\  }
+        \\  return result;
+        \\}
+    );
+    defer cfo.deinit();
+    const func = cfo.get_ptr(0, SFunc);
+    const data1 = [_]u8{ 23, 15, 28, 2, 30 };
+    try expect(usize, 28, func(&data1, 5));
+    try expect(usize, 28, func(&data1, 4));
+    try expect(usize, 28, func(&data1, 3));
+    try expect(usize, 23, func(&data1, 2));
+    try expect(usize, 23, func(&data1, 1));
+    const data2 = [_]u8{ 25, 28, 2, 30 };
+    try expect(usize, 25, func(&data2, 4));
 }

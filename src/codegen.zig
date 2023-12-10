@@ -451,18 +451,20 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
             try makejmp(self, &cfo, cond.?, uv(ni), 1, labels, targets);
         }
         if (n.s[0] != 0) {
+            const succ = self.find_nonempty(self.n.items[ni].s[0]);
             var fallthru = uv(ni + 1);
             // TODO: This is quite ad-hoc. need a proper CFG clean-up pass
             // post-resolution (including reversing conditions if s[1] is fallthrough)
-            while (fallthru < n.s[0]) {
+            while (fallthru < succ) {
                 if (fallthru >= self.n.items.len) @panic("le banik");
-                if (self.n.items[fallthru].is_empty) {
-                    fallthru = self.n.items[fallthru].s[0];
+                const fnode = &self.n.items[fallthru];
+                if (fnode.is_empty and fnode.s[0] == fallthru + 1) {
+                    fallthru = fallthru + 1;
                 } else {
                     break;
                 }
             }
-            if (n.s[0] != fallthru) {
+            if (succ != fallthru) {
                 try makejmp(self, &cfo, null, uv(ni), 0, labels, targets);
             }
         }
