@@ -9,11 +9,23 @@ const FLIR = @import("./FLIR.zig");
 const print = std.debug.print;
 const mem = std.mem;
 const Tokenizer = @import("./Tokenizer.zig");
+const FMode = @import("./X86Asm.zig").FMode;
 
 const nonexisting = @import("./Parser.zig").nonexisting;
 
 const Self = @This();
-const ParseError = error{ ParseError, SyntaxError, OutOfMemory, FLIRError, UndefinedName, TooManyArgs };
+const ParseError = error{ ParseError, SyntaxError, OutOfMemory, FLIRError, UndefinedName, TooManyArgs, TypeError, NotYetImplemented };
+const SpecType = FLIR.SpecType;
+
+// NOTE: currently "int_ctx" doesn't affect reads beyond upcast into quadword for further aritmethic
+const int_ctx: SpecType = .{ .intptr = .quadword };
+
+fn f_ctx(type_ctx: SpecType) ?FMode {
+    return switch (type_ctx) {
+        .intptr => null,
+        .avxval => |fmode| fmode,
+    };
+}
 
 ir: *FLIR,
 // tmp: [10]?u16 = .{null} ** 10,
@@ -30,7 +42,7 @@ const IdInfo = struct {
     // is_avx: bool, // true if avxval
 };
 
-pub fn expr_0(self: *Self) !?u16 {
+pub fn expr_0(self: *Self, type_ctx: SpecType) !?u16 {
     const char = self.t.nonws() orelse return null;
     switch (char) {
         'a'...'z', 'A'...'Z' => {
@@ -40,11 +52,14 @@ pub fn expr_0(self: *Self) !?u16 {
         },
         '0'...'9' => {
             const i = self.t.num() orelse return error.SyntaxError;
-            return try self.ir.const_int(@intCast(i));
+            return switch (type_ctx) {
+                .avxval => |_| error.NotYetImplemented,
+                .intptr => |_| try self.ir.const_int(@intCast(i)),
+            };
         },
         '(' => {
             self.t.pos += 1;
-            const val = try self.arg_expr();
+            const val = try self.arg_expr(type_ctx);
             try self.t.expect_char(')');
             return val;
         },
@@ -52,15 +67,20 @@ pub fn expr_0(self: *Self) !?u16 {
     }
 }
 
-pub fn expr_1(self: *Self) !?u16 {
-    var val = (try self.expr_0()) orelse return null;
+pub fn expr_1(self: *Self, type_ctx: SpecType) !?u16 {
+    var val = (try self.expr_0(type_ctx)) orelse return null;
     while (self.t.nonws()) |char| {
         if (char == '[') {
             self.t.pos += 1;
             // TODO: addr[] as shorthand? or maybe [addr] :)
-            const addr = try self.arg_expr();
+            const addr = try self.arg_expr(int_ctx);
             try self.t.expect_char(']');
-            val = try self.ir.load(self.curnode, .{ .intptr = .byte }, val, addr, 0);
+            const memtype: SpecType = switch (type_ctx) {
+                .intptr => .{ .intptr = .byte },
+                .avxval => type_ctx,
+            };
+
+            val = try self.ir.load(self.curnode, memtype, val, addr, 0);
         } else {
             break;
         }
@@ -68,49 +88,60 @@ pub fn expr_1(self: *Self) !?u16 {
     return val;
 }
 
-pub fn expr_2(self: *Self) !?u16 {
-    var val = (try self.expr_1()) orelse return null;
+pub fn expr_2(self: *Self, type_ctx: SpecType) !?u16 {
+    var val = (try self.expr_1(type_ctx)) orelse return null;
     while (self.t.nonws()) |char| {
-        const theop: FLIR.IntBinOp = switch (char) {
-            '*' => .mul,
-            '/' => @panic(".div"),
-            else => return val,
-        };
-        self.t.pos += 1;
-        const op = (try self.expr_1()) orelse return error.SyntaxError;
-        val = try self.ir.ibinop(self.curnode, theop, val, op);
+        if (f_ctx(type_ctx)) |fmode| {
+            _ = fmode;
+            return error.NotYetImplemented;
+        } else {
+            const theop: FLIR.IntBinOp = switch (char) {
+                '*' => .mul,
+                '/' => @panic(".div"),
+                else => return val,
+            };
+            self.t.pos += 1;
+            const op = (try self.expr_1(type_ctx)) orelse return error.SyntaxError;
+            val = try self.ir.ibinop(self.curnode, theop, val, op);
+        }
     }
     return val;
 }
 
-pub fn expr_3(self: *Self) !?u16 {
-    var val = (try self.expr_2()) orelse return null;
+pub fn expr_3(self: *Self, type_ctx: SpecType) !?u16 {
+    var val = (try self.expr_2(type_ctx)) orelse return null;
     while (self.t.nonws()) |char| {
         if (self.t.peek_operator()) |op| {
             // tricky: don't confuse  with |>
             if (op.len > 1) break;
         }
 
-        const theop: FLIR.IntBinOp = switch (char) {
-            '+' => .add,
-            '-' => .sub,
-            '|' => .@"or",
-            else => break,
-        };
-        self.t.pos += 1;
-        const op = (try self.expr_2()) orelse return error.SyntaxError;
-        val = try self.ir.ibinop(self.curnode, theop, val, op);
+        if (f_ctx(type_ctx)) |fmode| {
+            _ = fmode;
+            return error.NotYetImplemented;
+        } else {
+            const theop: FLIR.IntBinOp = switch (char) {
+                '+' => .add,
+                '-' => .sub,
+                '|' => .@"or",
+                else => break,
+            };
+            self.t.pos += 1;
+            const op = (try self.expr_2(type_ctx)) orelse return error.SyntaxError;
+            val = try self.ir.ibinop(self.curnode, theop, val, op);
+        }
     }
     return val;
 }
 
 // BULL: not even used for args..
-pub fn arg_expr(self: *Self) ParseError!u16 {
-    return (try self.expr_3()) orelse return error.SyntaxError;
+pub fn arg_expr(self: *Self, type_ctx: SpecType) ParseError!u16 {
+    return (try self.expr_3(type_ctx)) orelse return error.SyntaxError;
 }
 
-pub fn call_expr(self: *Self) !u16 {
+pub fn call_expr(self: *Self, type_ctx: SpecType) !u16 {
     if (try self.t.prefixed('$')) |name| {
+        if (type_ctx != .intptr) return error.TypeError;
         // TODO: non-native for
         const syscall = std.meta.stringToEnum(std.os.linux.SYS, name) orelse {
             print("unknown syscall: '{s}'\n", .{name});
@@ -122,7 +153,7 @@ pub fn call_expr(self: *Self) !u16 {
         var args = [_]u16{0} ** 6;
         var n_arg: u8 = 0;
         while (true) {
-            const arg = (try self.expr_3()) orelse break;
+            const arg = (try self.expr_3(int_ctx)) orelse break;
             if (n_arg == args.len) {
                 return error.TooManyArgs;
             }
@@ -139,7 +170,7 @@ pub fn call_expr(self: *Self) !u16 {
         }
         return self.ir.call(self.curnode, .syscall, sysnum);
     }
-    return self.arg_expr();
+    return self.arg_expr(type_ctx);
 }
 
 pub fn cond_op(op: []const u8) ?FLIR.IntCond {
@@ -173,10 +204,10 @@ pub fn cond_op(op: []const u8) ?FLIR.IntCond {
 
 // currently not integrated with expr ( "let a = b < c" no good)
 pub fn cond_expr(self: *Self) !u16 {
-    const left = try self.arg_expr();
+    const left = try self.arg_expr(int_ctx);
     const op_str = self.t.operator() orelse return error.SyntaxError;
     const op = cond_op(op_str) orelse return error.SyntaxError;
-    const right = try self.arg_expr();
+    const right = try self.arg_expr(int_ctx);
 
     return self.ir.icmp(self.curnode, op, left, right);
 }
@@ -263,6 +294,11 @@ pub fn if_stmt(self: *Self) !void {
     }
 }
 
+fn maybe_type(self: *Self) SpecType {
+    _ = self;
+    return int_ctx;
+}
+
 pub fn stmt(self: *Self) !?bool {
     const kw = self.t.keyword() orelse {
         const ret = try self.braced_block();
@@ -271,14 +307,15 @@ pub fn stmt(self: *Self) !?bool {
     };
     var did_ret = false;
     if (mem.eql(u8, kw, "return")) {
-        const res = try self.arg_expr();
+        const res = try self.arg_expr(int_ctx); // BUULLLLLLL
         try self.ir.ret(self.curnode, res);
         did_ret = true;
     } else if (mem.eql(u8, kw, "let")) {
         const name = self.t.keyword() orelse return error.SyntaxError;
         const item = try nonexisting(&self.vars, name, "variable");
+        const type_ctx = self.maybe_type();
         try self.t.expect_char('=');
-        const val = try self.call_expr();
+        const val = try self.call_expr(type_ctx);
         item.* = .{ .ref = val, .is_mut = false };
     } else if (mem.eql(u8, kw, "if")) {
         try self.if_stmt();
@@ -300,7 +337,7 @@ pub fn stmt(self: *Self) !?bool {
         // not sure how typed assigment would look, like "foo :2d= ree"
         try self.t.expect_char(':');
         try self.t.expect_char('=');
-        const res = try self.call_expr();
+        const res = try self.call_expr(int_ctx);
         try self.ir.putvar(self.curnode, v.ref, res);
     }
 
