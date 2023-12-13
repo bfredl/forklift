@@ -403,9 +403,10 @@ test "numberfinderer borked" {
         \\      let tval = table[tpos];
         \\      tpos := tpos + 1;
         \\      if (tval == 10) break;
-        \\      if (scan >= len) break;
-        \\      if (tval != data[scan]) {
-        \\        imatch := 0;
+        \\      if (scan < len) {
+        \\        if (tval != data[scan]) {
+        \\          imatch := 0;
+        \\        }
         \\      }
         \\      scan := scan + 1;
         \\    }
@@ -426,4 +427,51 @@ test "numberfinderer borked" {
     try expect(usize, 3, t_call(func, "three", table));
     try expect(usize, 0, t_call(func, "ze", table));
     try expect(usize, 3, t_call(func, "thr", table));
+    try expect(usize, 200, t_call(func, "q", table));
+}
+
+test "numberfinderer" {
+    // case where the OOB check is slightly wrong so that "ze" maps to zero and so on
+    var cfo = try parse_test(
+        \\func main {
+        \\  args data len table tablelen;
+        \\  vars x tpos i imatch scan result;
+        \\  tpos := 0;
+        \\  i := 0;
+        \\  result := 200;
+        \\  loop {
+        \\    scan := 0;
+        \\    imatch := 1;
+        \\    loop {
+        \\      let tval = table[tpos];
+        \\      tpos := tpos + 1;
+        \\      if (tval == 10) break;
+        \\      if (scan < len) {
+        \\        if (tval != data[scan]) {
+        \\          imatch := 0;
+        \\        }
+        \\      } else {
+        \\          imatch := 0;
+        \\      }
+        \\      scan := scan + 1;
+        \\    }
+        \\    if (imatch == 1) {
+        \\      result := i;
+        \\      break;
+        \\    }
+        \\    if (tpos >= tablelen) break;
+        \\    i := i + 1;
+        \\  }
+        \\  return result;
+        \\}
+    );
+    defer cfo.deinit();
+    const func = cfo.get_ptr(0, TFunc);
+    try expect(usize, 0, t_call(func, "zero\n", table));
+    try expect(usize, 3, t_call(func, "three\n", table));
+    try expect(usize, 0, t_call(func, "zero", table));
+    try expect(usize, 3, t_call(func, "three", table));
+    try expect(usize, 200, t_call(func, "ze", table));
+    try expect(usize, 200, t_call(func, "thr", table));
+    try expect(usize, 200, t_call(func, "q", table));
 }

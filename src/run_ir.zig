@@ -82,6 +82,7 @@ pub fn main() !void {
         const SFunc = *const fn (arg1: [*]u8, arg2: usize, arg3: ?[*]u8, arg4: usize) callconv(.C) usize;
         const fun = try module.get_func_ptr("main", SFunc);
         const ptr2, const len2 = if (inbuf2) |b2| .{ b2.ptr, b2.len } else .{ null, 0 };
-        print("res: {}\n", .{fun(b.ptr, b.len, ptr2, len2)});
+        // NB: buffers contain an extra NUL byte past the end, don't inlude it in size
+        print("res: {}\n", .{fun(b.ptr, b.len - 1, ptr2, len2 - 1)});
     }
 }
