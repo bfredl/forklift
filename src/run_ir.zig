@@ -39,6 +39,7 @@ pub fn main() !void {
         for (firstarg[1..]) |a| {
             switch (a) {
                 'i' => options.dbg_raw_ir = true,
+                's' => options.dbg_ssa_ir = true,
                 'a' => options.dbg_analysed_ir = true,
                 'v' => options.dbg_vregs = true,
                 'd' => options.dbg_disasm = true,

@@ -1930,6 +1930,9 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
     if (check) try self.check_ir_valid();
 
     try SSA_GVN.ssa_gvn(self);
+    if (@TypeOf(options) != @TypeOf(null) and options.dbg_ssa_ir) {
+        self.debug_print();
+    }
     if (check) try self.check_ir_valid();
 
     try self.calc_use();
