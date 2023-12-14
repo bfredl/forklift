@@ -11,6 +11,7 @@ const builtin = @import("builtin");
 const BPF = std.os.linux.BPF;
 
 const options = if (!builtin.is_test) &@import("root").options else null;
+pub const is_debug = true;
 
 // this currently causes a curious bug as of zig nightly 26dec2022.
 // recursive method calls like self.rpo_visit() within itself do not work!
@@ -56,6 +57,8 @@ nslots: u8 = 0,
 nsave: u8 = 0,
 ndf: u16 = 0,
 call_clobber_mask: u16 = undefined,
+
+var_names: ArrayList(?[]const u8),
 
 // filler value for unintialized refs. not a sentinel for
 // actually invalid refs!
@@ -647,6 +650,7 @@ pub fn init(n: u16, allocator: Allocator) !Self {
         .vregs = @TypeOf(@as(Self, undefined).vregs).init(allocator),
         .blkorder = ArrayList(u16).init(allocator),
         .preorder = ArrayList(u16).init(allocator),
+        .var_names = ArrayList(?[]const u8).init(allocator),
         .refs = try ArrayList(u16).initCapacity(allocator, 4 * n),
         .constvals = try ArrayList(u64).initCapacity(allocator, 8),
         .b = try ArrayList(Block).initCapacity(allocator, 2 * n),
@@ -678,6 +682,7 @@ pub fn deinit(self: *Self) void {
     self.n.deinit();
     self.blkorder.deinit();
     self.preorder.deinit();
+    self.var_names.deinit(); // actual strings are owned by producer
     self.refs.deinit();
     self.constvals.deinit();
     self.b.deinit();

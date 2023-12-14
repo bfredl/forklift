@@ -408,4 +408,18 @@ pub fn parse(ir: *FLIR, t: *Tokenizer, allocator: Allocator) !void {
         self.t.fail_pos();
         return e;
     };
+
+    // TODO: pattern for "is debug mode". Although all of CFOScript is "debug mode" in some sense
+    if (FLIR.is_debug) {
+        ir.var_names.clearRetainingCapacity();
+        try ir.var_names.appendNTimes(null, ir.nvar);
+        var iter = self.vars.iterator();
+        while (iter.next()) |it| {
+            const vref = it.value_ptr.ref;
+            const vidx = ir.iref(vref).?.op1;
+            if (vidx < ir.nvar) {
+                ir.var_names.items[vidx] = it.key_ptr.*;
+            }
+        }
+    }
 }

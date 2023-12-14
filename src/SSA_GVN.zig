@@ -166,14 +166,14 @@ fn resolve_phi(self: Self, n: u16, i: *FLIR.Inst, iref: u16) !bool {
 
             // i_phi.op1 is not used anymore. But the dense variable index is more useful for debugging, later.
             // I forgor why don't we store it directly :P
-            i_ref.op1 = vref;
+            i_ref.op1 = vop1;
         } else {
             for (self.f.preds(n), 0..) |v, vi| {
                 _ = try self.f.binop(v, .putphi, self.predbuf[vi], iref);
             }
             const i_ref = self.f.iref(iref).?;
             i_ref.f.kill_op1 = false; // flag for "resolved"
-            i_ref.op1 = vref;
+            i_ref.op1 = vop1;
             // initialized as: i_ref.op2 = NoRef; // sentinel for no trivial reference.
         }
     } else if (i.op2 == NoRef) {

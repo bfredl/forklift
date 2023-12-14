@@ -243,7 +243,11 @@ pub fn print_node(self: *FLIR, firstblk: u16) void {
         } else if (i.tag == .icmp) {
             print(".{s}", .{@tagName(@as(FLIR.IntCond, @enumFromInt(i.spec)))});
         } else if (i.tag == .phi) {
-            print(" ({})", .{i.op1});
+            if (self.var_names.items.len > i.op1) {
+                if (self.var_names.items[i.op1]) |nam| {
+                    print(" ({s})", .{nam});
+                }
+            }
         } else if (i.tag == .putphi) {
             print(" %{} <-", .{fake_ref(self, i.op2)});
         }
