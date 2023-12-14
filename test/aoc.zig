@@ -475,3 +475,66 @@ test "numberfinderer" {
     try expect(usize, 200, t_call(func, "thr", table));
     try expect(usize, 200, t_call(func, "q", table));
 }
+
+test "aoc 2023 1a" {
+    var cfo = try parse_test(
+        \\func main {
+        \\  args data len table tablelen;
+        \\  vars x tpos i imatch scan first current;
+        \\  x := 0;
+        \\  first := 200;
+        \\  current := 0;
+        \\  loop {
+        \\    if (x >= len) break;
+        \\    let byteval = data[x];
+        \\    let trydigit = byteval - 48;
+        \\    if (trydigit <|= 9) {
+        \\      current := trydigit;
+        \\      if (first >= 10) {
+        \\        first := trydigit;
+        \\      }
+        \\    } else {
+        \\      tpos := 0;
+        \\      i := 0;
+        \\      loop {
+        \\        scan := x;
+        \\        imatch := 1;
+        \\        loop {
+        \\          let tval = table[tpos];
+        \\          tpos := tpos + 1;
+        \\          if (tval == 10) break;
+        \\          if (scan < len) {
+        \\            if (tval != data[scan]) {
+        \\              imatch := 0;
+        \\            }
+        \\          } else {
+        \\              imatch := 0;
+        \\          }
+        \\          scan := scan + 1;
+        \\        }
+        \\        if (imatch == 1) {
+        \\          current := i;
+        \\          if (first >= 10) {
+        \\            first := i;
+        \\          }
+        \\          break;
+        \\        }
+        \\        if (tpos >= tablelen) break;
+        \\        i := i + 1;
+        \\      }
+        \\    }
+        \\    x := x + 1;
+        \\  }
+        \\  let item = 10*first+current;
+        \\  return item;
+        \\}
+    );
+    defer cfo.deinit();
+    const func = cfo.get_ptr(0, TFunc);
+    try expect(usize, 30, t_call(func, "three0", table));
+    try expect(usize, 73, t_call(func, "ba7fu3xze", table));
+    try expect(usize, 1, t_call(func, "zerone", table));
+    try expect(usize, 43, t_call(func, "refourcetwog3re", table));
+    try expect(usize, 2000, t_call(func, "zer", table));
+    try expect(usize, 2000, t_call(func, "", table));
+}
