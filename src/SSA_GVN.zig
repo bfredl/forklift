@@ -122,8 +122,8 @@ fn read_var(self: Self, node: u16, vref: u16, vop1: u16) MaybePhi {
 
 fn check_trivial(self: Self, ref: u16) u16 {
     if (self.f.iref(ref)) |i| {
-        if (i.tag == .phi and i.op2 == 2) {
-            return self.check_trivial(i.op1);
+        if (i.tag == .phi and i.op2 != NoRef) {
+            return self.check_trivial(i.op2);
         }
     }
     return ref;
@@ -142,7 +142,7 @@ fn resolve_blk(self: Self, node: u16, first_blk: u16) !bool {
 
 fn resolve_phi(self: Self, n: u16, i: *FLIR.Inst, iref: u16) !bool {
     var changed: bool = false;
-    if (i.op2 == 0) {
+    if (i.f.kill_op1) {
         // not resolved
         changed = true;
         // NoRef: no values seen yet, null: contradiction seen
@@ -161,17 +161,22 @@ fn resolve_phi(self: Self, n: u16, i: *FLIR.Inst, iref: u16) !bool {
         if (onlyref) |ref| {
             // lookup again in case self.f.b.items changed
             const i_ref = self.f.iref(iref).?;
-            i_ref.op1 = ref;
-            i_ref.op2 = 2; // flag for "trivial phi"
+            i_ref.f.kill_op1 = false; // flag for "resolved". techy we don't depend on op1 anymore :zany_face:
+            i_ref.op2 = ref; // if set, this is a trivial alias to phi_i.op2
+
+            // i_phi.op1 is not used anymore. But the dense variable index is more useful for debugging, later.
+            // I forgor why don't we store it directly :P
+            i_ref.op1 = vref;
         } else {
             for (self.f.preds(n), 0..) |v, vi| {
                 _ = try self.f.binop(v, .putphi, self.predbuf[vi], iref);
             }
             const i_ref = self.f.iref(iref).?;
-            i_ref.op1 = 0;
-            i_ref.op2 = 1; // flag for "resolved"
+            i_ref.f.kill_op1 = false; // flag for "resolved"
+            i_ref.op1 = vref;
+            // initialized as: i_ref.op2 = NoRef; // sentinel for no trivial reference.
         }
-    } else if (i.op2 == 1) {
+    } else if (i.op2 == NoRef) {
         const onlyref: ?u16 = theref: {
             var seen_ref: ?u16 = null;
             for (self.f.preds(n)) |v| {
@@ -186,8 +191,7 @@ fn resolve_phi(self: Self, n: u16, i: *FLIR.Inst, iref: u16) !bool {
             break :theref seen_ref;
         };
         if (onlyref) |ref| {
-            i.op1 = ref;
-            i.op2 = 2; // flag for "trivial phi"
+            i.op2 = ref; // found trivial reference
             changed = true;
         }
     }
@@ -226,15 +230,15 @@ fn cleanup_trivial_phi(self: Self) !void {
             const i = item.i;
             if (i.tag == .phi) {
                 // phi reading phi was already handled in resolve_phi()
-                if (i.op2 == 2) {
+                if (i.op2 != NoRef) {
                     // by effect by reverse traversal, have already fixed any uses
                     i.tag = .empty;
                 }
             } else if (i.tag == .putphi) {
                 const ref = self.f.iref(i.op2) orelse return error.FLIRError;
                 // Not really robust, just assume any .empty seen here must have been
-                // from deleted phi/op2=2 nodes above. Because YOLO.
-                if (ref.tag == .empty or ref.op2 == 2) {
+                // from deleted phi/op2=NoRef nodes above. Because YOLO.
+                if (ref.tag == .empty or ref.op2 != NoRef) {
                     i.tag = .empty;
                 } else {
                     i.op1 = self.check_trivial(i.op1);

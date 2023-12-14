@@ -363,7 +363,7 @@ fn scoped_block(self: *Self) ParseError!bool {
     var now_size = self.vars.count();
     // restore the environment
     while (now_size > base_len) {
-        self.vars.swapRemoveAt(now_size - 1);
+        self.vars.swapRemoveAt(now_size - 1); // NB: not a swap, as last element
         now_size -= 1;
     }
     return did_ret;

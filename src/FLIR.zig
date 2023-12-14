@@ -236,6 +236,7 @@ pub const Inst = struct {
     f: packed struct {
         // note: if the reference is a vreg, it might
         // be alive in an other branch processed later
+        // in phi node: "kill_op1" is overloaded as resolved (it doesn't use any op:s in the normal sense)
         kill_op1: bool = false,
         kill_op2: bool = false,
         killed: bool = false, // if false after calc_use, a non-vreg is never used
@@ -933,7 +934,7 @@ pub fn call(self: *Self, node: u16, kind: CallKind, num: u16) !u16 {
 
 pub fn prePhi(self: *Self, node: u16, vref: u16) !u16 {
     const v = self.iref(vref) orelse return error.FLIRError;
-    return self.preInst(node, .{ .tag = .phi, .op1 = vref, .op2 = 0, .spec = v.spec });
+    return self.preInst(node, .{ .tag = .phi, .op1 = vref, .op2 = NoRef, .spec = v.spec, .f = .{ .kill_op1 = true } });
 }
 
 // TODO: maintain wf of block 0: first all args, then all vars.
