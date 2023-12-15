@@ -10,6 +10,9 @@ const mem = std.mem;
 const ArrayList = std.ArrayList;
 const print = std.debug.print;
 
+const common = @import("./common.zig");
+const options = common.debug_options;
+
 pub fn check_phi(self: *FLIR, worklist: *ArrayList(u16), pred: u16, succ: u16) !void {
     const pn = self.n.items[pred];
     var iter = self.ins_iterator(pn.firstblk);
@@ -221,10 +224,22 @@ pub fn debug_print(self: *FLIR) void {
     }
 }
 
+const empty_inst = FLIR.Inst{ .tag = .empty, .op1 = 0, .op2 = 0 };
 pub fn print_node(self: *FLIR, firstblk: u16) void {
     var it = self.ins_iterator(firstblk);
     while (it.next()) |item| {
         const i = item.i.*;
+
+        if (i.tag == .putphi) {
+            const targ = if (self.iref(i.op2)) |iref| iref.* else empty_inst;
+            const src = if (self.iref(i.op1)) |iref| iref.* else empty_inst;
+            if (options.dbg_exclude_trivial_put) {
+                if (src.tag == .phi and src.op1 == targ.op1 and targ.op1 != NoRef and src.mckind == targ.mckind and src.mcidx == targ.mcidx) {
+                    continue;
+                }
+            }
+        }
+
         const chr: u8 = if (i.has_res()) '=' else ' ';
         var name = @tagName(i.tag);
         if (i.tag == .ibinop) name = "i";
@@ -270,6 +285,22 @@ pub fn print_node(self: *FLIR, firstblk: u16) void {
             print(" !", .{});
         }
         if (i.tag == .putphi) {
+            const targ = if (self.iref(i.op2)) |iref| iref.* else empty_inst;
+            const src = if (self.iref(i.op1)) |iref| iref.* else empty_inst;
+            const targvar = if (targ.tag == .phi) targ.op1 else NoRef;
+            const srcvar = if (src.tag == .phi) src.op1 else NoRef;
+            const targnam = if (targvar < self.var_names.items.len) self.var_names.items[targvar] else null;
+            if (srcvar == targvar) {
+                if (targnam) |nam| {
+                    print(" ({s})", .{nam});
+                }
+            } else {
+                const srcnam = if (srcvar < self.var_names.items.len) self.var_names.items[srcvar] else null;
+                if (srcnam != null or targnam != null) {
+                    print(" ({s} <- {s})", .{ targnam orelse "*", srcnam orelse "*" });
+                }
+            }
+
             if (self.ipreg(i.op2)) |reg| {
                 const regsrc = self.ipreg(i.op1);
                 const tag = @tagName(X86Asm.IPReg.from(reg));

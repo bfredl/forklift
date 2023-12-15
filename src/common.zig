@@ -19,6 +19,7 @@ pub const DebugOptions = struct {
     dbg_raw_ir: bool = false,
     dbg_ssa_ir: bool = false,
     dbg_analysed_ir: bool = false,
+    dbg_exclude_trivial_put: bool = false,
     dbg_disasm: bool = false,
     dbg_vregs: bool = false,
     dbg_trap: bool = false,

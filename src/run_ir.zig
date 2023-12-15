@@ -41,6 +41,7 @@ pub fn main() !void {
                 'i' => options.dbg_raw_ir = true,
                 's' => options.dbg_ssa_ir = true,
                 'a' => options.dbg_analysed_ir = true,
+                'p' => options.dbg_exclude_trivial_put = true,
                 'v' => options.dbg_vregs = true,
                 'd' => options.dbg_disasm = true,
                 't' => options.dbg_trap = true,
