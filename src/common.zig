@@ -25,6 +25,8 @@ pub const DebugOptions = struct {
     dbg_trap: bool = false,
     dbg_disasm_ir: bool = false,
     dbg_regmap: bool = false,
+    dbg_osha: bool = false,
+    dbg_trap_join_nodes: bool = false, // trap every loop header and join
 };
 
 const builtin = @import("builtin");

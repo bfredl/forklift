@@ -8,6 +8,7 @@ const ArrayList = std.ArrayList;
 
 const print = std.debug.print;
 const Self = @This();
+const common = @import("./common.zig");
 
 buf: ArrayListAligned(u8, page_size),
 
@@ -18,12 +19,21 @@ inst_dbg: ArrayList(usize),
 
 relocations: ArrayList(Relocation),
 
+value_map: ArrayList(ValueDebugInfo),
+
 // currently only for constant data past "ret", should also be
 // for calls to unemitted functions etc
 pub const Relocation = struct {
     pos: u32,
     idx: u16,
     is_ptr: bool,
+};
+
+// at address &buf.items[pos] register "reg" will store value with "name"
+pub const ValueDebugInfo = struct {
+    pos: u32,
+    reg: common.IPReg,
+    name: []const u8,
 };
 
 pub fn get_target(self: *Self) u32 {
@@ -43,6 +53,7 @@ pub fn init(allocator: mem.Allocator) !Self {
         .inst_off = ArrayList(u32).init(allocator),
         .inst_dbg = ArrayList(usize).init(allocator),
         .relocations = ArrayList(Relocation).init(allocator),
+        .value_map = ArrayList(ValueDebugInfo).init(allocator),
     };
 }
 
@@ -53,6 +64,7 @@ pub fn deinit(self: *Self) void {
     self.inst_off.deinit();
     self.inst_dbg.deinit();
     self.relocations.deinit();
+    self.value_map.deinit();
 }
 
 pub fn dump(self: *Self) !void {

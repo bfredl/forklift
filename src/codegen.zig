@@ -204,15 +204,21 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
             // TODO: these should already been cleaned up at this point
             continue;
         }
-        labels[ni] = code.get_target();
-        if (dbg) print("block {}: {x}\n", .{ ni, labels[ni] });
-
-        if (options.dbg_regmap and n.npred > 1) {
-            self.print_debug_map(uv(ni), labels[ni]);
-        }
+        const n_target = code.get_target();
+        labels[ni] = n_target;
+        if (dbg) print("block {}: {x}\n", .{ ni, n_target });
 
         // set jump targets of past blocks which jump forward here
         try set_pred(self, &cfo, targets, uv(ni));
+
+        if (n.npred > 1) {
+            if (options.dbg_regmap) {
+                self.print_debug_map(uv(ni), n_target);
+            }
+            if (options.dbg_trap_join_nodes) {
+                try cfo.trap();
+            }
+        }
 
         var cond: ?X86Asm.Cond = null;
         var it = self.ins_iterator(n.firstblk);
@@ -222,8 +228,16 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
             switch (i.tag) {
                 // empty doesn't flush fused value
                 .empty => continue,
-                // work is done by putphi
-                .phi => {},
+                .phi => {
+                    // work is done by putphi, this is just optional debug info
+                    if (options.dbg_trap_join_nodes) {
+                        if (i.ipreg()) |reg| {
+                            if (self.get_varname(i.op1)) |nam| {
+                                try code.value_map.append(.{ .pos = n_target, .reg = reg, .name = nam });
+                            }
+                        }
+                    }
+                },
                 .arg => {
                     // TRICKY: should i.op1 actually be the specific register?
                     const src = ABI.argregs[i.op1];

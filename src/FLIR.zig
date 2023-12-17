@@ -1996,3 +1996,7 @@ pub fn empty(self: *Self, ni: u16, allow_succ: bool) bool {
     assert(node.s[1] == 0);
     return true;
 }
+
+pub fn get_varname(self: *Self, idx: u16) ?[]const u8 {
+    return if (self.var_names.items.len > idx) self.var_names.items[idx] else null;
+}

@@ -258,10 +258,8 @@ pub fn print_node(self: *FLIR, firstblk: u16) void {
         } else if (i.tag == .icmp) {
             print(".{s}", .{@tagName(@as(FLIR.IntCond, @enumFromInt(i.spec)))});
         } else if (i.tag == .phi) {
-            if (self.var_names.items.len > i.op1) {
-                if (self.var_names.items[i.op1]) |nam| {
-                    print(" ({s})", .{nam});
-                }
+            if (self.get_varname(i.op1)) |nam| {
+                print(" ({s})", .{nam});
             }
         } else if (i.tag == .putphi) {
             print(" %{} <-", .{fake_ref(self, i.op2)});
@@ -289,13 +287,13 @@ pub fn print_node(self: *FLIR, firstblk: u16) void {
             const src = if (self.iref(i.op1)) |iref| iref.* else empty_inst;
             const targvar = if (targ.tag == .phi) targ.op1 else NoRef;
             const srcvar = if (src.tag == .phi) src.op1 else NoRef;
-            const targnam = if (targvar < self.var_names.items.len) self.var_names.items[targvar] else null;
+            const targnam = self.get_varname(targvar);
             if (srcvar == targvar) {
                 if (targnam) |nam| {
                     print(" ({s})", .{nam});
                 }
             } else {
-                const srcnam = if (srcvar < self.var_names.items.len) self.var_names.items[srcvar] else null;
+                const srcnam = self.get_varname(srcvar);
                 if (srcnam != null or targnam != null) {
                     print(" ({s} <- {s})", .{ targnam orelse "*", srcnam orelse "*" });
                 }
@@ -446,15 +444,13 @@ pub fn print_debug_map(self: *FLIR, ni: u16, target: u32) void {
     while (it.next()) |item| {
         const i = item.i;
         if (i.tag != .phi) break;
-        if (self.var_names.items.len > i.op1) {
-            if (self.var_names.items[i.op1]) |nam| {
-                print("{s}: ", .{nam});
-                if (i.ipreg()) |reg| {
-                    const tag = @tagName(X86Asm.IPReg.from(reg));
-                    print("{s} \n", .{tag});
-                } else {
-                    print("??\n", .{});
-                }
+        if (self.get_varname(i.op1)) |nam| {
+            print("{s}: ", .{nam});
+            if (i.ipreg()) |reg| {
+                const tag = @tagName(X86Asm.IPReg.from(reg));
+                print("{s} \n", .{tag});
+            } else {
+                print("??\n", .{});
             }
         }
     }

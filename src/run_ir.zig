@@ -1,4 +1,5 @@
 const FLIR = @import("./FLIR.zig");
+const OSHA = @import("./OSHA.zig");
 const CodeBuffer = @import("./CodeBuffer.zig");
 const X86Asm = @import("./X86Asm.zig");
 const print = std.debug.print;
@@ -45,7 +46,9 @@ pub fn main() !void {
                 'v' => options.dbg_vregs = true,
                 'd' => options.dbg_disasm = true,
                 't' => options.dbg_trap = true,
+                'T' => options.dbg_trap_join_nodes = true,
                 'm' => options.dbg_regmap = true,
+                'o' => options.dbg_osha = true,
                 else => return usage(),
             }
         }
@@ -82,6 +85,9 @@ pub fn main() !void {
 
     if (inbuf) |b| {
         try module.code.finalize();
+        if (options.dbg_osha) {
+            try OSHA.install(&module.code);
+        }
         const SFunc = *const fn (arg1: [*]u8, arg2: usize, arg3: ?[*]u8, arg4: usize) callconv(.C) usize;
         const fun = try module.get_func_ptr("main", SFunc);
         const ptr2, const len2 = if (inbuf2) |b2| .{ b2.ptr, b2.len } else .{ null, 0 };
