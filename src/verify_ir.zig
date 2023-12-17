@@ -261,6 +261,13 @@ pub fn print_node(self: *FLIR, firstblk: u16) void {
             if (self.get_varname(i.op1)) |nam| {
                 print(" ({s})", .{nam});
             }
+        } else if (i.tag == .putvar) {
+            const vref = self.iref(i.op1);
+            if (vref) |v| {
+                if (self.get_varname(v.op1)) |nam| {
+                    print(" {s}", .{nam});
+                }
+            }
         } else if (i.tag == .putphi) {
             print(" %{} <-", .{fake_ref(self, i.op2)});
         }
