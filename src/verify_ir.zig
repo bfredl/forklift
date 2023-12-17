@@ -305,9 +305,9 @@ pub fn print_node(self: *FLIR, firstblk: u16) void {
                 const regsrc = self.ipreg(i.op1);
                 const tag = @tagName(X86Asm.IPReg.from(reg));
                 if (regsrc == null or regsrc == reg) {
-                    print(" [{s}] ", .{tag});
+                    print(" [{s}]", .{tag});
                 } else {
-                    print(" [{s} <- {s}] ", .{ tag, @tagName(X86Asm.IPReg.from(regsrc.?)) });
+                    print(" [{s} <- {s}]", .{ tag, @tagName(X86Asm.IPReg.from(regsrc.?)) });
                 }
             }
         }
@@ -437,4 +437,26 @@ pub fn print_intervals(self: *FLIR) void {
             }
         }
     }
+}
+
+pub fn print_debug_map(self: *FLIR, ni: u16, target: u32) void {
+    print("node {} at {x}:\n", .{ ni, target });
+    const n = self.n.items[ni];
+    var it = self.ins_iterator(n.firstblk);
+    while (it.next()) |item| {
+        const i = item.i;
+        if (i.tag != .phi) break;
+        if (self.var_names.items.len > i.op1) {
+            if (self.var_names.items[i.op1]) |nam| {
+                print("{s}: ", .{nam});
+                if (i.ipreg()) |reg| {
+                    const tag = @tagName(X86Asm.IPReg.from(reg));
+                    print("{s} \n", .{tag});
+                } else {
+                    print("??\n", .{});
+                }
+            }
+        }
+    }
+    print("\n", .{});
 }

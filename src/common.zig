@@ -24,6 +24,7 @@ pub const DebugOptions = struct {
     dbg_vregs: bool = false,
     dbg_trap: bool = false,
     dbg_disasm_ir: bool = false,
+    dbg_regmap: bool = false,
 };
 
 const builtin = @import("builtin");

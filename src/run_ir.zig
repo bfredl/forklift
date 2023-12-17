@@ -45,6 +45,7 @@ pub fn main() !void {
                 'v' => options.dbg_vregs = true,
                 'd' => options.dbg_disasm = true,
                 't' => options.dbg_trap = true,
+                'm' => options.dbg_regmap = true,
                 else => return usage(),
             }
         }

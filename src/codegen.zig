@@ -207,6 +207,10 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
         labels[ni] = code.get_target();
         if (dbg) print("block {}: {x}\n", .{ ni, labels[ni] });
 
+        if (options.dbg_regmap and n.npred > 1) {
+            self.print_debug_map(uv(ni), labels[ni]);
+        }
+
         // set jump targets of past blocks which jump forward here
         try set_pred(self, &cfo, targets, uv(ni));
 
