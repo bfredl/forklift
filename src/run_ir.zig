@@ -40,6 +40,7 @@ pub fn main() !void {
         for (firstarg[1..]) |a| {
             switch (a) {
                 'i' => options.dbg_raw_ir = true,
+                'I' => options.dbg_raw_reorder_ir = true,
                 's' => options.dbg_ssa_ir = true,
                 'a' => options.dbg_analysed_ir = true,
                 'p' => options.dbg_exclude_trivial_put = true,

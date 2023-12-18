@@ -1934,6 +1934,9 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
 
     try self.reorder_nodes();
     if (check) try self.check_ir_valid();
+    if (@TypeOf(options) != @TypeOf(null) and options.dbg_raw_reorder_ir) {
+        self.debug_print();
+    }
 
     try SSA_GVN.ssa_gvn(self);
     if (@TypeOf(options) != @TypeOf(null) and options.dbg_ssa_ir) {

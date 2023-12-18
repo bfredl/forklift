@@ -57,7 +57,6 @@ fn fill_blk(self: Self, n: u16, first_blk: u16) !void {
             const readval = try self.read_ref(n, i.op2);
             const ivar = self.f.iref(op1) orelse return error.UW0tM8;
             self.vdi(n, ivar.op1).* = readval;
-            i.tag = .empty;
         } else if (.tag == .phi) {
             // TODO: likely we'll never need to consider an existing
             // phi node here but verify this!

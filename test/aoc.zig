@@ -530,7 +530,6 @@ test "aoc 2023 1a" {
         \\}
     );
     defer cfo.deinit();
-    if (true) return error.FailsWithInfiniteLoopSadge;
     const func = cfo.get_ptr(0, TFunc);
     try expect(usize, 30, t_call(func, "three0", table));
     try expect(usize, 73, t_call(func, "ba7fu3xze", table));

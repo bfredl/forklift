@@ -17,6 +17,7 @@ pub const IPReg = enum(u4) {
 
 pub const DebugOptions = struct {
     dbg_raw_ir: bool = false,
+    dbg_raw_reorder_ir: bool = false,
     dbg_ssa_ir: bool = false,
     dbg_analysed_ir: bool = false,
     dbg_exclude_trivial_put: bool = false,
