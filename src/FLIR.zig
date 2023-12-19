@@ -1589,6 +1589,16 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
                 }
             }
 
+            // TODO: this would be handled by materializing the constant 1 in "VAL2 = 1 << VAL1"
+            // as a register, in a proper target dependent isel-pass, IF WE HAD ONE
+            if (i.tag == .ibinop and @as(IntBinOp, @enumFromInt(i.spec)).asShift() != null and constidx(i.op1) != null) {
+                if (self.iref(i.op2)) |amt| {
+                    if (amt.mckind == .ipreg) {
+                        usable_regs[amt.mcidx] = false;
+                    }
+                }
+            }
+
             var chosen_reg: ?u8 = null;
             if (i.mckind == .unallocated_ipreghint) {
                 if (i.res_type() != ValType.intptr) unreachable;

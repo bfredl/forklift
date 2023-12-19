@@ -301,6 +301,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                             },
                             .ipreg => |src2| {
                                 const src1 = lhs.as_ipreg() orelse src1: {
+                                    if (dst == src2) return error.FLIRError; // conflict
                                     try regmovmc(&cfo, dst, lhs);
                                     break :src1 dst;
                                 };

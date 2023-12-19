@@ -33,6 +33,7 @@ pub fn main() !void {
     if (argv.len < 2) return usage();
     var nextarg: u8 = 1;
     const firstarg = mem.span(argv[nextarg]);
+    var inline_arg1 = false;
 
     if (firstarg[0] == '-') {
         if (argv.len < 3) return usage();
@@ -50,6 +51,7 @@ pub fn main() !void {
                 'T' => options.dbg_trap_join_nodes = true,
                 'm' => options.dbg_regmap = true,
                 'o' => options.dbg_osha = true,
+                'q' => inline_arg1 = true,
                 else => return usage(),
             }
         }
@@ -68,9 +70,13 @@ pub fn main() !void {
     const buf = try readall(allocator, filearg);
     defer allocator.free(buf);
 
-    const inbuf = if (argv.len > nextarg) try readall(allocator, mem.span(argv[nextarg])) else null;
-    defer if (inbuf) |b| allocator.free(b);
-    nextarg += 1;
+    const arg1 = firstarg: {
+        if (argv.len <= nextarg) break :firstarg null;
+        const span = mem.span(argv[nextarg]);
+        nextarg += 1;
+        break :firstarg if (inline_arg1) span else try readall(allocator, span);
+    };
+    defer if (!inline_arg1) if (arg1) |b| allocator.free(b);
     const inbuf2 = if (argv.len > nextarg) try readall(allocator, mem.span(argv[nextarg])) else null;
     defer if (inbuf2) |b| allocator.free(b);
 
@@ -84,15 +90,15 @@ pub fn main() !void {
         return e;
     };
 
-    if (inbuf) |b| {
+    if (arg1) |b| {
         try module.code.finalize();
         if (options.dbg_osha) {
             try OSHA.install(&module.code);
         }
         const SFunc = *const fn (arg1: [*]u8, arg2: usize, arg3: ?[*]u8, arg4: usize) callconv(.C) usize;
         const fun = try module.get_func_ptr("main", SFunc);
-        const ptr2, const len2 = if (inbuf2) |b2| .{ b2.ptr, b2.len } else .{ null, 0 };
+        const ptr2, const len2 = if (inbuf2) |b2| .{ b2.ptr, b2.len - 1 } else .{ null, 0 };
         // NB: buffers contain an extra NUL byte past the end, don't inlude it in size
-        print("res: {}\n", .{fun(b.ptr, b.len - 1, ptr2, len2 - 1)});
+        print("res: {}\n", .{fun(b.ptr, b.len - 1, ptr2, len2)});
     }
 }

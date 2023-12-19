@@ -119,7 +119,7 @@ pub fn expr_2(self: *Self, type_ctx: SpecType) !?u16 {
             else
                 return val;
 
-            self.t.pos += 1;
+            self.t.pos += opstr.len;
             const op = (try self.expr_1(type_ctx)) orelse return error.SyntaxError;
             val = try self.ir.ibinop(self.curnode, theop, val, op);
         }
