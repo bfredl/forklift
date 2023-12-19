@@ -33,6 +33,7 @@ pub fn ascii_quote(self: *Self) !u8 {
     const val = self.str[self.pos]; // yes ''' is how ' would be spelled, deal with it
     self.pos += 1;
     try self.expect_char('\'');
+    if (val == '\n') self.lnum += 1;
     return val;
 }
 
@@ -61,7 +62,7 @@ pub fn idlike(c: u8) bool {
 }
 
 pub fn oplike(c: u8) bool {
-    return (c == '+' or c == '-' or c == '/' or c == '*' or c == '=' or c == '<' or c == '>' or c == '!' or c == '|');
+    return (c == '+' or c == '-' or c == '/' or c == '*' or c == '=' or c == '<' or c == '>' or c == '!' or c == '|' or c == '&');
 }
 
 pub const Chunk = []const u8;

@@ -18,11 +18,10 @@ pub fn readall(allocator: mem.Allocator, filename: []u8) ![]u8 {
     const fil = try std.fs.cwd().openFile(filename, .{});
     const stat = try os.fstat(fil.handle);
     const size = std.math.cast(usize, stat.size) orelse return error.FileTooBig;
-    const buf = try allocator.alloc(u8, size + 1);
+    const buf = try allocator.alloc(u8, size);
     if (try fil.readAll(buf) < size) {
         return error.IOError;
     }
-    buf[size] = 0;
     return buf;
 }
 
@@ -97,8 +96,7 @@ pub fn main() !void {
         }
         const SFunc = *const fn (arg1: [*]u8, arg2: usize, arg3: ?[*]u8, arg4: usize) callconv(.C) usize;
         const fun = try module.get_func_ptr("main", SFunc);
-        const ptr2, const len2 = if (inbuf2) |b2| .{ b2.ptr, b2.len - 1 } else .{ null, 0 };
-        // NB: buffers contain an extra NUL byte past the end, don't inlude it in size
-        print("res: {}\n", .{fun(b.ptr, b.len - 1, ptr2, len2)});
+        const ptr2, const len2 = if (inbuf2) |b2| .{ b2.ptr, b2.len } else .{ null, 0 };
+        print("res: {}\n", .{fun(b.ptr, b.len, ptr2, len2)});
     }
 }

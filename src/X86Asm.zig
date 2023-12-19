@@ -399,7 +399,7 @@ pub fn vex2(self: *Self, r: bool, vv: u4, l: bool, pp: PP) !void {
 pub fn vex3(self: *Self, w: bool, r: bool, x: bool, b: bool, mm: MM, vv: u4, l: bool, pp: PP) !void {
     try self.wb(0xC4);
     try self.wb(tibflag(u8, r) << 7 | tibflag(u8, x) << 6 | tibflag(u8, b) << 5 | mm.val());
-    try self.wb(tibflag(u8, w) << 7 | @as(u8, ~vv) << 3 | @as(u8, @intFromBool(l)) << 2 | pp.val());
+    try self.wb(@as(u8, @intFromBool(w)) << 7 | @as(u8, ~vv) << 3 | @as(u8, @intFromBool(l)) << 2 | pp.val());
 }
 
 pub fn vex0fwig(self: *Self, r: bool, x: bool, b: bool, vv: u4, l: bool, pp: PP) !void {
@@ -880,7 +880,7 @@ pub fn vzeroall(self: *Self) !void {
 
 pub inline fn bmi_rr(self: *Self, op: u8, wide: bool, pp: PP, dst: IPReg, src1: IPReg, src2: IPReg) !void {
     try self.new_inst(@returnAddress());
-    try self.vex3(wide, dst.ext(), src1.ext(), false, .h0F38, src2.id(), false, pp);
+    try self.vex3(wide, dst.ext(), false, src1.ext(), .h0F38, src2.id(), false, pp);
     try self.wb(op);
     try self.modRm(0b11, dst.lowId(), src1.lowId());
 }

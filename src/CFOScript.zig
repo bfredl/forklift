@@ -143,6 +143,7 @@ pub fn expr_3(self: *Self, type_ctx: SpecType) !?u16 {
                 '+' => .add,
                 '-' => .sub,
                 '|' => .@"or",
+                '&' => .@"and",
                 else => break,
             };
             self.t.pos += 1;

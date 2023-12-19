@@ -538,3 +538,73 @@ test "aoc 2023 1a" {
     try expect(usize, 2000, t_call(func, "zer", table));
     try expect(usize, 2000, t_call(func, "", table));
 }
+
+// TODO: not complete, handles only values up to 63!
+test "aoc 2023 4a: one row" {
+    var cfo = try parse_test(
+        \\func main {
+        \\  args data len;
+        \\  vars x setlow sethigh char value count;
+        \\  x := 0;
+        \\  setlow := 0;
+        \\  loop {
+        \\    let kolla = data[x];
+        \\    x := x + 1;
+        \\    if (kolla == ':') break;
+        \\  }
+        \\
+        \\  loop {
+        \\    loop {
+        \\      char := data[x];
+        \\      if (char != ' ') break;
+        \\      x := x + 1;
+        \\    }
+        \\
+        \\    if (char == '|') break;
+        \\    let digit = char - '0';
+        \\    value := digit;
+        \\    x := x + 1;
+        \\    let maybedigit = data[x] - '0';
+        \\    if (maybedigit <|= 9) {
+        \\      value := 10*value + maybedigit;
+        \\      x := x + 1;
+        \\    }
+        \\
+        \\    let increment = 1 << value;
+        \\    setlow := setlow | increment;
+        \\  }
+        \\
+        \\  count := 0;
+        \\  loop {
+        \\    loop {
+        \\      char := data[x];
+        \\      if (char != ' ') break;
+        \\      x := x + 1;
+        \\    }
+        \\
+        \\    if (char == '
+        \\') break;
+        \\    let digit = char - '0';
+        \\    value := digit;
+        \\    x := x + 1;
+        \\    let maybedigit = data[x] - '0';
+        \\    if (maybedigit <|= 9) {
+        \\      value := 10*value + maybedigit;
+        \\      x := x + 1;
+        \\    }
+        \\
+        \\    let check = 1 << value;
+        \\    if (setlow & check != 0) {
+        \\      count := count + 1;
+        \\    }
+        \\  }
+        \\
+        \\  return count;
+        \\}
+    );
+    defer cfo.deinit();
+    const func = cfo.get_ptr(0, SFunc);
+    try expect(usize, 2, s_call(func, "Card 1: 1 3 8 | 3 2 8\n"));
+    try expect(usize, 4, s_call(func, "Card 1: 41 48 19 22 17 | 19 22  6 31 17  9 48 53\n"));
+    try expect(usize, 5, s_call(func, "Card 1: 41 48 19 22 17 | 19 22  6 31 17 19 48 53\n"));
+}
