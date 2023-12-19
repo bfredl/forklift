@@ -153,7 +153,9 @@ fn resolve_phi(self: Self, n: u16, i: *FLIR.Inst, iref: u16) !bool {
             // XX: In principle we could already handle "Undefined" being represented
             // as NoRef, but we don't support undefined yets and we likely want
             // another sentinel value than Noref, to catch mistakes easier.
-            onlyref = if (onlyref) |only| (if (only == ref or only == NoRef) ref else null) else null;
+            if (ref != iref) {
+                onlyref = if (onlyref) |only| (if (only == ref or only == NoRef) ref else null) else null;
+            }
             self.predbuf[vi] = ref;
         }
 
@@ -181,10 +183,12 @@ fn resolve_phi(self: Self, n: u16, i: *FLIR.Inst, iref: u16) !bool {
             for (self.f.preds(n)) |v| {
                 const phiref = self.read_putphi(v, iref) orelse return error.FLIRError;
                 const ref = self.check_trivial(phiref);
-                if (seen_ref) |seen| {
-                    if (seen != ref) break :theref null;
-                } else {
-                    seen_ref = ref;
+                if (ref != iref) {
+                    if (seen_ref) |seen| {
+                        if (seen != ref) break :theref null;
+                    } else {
+                        seen_ref = ref;
+                    }
                 }
             }
             break :theref seen_ref;
@@ -222,7 +226,6 @@ fn cleanup_trivial_phi(self: Self) !void {
     var ni = self.f.n.items.len - 1;
 
     while (true) : (ni -= 1) {
-        if (ni == 0) break;
         const n = &self.f.n.items[ni];
         var it = self.f.ins_iterator_rev(n.lastblk);
         while (it.next_rev()) |item| {
@@ -252,5 +255,6 @@ fn cleanup_trivial_phi(self: Self) !void {
                 }
             }
         }
+        if (ni == 0) break;
     }
 }
