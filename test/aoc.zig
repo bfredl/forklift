@@ -352,7 +352,7 @@ test "aoc 2023 day 1 part one" {
         \\    loop {
         \\      if (x >= len) break;
         \\      let byteval = data[x];
-        \\      let trydigit = byteval - 48;
+        \\      let trydigit = byteval - '0';
         \\      if (trydigit <|= 9) {
         \\        current := trydigit;
         \\        if (first >= 10) {
@@ -487,7 +487,7 @@ test "aoc 2023 1a" {
         \\  loop {
         \\    if (x >= len) break;
         \\    let byteval = data[x];
-        \\    let trydigit = byteval - 48;
+        \\    let trydigit = byteval - '0';
         \\    if (trydigit <|= 9) {
         \\      current := trydigit;
         \\      if (first >= 10) {

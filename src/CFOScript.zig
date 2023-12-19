@@ -57,6 +57,13 @@ pub fn expr_0(self: *Self, type_ctx: SpecType) !?u16 {
                 .intptr => |_| try self.ir.const_int(@intCast(i)),
             };
         },
+        '\'' => {
+            const val = try self.t.ascii_quote();
+            return switch (type_ctx) {
+                .avxval => |_| error.FLIRError, // or maybe, if it becomes simpler
+                .intptr => |_| try self.ir.const_int(val),
+            };
+        },
         '(' => {
             self.t.pos += 1;
             const val = try self.arg_expr(type_ctx);
@@ -90,16 +97,28 @@ pub fn expr_1(self: *Self, type_ctx: SpecType) !?u16 {
 
 pub fn expr_2(self: *Self, type_ctx: SpecType) !?u16 {
     var val = (try self.expr_1(type_ctx)) orelse return null;
-    while (self.t.nonws()) |char| {
+    while (self.t.nonws()) |_| {
         if (f_ctx(type_ctx)) |fmode| {
             _ = fmode;
             return error.NotYetImplemented;
         } else {
-            const theop: FLIR.IntBinOp = switch (char) {
-                '*' => .mul,
-                '/' => @panic(".div"),
-                else => return val,
-            };
+            const opstr = self.t.peek_operator() orelse return val;
+
+            const theop: FLIR.IntBinOp = if (opstr.len == 1)
+                switch (opstr[0]) {
+                    '*' => .mul,
+                    '/' => @panic(".div"),
+                    else => return val,
+                }
+            else if (mem.eql(u8, opstr, "<<"))
+                .shl
+            else if (mem.eql(u8, opstr, ">>|"))
+                .sar
+            else if (mem.eql(u8, opstr, "|>>"))
+                .shr
+            else
+                return val;
+
             self.t.pos += 1;
             const op = (try self.expr_1(type_ctx)) orelse return error.SyntaxError;
             val = try self.ir.ibinop(self.curnode, theop, val, op);

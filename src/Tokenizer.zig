@@ -27,6 +27,15 @@ pub fn nonws(self: *Self) ?u8 {
     return null;
 }
 
+pub fn ascii_quote(self: *Self) !u8 {
+    try self.expect_char('\'');
+    if (self.pos >= self.str.len) return error.ParseError;
+    const val = self.str[self.pos]; // yes ''' is how ' would be spelled, deal with it
+    self.pos += 1;
+    try self.expect_char('\'');
+    return val;
+}
+
 pub fn lbrk(self: *Self) ParseError!void {
     var val = self.nonws() orelse return;
     while (true) {
