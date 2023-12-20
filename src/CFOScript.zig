@@ -70,33 +70,26 @@ pub fn expr_0(self: *Self, type_ctx: SpecType) !?u16 {
             try self.t.expect_char(')');
             return val;
         },
-        else => return null,
-    }
-}
-
-pub fn expr_1(self: *Self, type_ctx: SpecType) !?u16 {
-    var val = (try self.expr_0(type_ctx)) orelse return null;
-    while (self.t.nonws()) |char| {
-        if (char == '[') {
+        '@' => {
             self.t.pos += 1;
-            // TODO: addr[] as shorthand? or maybe [addr] :)
-            const idx = try self.arg_expr(int_ctx);
-            try self.t.expect_char(']');
-            const memtype: SpecType = switch (type_ctx) {
+            const memtype: SpecType = self.maybe_type() orelse switch (type_ctx) {
                 .intptr => .{ .intptr = .byte },
                 .avxval => type_ctx,
             };
 
-            val = try self.ir.load(self.curnode, memtype, val, idx, 0);
-        } else {
-            break;
-        }
+            const addr = try self.arg_expr(int_ctx);
+            try self.t.expect_char('[');
+            const idx = try self.arg_expr(int_ctx);
+            try self.t.expect_char(']');
+
+            return try self.ir.load(self.curnode, memtype, addr, idx, 0);
+        },
+        else => return null,
     }
-    return val;
 }
 
 pub fn expr_2(self: *Self, type_ctx: SpecType) !?u16 {
-    var val = (try self.expr_1(type_ctx)) orelse return null;
+    var val = (try self.expr_0(type_ctx)) orelse return null;
     while (self.t.nonws()) |_| {
         if (f_ctx(type_ctx)) |fmode| {
             _ = fmode;
@@ -120,7 +113,7 @@ pub fn expr_2(self: *Self, type_ctx: SpecType) !?u16 {
                 return val;
 
             self.t.pos += opstr.len;
-            const op = (try self.expr_1(type_ctx)) orelse return error.SyntaxError;
+            const op = (try self.expr_0(type_ctx)) orelse return error.SyntaxError;
             val = try self.ir.ibinop(self.curnode, theop, val, op);
         }
     }
@@ -314,9 +307,9 @@ pub fn if_stmt(self: *Self) !void {
     }
 }
 
-fn maybe_type(self: *Self) SpecType {
+fn maybe_type(self: *Self) ?SpecType {
     _ = self;
-    return int_ctx;
+    return null;
 }
 
 pub fn stmt(self: *Self) !?bool {
@@ -333,7 +326,7 @@ pub fn stmt(self: *Self) !?bool {
     } else if (mem.eql(u8, kw, "let")) {
         const name = self.t.keyword() orelse return error.SyntaxError;
         const item = try nonexisting(&self.vars, name, "variable");
-        const type_ctx = self.maybe_type();
+        const type_ctx = self.maybe_type() orelse int_ctx;
         try self.t.expect_char('=');
         const val = try self.call_expr(type_ctx);
         item.* = .{ .ref = val, .is_mut = false };
@@ -358,12 +351,15 @@ pub fn stmt(self: *Self) !?bool {
             const idx = try self.arg_expr(int_ctx);
             try self.t.expect_char(']');
 
-            const type_ctx = self.maybe_type();
-            try self.t.expect_char('=');
-            const memtype: SpecType = switch (type_ctx) {
-                .intptr => .{ .intptr = .byte },
-                .avxval => type_ctx,
+            // this is bit of a mess. once we support both 64 and 32 bit internal operations,
+            // re-consider how we specify both memory size and integer expression context
+            const memtype = self.maybe_type() orelse SpecType{ .intptr = .byte };
+            const type_ctx: SpecType = switch (memtype) {
+                .intptr => int_ctx,
+                .avxval => memtype,
             };
+
+            try self.t.expect_char('=');
             // ambigous if idx is evaluated before or after a call, avoid call_expr!
             const val = try self.arg_expr(type_ctx);
 

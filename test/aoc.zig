@@ -351,7 +351,7 @@ test "aoc 2023 day 1 part one" {
         \\    current := 0; // dummy init
         \\    loop {
         \\      if (x >= len) break;
-        \\      let byteval = data[x];
+        \\      let byteval = @data[x];
         \\      let trydigit = byteval - '0';
         \\      if (trydigit <|= 9) {
         \\        current := trydigit;
@@ -400,11 +400,11 @@ test "numberfinderer borked" {
         \\    scan := 0;
         \\    imatch := 1;
         \\    loop {
-        \\      let tval = table[tpos];
+        \\      let tval = @table[tpos];
         \\      tpos := tpos + 1;
         \\      if (tval == 10) break;
         \\      if (scan < len) {
-        \\        if (tval != data[scan]) {
+        \\        if (tval != @data[scan]) {
         \\          imatch := 0;
         \\        }
         \\      }
@@ -443,11 +443,11 @@ test "numberfinderer" {
         \\    scan := 0;
         \\    imatch := 1;
         \\    loop {
-        \\      let tval = table[tpos];
+        \\      let tval = @table[tpos];
         \\      tpos := tpos + 1;
         \\      if (tval == 10) break;
         \\      if (scan < len) {
-        \\        if (tval != data[scan]) {
+        \\        if (tval != @data[scan]) {
         \\          imatch := 0;
         \\        }
         \\      } else {
@@ -486,7 +486,7 @@ test "aoc 2023 1a" {
         \\  current := 0;
         \\  loop {
         \\    if (x >= len) break;
-        \\    let byteval = data[x];
+        \\    let byteval = @data[x];
         \\    let trydigit = byteval - '0';
         \\    if (trydigit <|= 9) {
         \\      current := trydigit;
@@ -500,11 +500,11 @@ test "aoc 2023 1a" {
         \\        scan := x;
         \\        imatch := 1;
         \\        loop {
-        \\          let tval = table[tpos];
+        \\          let tval = @table[tpos];
         \\          tpos := tpos + 1;
         \\          if (tval == 10) break;
         \\          if (scan < len) {
-        \\            if (tval != data[scan]) {
+        \\            if (tval != @data[scan]) {
         \\              imatch := 0;
         \\            }
         \\          } else {
@@ -548,14 +548,14 @@ test "aoc 2023 4a: one row" {
         \\  x := 0;
         \\  setlow := 0;
         \\  loop {
-        \\    let kolla = data[x];
+        \\    let kolla = @data[x];
         \\    x := x + 1;
         \\    if (kolla == ':') break;
         \\  }
         \\
         \\  loop {
         \\    loop {
-        \\      char := data[x];
+        \\      char := @data[x];
         \\      if (char != ' ') break;
         \\      x := x + 1;
         \\    }
@@ -564,7 +564,7 @@ test "aoc 2023 4a: one row" {
         \\    let digit = char - '0';
         \\    value := digit;
         \\    x := x + 1;
-        \\    let maybedigit = data[x] - '0';
+        \\    let maybedigit = @data[x] - '0';
         \\    if (maybedigit <|= 9) {
         \\      value := 10*value + maybedigit;
         \\      x := x + 1;
@@ -577,7 +577,7 @@ test "aoc 2023 4a: one row" {
         \\  count := 0;
         \\  loop {
         \\    loop {
-        \\      char := data[x];
+        \\      char := @data[x];
         \\      if (char != ' ') break;
         \\      x := x + 1;
         \\    }
@@ -587,7 +587,7 @@ test "aoc 2023 4a: one row" {
         \\    let digit = char - '0';
         \\    value := digit;
         \\    x := x + 1;
-        \\    let maybedigit = data[x] - '0';
+        \\    let maybedigit = @data[x] - '0';
         \\    if (maybedigit <|= 9) {
         \\      value := 10*value + maybedigit;
         \\      x := x + 1;

@@ -37,7 +37,7 @@ test "break in else" {
         \\  i := 0;
         \\  sum := 0;
         \\  loop {
-        \\    let item = data[i];
+        \\    let item = @data[i];
         \\    if (item <= 10) {
         \\      sum := sum+item;
         \\    } else {
@@ -64,7 +64,7 @@ test "break at end" {
         \\  i := 0;
         \\  result := 0;
         \\  loop {
-        \\    result := data[i];
+        \\    result := @data[i];
         \\    i := i + 1;
         \\    if (i >= len) break;
         \\  }
@@ -88,7 +88,7 @@ test "complex control flow" {
         \\  i := 0;
         \\  result := 0;
         \\  loop {
-        \\    let val = data[i];
+        \\    let val = @data[i];
         \\    i := i + 1;
         \\    if (val < 3) break;
         \\    if (val > 20) {
