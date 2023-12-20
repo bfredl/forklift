@@ -72,7 +72,7 @@ pub fn expr_0(self: *Self, type_ctx: SpecType) !?u16 {
         },
         '@' => {
             self.t.pos += 1;
-            const memtype: SpecType = self.maybe_type() orelse switch (type_ctx) {
+            const memtype: SpecType = try self.maybe_type() orelse switch (type_ctx) {
                 .intptr => .{ .intptr = .byte },
                 .avxval => type_ctx,
             };
@@ -84,6 +84,12 @@ pub fn expr_0(self: *Self, type_ctx: SpecType) !?u16 {
 
             return try self.ir.load(self.curnode, memtype, addr, idx, 0);
         },
+        '~' => { // int to float (vector bcast??)
+            self.t.pos += 1;
+            const fmode = f_ctx(type_ctx) orelse return error.TypeError;
+            const op = try self.expr_0(int_ctx) orelse return error.ParseError;
+            return try self.ir.int2float(self.curnode, fmode, op);
+        },
         else => return null,
     }
 }
@@ -93,7 +99,7 @@ pub fn expr_2(self: *Self, type_ctx: SpecType) !?u16 {
     while (self.t.nonws()) |_| {
         if (f_ctx(type_ctx)) |fmode| {
             _ = fmode;
-            return error.NotYetImplemented;
+            return val;
         } else {
             const opstr = self.t.peek_operator() orelse return val;
 
@@ -130,7 +136,7 @@ pub fn expr_3(self: *Self, type_ctx: SpecType) !?u16 {
 
         if (f_ctx(type_ctx)) |fmode| {
             _ = fmode;
-            return error.NotYetImplemented;
+            return val;
         } else {
             const theop: FLIR.IntBinOp = switch (char) {
                 '+' => .add,
@@ -307,9 +313,15 @@ pub fn if_stmt(self: *Self) !void {
     }
 }
 
-fn maybe_type(self: *Self) ?SpecType {
-    _ = self;
-    return null;
+fn maybe_type(self: *Self) !?SpecType {
+    const first = self.t.nonws() orelse return null;
+    if (!(first >= '0' and first <= '9') or self.t.pos + 2 >= self.t.str.len) return null;
+    const second = self.t.str[self.t.pos + 1];
+    if (!(second >= 'a' and second <= 'z' and !Tokenizer.idlike(self.t.str[self.t.pos + 2]))) return null;
+    self.t.pos += 2;
+
+    if (first == '1' and second == 'd') return .{ .avxval = .sd };
+    return error.ParseError;
 }
 
 pub fn stmt(self: *Self) !?bool {
@@ -326,7 +338,7 @@ pub fn stmt(self: *Self) !?bool {
     } else if (mem.eql(u8, kw, "let")) {
         const name = self.t.keyword() orelse return error.SyntaxError;
         const item = try nonexisting(&self.vars, name, "variable");
-        const type_ctx = self.maybe_type() orelse int_ctx;
+        const type_ctx = try self.maybe_type() orelse int_ctx;
         try self.t.expect_char('=');
         const val = try self.call_expr(type_ctx);
         item.* = .{ .ref = val, .is_mut = false };
@@ -353,7 +365,7 @@ pub fn stmt(self: *Self) !?bool {
 
             // this is bit of a mess. once we support both 64 and 32 bit internal operations,
             // re-consider how we specify both memory size and integer expression context
-            const memtype = self.maybe_type() orelse SpecType{ .intptr = .byte };
+            const memtype = try self.maybe_type() orelse SpecType{ .intptr = .byte };
             const type_ctx: SpecType = switch (memtype) {
                 .intptr => int_ctx,
                 .avxval => memtype,
