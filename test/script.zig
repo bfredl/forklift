@@ -111,3 +111,28 @@ test "complex control flow" {
     const data2 = [_]u8{ 25, 28, 2, 30 };
     try expect(usize, 25, func(&data2, 4));
 }
+
+test "store loop" {
+    var cfo = try parse_test(
+        \\func scripter {
+        \\  args res len;
+        \\  vars i sum;
+        \\  i := 0;
+        \\  sum := 0;
+        \\  loop {
+        \\    if (i >= len) break;
+        \\    sum := sum + i;
+        \\    if (i & 1 == 0) {
+        \\      res[i] = sum;
+        \\    }
+        \\    i := i + 1;
+        \\  }
+        \\  return sum;
+        \\}
+    );
+    defer cfo.deinit();
+    const func = cfo.get_ptr(0, *const fn (arg1: [*]u8, arg2: usize) callconv(.C) usize);
+    var data1 = [_]u8{ 23, 15, 28, 2, 30, 7 };
+    try expect(usize, 15, func(&data1, data1.len));
+    try expect([6]u8, .{ 0, 15, 3, 2, 10, 7 }, data1);
+}

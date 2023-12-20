@@ -80,14 +80,14 @@ pub fn expr_1(self: *Self, type_ctx: SpecType) !?u16 {
         if (char == '[') {
             self.t.pos += 1;
             // TODO: addr[] as shorthand? or maybe [addr] :)
-            const addr = try self.arg_expr(int_ctx);
+            const idx = try self.arg_expr(int_ctx);
             try self.t.expect_char(']');
             const memtype: SpecType = switch (type_ctx) {
                 .intptr => .{ .intptr = .byte },
                 .avxval => type_ctx,
             };
 
-            val = try self.ir.load(self.curnode, memtype, val, addr, 0);
+            val = try self.ir.load(self.curnode, memtype, val, idx, 0);
         } else {
             break;
         }
@@ -349,16 +349,35 @@ pub fn stmt(self: *Self) !?bool {
         try self.loop();
         return false;
     } else {
-        // try var assignment
+        // try var or array assignment
         const v = self.vars.get(kw) orelse return error.UndefinedName;
-        if (!v.is_mut) {
-            return error.SyntaxError;
+
+        if (self.t.nonws() == '[') {
+            self.t.pos += 1;
+
+            const idx = try self.arg_expr(int_ctx);
+            try self.t.expect_char(']');
+
+            const type_ctx = self.maybe_type();
+            try self.t.expect_char('=');
+            const memtype: SpecType = switch (type_ctx) {
+                .intptr => .{ .intptr = .byte },
+                .avxval => type_ctx,
+            };
+            // ambigous if idx is evaluated before or after a call, avoid call_expr!
+            const val = try self.arg_expr(type_ctx);
+
+            _ = try self.ir.store(self.curnode, memtype, v.ref, idx, 0, val);
+        } else {
+            // not sure how typed assigment would look, like "foo :2d= ree"
+            try self.t.expect_char(':');
+            if (!v.is_mut) {
+                return error.SyntaxError;
+            }
+            try self.t.expect_char('=');
+            const res = try self.call_expr(int_ctx);
+            try self.ir.putvar(self.curnode, v.ref, res);
         }
-        // not sure how typed assigment would look, like "foo :2d= ree"
-        try self.t.expect_char(':');
-        try self.t.expect_char('=');
-        const res = try self.call_expr(int_ctx);
-        try self.ir.putvar(self.curnode, v.ref, res);
     }
 
     try self.t.expect_char(';');
