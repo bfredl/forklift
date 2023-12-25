@@ -136,3 +136,22 @@ test "store loop" {
     try expect(usize, 15, func(&data1, data1.len));
     try expect([6]u8, .{ 0, 15, 3, 2, 10, 7 }, data1);
 }
+
+test "float square array" {
+    var cfo = try parse_test(
+        \\func scripter {
+        \\  args data len;
+        \\  vars i;
+        \\  i := 0;
+        \\  loop {
+        \\    if (i >= len) break;
+        \\    let val 1d= @data[i ,8]; // TODO addr[idx*8] is a good candidate of a first opt pass...
+        \\    let square 1d= val * val;
+        \\    data[i, 8] = square;
+        \\    i := i + 1;
+        \\  }
+        \\  return 0;
+        \\}
+    );
+    defer cfo.deinit();
+}

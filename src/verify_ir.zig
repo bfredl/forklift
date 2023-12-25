@@ -70,6 +70,9 @@ pub fn check_inst(self: *FLIR, i: *FLIR.Inst) !void {
 
 /// does not use or verify node.npred
 pub fn check_ir_valid(self: *FLIR) !void {
+    if (comptime FLIR.minimal) {
+        return;
+    }
     const reached = try self.a.alloc(bool, self.n.items.len);
     defer self.a.free(reached);
     @memset(reached, false);
@@ -157,6 +160,10 @@ fn fake_ref(self: *FLIR, ref: u16) u16 {
 }
 
 pub fn debug_print(self: *FLIR) void {
+    if (comptime FLIR.minimal) {
+        return;
+    }
+
     var fake_idx: u16 = 0;
     // TODO: something like %nodeid.ref_in_node might be preferrable
     for (self.n.items) |*n| {
@@ -359,6 +366,9 @@ pub fn uses(i: *FLIR.Inst, r: u16) bool {
 }
 
 pub fn print_interval(self: *FLIR, ref: u16) void {
+    if (comptime FLIR.minimal) {
+        return;
+    }
     const b = self.biref(ref).?;
     const vreg_flag = if (b.i.vreg()) |vreg| @as(u64, 1) << @as(u6, @intCast(vreg)) else null;
     print("\x1b[4m", .{});

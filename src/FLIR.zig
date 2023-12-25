@@ -11,7 +11,8 @@ const builtin = @import("builtin");
 const BPF = std.os.linux.BPF;
 
 const options = if (!builtin.is_test) &@import("root").options else null;
-pub const is_debug = true;
+// remove verifying printing code regardless
+pub const minimal = false;
 
 // this currently causes a curious bug as of zig nightly 26dec2022.
 // recursive method calls like self.rpo_visit() within itself do not work!
@@ -23,7 +24,7 @@ const assert = std.debug.assert;
 const IPReg = common.IPReg;
 const ISize = common.ISize;
 
-const VMathOp = X86Asm.VMathOp;
+pub const VMathOp = X86Asm.VMathOp;
 const VCmpOp = X86Asm.VCmpOp;
 const FMode = X86Asm.FMode;
 

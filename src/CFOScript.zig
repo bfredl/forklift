@@ -80,9 +80,10 @@ pub fn expr_0(self: *Self, type_ctx: SpecType) !?u16 {
             const addr = try self.arg_expr(int_ctx);
             try self.t.expect_char('[');
             const idx = try self.arg_expr(int_ctx);
+            const scale = try self.maybe_scale() orelse 0;
             try self.t.expect_char(']');
 
-            return try self.ir.load(self.curnode, memtype, addr, idx, 0);
+            return try self.ir.load(self.curnode, memtype, addr, idx, scale);
         },
         '~' => { // int to float (vector bcast??)
             self.t.pos += 1;
@@ -96,10 +97,16 @@ pub fn expr_0(self: *Self, type_ctx: SpecType) !?u16 {
 
 pub fn expr_2(self: *Self, type_ctx: SpecType) !?u16 {
     var val = (try self.expr_0(type_ctx)) orelse return null;
-    while (self.t.nonws()) |_| {
+    while (self.t.nonws()) |char| {
         if (f_ctx(type_ctx)) |fmode| {
-            _ = fmode;
-            return val;
+            const theop: FLIR.VMathOp = switch (char) {
+                '*' => .mul,
+                '/' => .div,
+                else => break,
+            };
+            self.t.pos += 1;
+            const op = (try self.expr_2(type_ctx)) orelse return error.SyntaxError;
+            val = try self.ir.vmath(self.curnode, theop, fmode, val, op);
         } else {
             const opstr = self.t.peek_operator() orelse return val;
 
@@ -324,6 +331,21 @@ fn maybe_type(self: *Self) !?SpecType {
     return error.ParseError;
 }
 
+pub fn maybe_scale(self: *Self) !?u2 {
+    const sep = self.t.nonws() orelse return null;
+    if (sep != ',') return null;
+    self.t.pos += 1;
+    const val = self.t.nonws() orelse return error.ParseError;
+    self.t.pos += 1;
+    return switch (val) {
+        '8' => 3,
+        '4' => 2,
+        '2' => 1,
+        '1' => 0,
+        else => error.ParseError,
+    };
+}
+
 pub fn stmt(self: *Self) !?bool {
     const kw = self.t.keyword() orelse {
         const ret = try self.braced_block();
@@ -357,14 +379,16 @@ pub fn stmt(self: *Self) !?bool {
         // try var or array assignment
         const v = self.vars.get(kw) orelse return error.UndefinedName;
 
+        // TODO: rather @arrtype data[...] exprtypeA= val ??
         if (self.t.nonws() == '[') {
             self.t.pos += 1;
 
             const idx = try self.arg_expr(int_ctx);
+            const scale = try self.maybe_scale() orelse 0;
             try self.t.expect_char(']');
 
             // this is bit of a mess. once we support both 64 and 32 bit internal operations,
-            // re-consider how we specify both memory size and integer expression context
+            // re-consider how we specify both memory size and integer expression context (see TODO above)
             const memtype = try self.maybe_type() orelse SpecType{ .intptr = .byte };
             const type_ctx: SpecType = switch (memtype) {
                 .intptr => int_ctx,
@@ -375,7 +399,7 @@ pub fn stmt(self: *Self) !?bool {
             // ambigous if idx is evaluated before or after a call, avoid call_expr!
             const val = try self.arg_expr(type_ctx);
 
-            _ = try self.ir.store(self.curnode, memtype, v.ref, idx, 0, val);
+            _ = try self.ir.store(self.curnode, memtype, v.ref, idx, scale, val);
         } else {
             // not sure how typed assigment would look, like "foo :2d= ree"
             try self.t.expect_char(':');
@@ -457,7 +481,7 @@ pub fn parse(ir: *FLIR, t: *Tokenizer, allocator: Allocator) !void {
     };
 
     // TODO: pattern for "is debug mode". Although all of CFOScript is "debug mode" in some sense
-    if (FLIR.is_debug) {
+    if (!FLIR.minimal) {
         ir.var_names.clearRetainingCapacity();
         try ir.var_names.appendNTimes(null, ir.nvar);
         var iter = self.vars.iterator();
