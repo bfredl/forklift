@@ -147,11 +147,16 @@ test "float square array" {
         \\    if (i >= len) break;
         \\    let val 1d= @data[i ,8]; // TODO addr[idx*8] is a good candidate of a first opt pass...
         \\    let square 1d= val * val;
-        \\    data[i, 8] = square;
+        \\    data[i, 8] 1d= square;
         \\    i := i + 1;
         \\  }
         \\  return 0;
         \\}
     );
     defer cfo.deinit();
+
+    const func = cfo.get_ptr(0, *const fn (arg1: [*]f64, arg2: usize) callconv(.C) usize);
+    var data = [_]f64{ 1.0, 3.0, 0.5, 10.0 };
+    try expect(usize, 0, func(&data, data.len));
+    try expect([4]f64, .{ 1.0, 9.0, 0.25, 100.0 }, data);
 }
