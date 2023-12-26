@@ -45,6 +45,9 @@ narg: u16 = 0,
 // free list for blocks. single linked, only use b.items[b_free].pred !
 b_free: u16 = NoRef,
 
+// free list for blocks. single linked, only use i.items[i_free].op1 !
+i_free: u16 = NoRef,
+
 // variables are references which do not fullfill the SSA-property.
 // we eleminate these early on in the ssa_gvn pass
 nvar: u16 = 0,
@@ -748,9 +751,16 @@ pub fn addLink(self: *Self, node_from: u16, branch: u1, node_to: u16) !void {
 }
 
 pub fn addRawInst(self: *Self, inst: Inst) !u16 {
-    const ref = uv(self.i.items.len);
-    try self.i.append(inst);
-    return ref;
+    if (self.i_free != NoRef) {
+        const ref = self.i_free;
+        self.i_free = self.i.items[ref].op1;
+        self.i.items[ref] = inst;
+        return ref;
+    } else {
+        const ref = uv(self.i.items.len);
+        try self.i.append(inst);
+        return ref;
+    }
 }
 
 pub fn addInst(self: *Self, node: u16, inst: Inst) !u16 {
@@ -793,7 +803,6 @@ pub fn addInstRef(self: *Self, node: u16, inst: u16) !u16 {
     return inst;
 }
 
-// add inst to the beginning of the block, _without_ renumbering any existing instruction
 pub fn preInst(self: *Self, node: u16, inst: Inst) !u16 {
     const n = &self.n.items[node];
     var blkid = n.firstblk;
@@ -1937,6 +1946,8 @@ pub fn ins_iterator_rev(self: *Self, last_blk: u16) InsIterator {
 pub fn delete_itersafe(self: *Self, item: InsIterator.IYtem) void {
     // TODO: actually put on freelist
     self.i.items[item.ref].tag = .freelist;
+    self.i.items[item.ref].op1 = self.i_free;
+    self.i_free = item.ref;
     self.b.items[item.blk].i[item.idx_in_blk] = NoRef;
 }
 
