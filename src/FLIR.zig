@@ -146,7 +146,6 @@ pub const BPF_ABI = struct {
 };
 
 pub const BLK_SIZE = 16;
-pub const BLK_SHIFT = 4;
 pub const Block = struct {
     node: u16,
     succ: u16 = NoRef,
@@ -304,7 +303,7 @@ pub const Inst = struct {
 
     pub fn res_type(inst: Inst) ?ValType {
         return switch (inst.tag) {
-            .empty => null,
+            .freelist => null,
             .arg => inst.mem_type(), // TODO: haIIIII
             .variable => inst.mem_type(), // gets preserved to the phis
             .putvar => null,
@@ -676,27 +675,18 @@ pub fn reinit(self: *Self) void {
 
 pub fn deinit(self: *Self) void {
     self.n.deinit();
+    self.b.deinit();
+    self.i.deinit();
     self.blkorder.deinit();
     self.preorder.deinit();
     self.var_names.deinit(); // actual strings are owned by producer
     self.refs.deinit();
     self.constvals.deinit();
-    self.b.deinit();
     self.vregs.deinit();
 }
 
-pub fn toref(blkid: u16, idx: u16) u16 {
-    assert(idx < BLK_SIZE);
-    return (blkid << BLK_SHIFT) | idx;
-}
-
-pub fn fromref(ref: u16) struct { block: u16, idx: u16 } {
-    const IDX_MASK: u16 = BLK_SIZE - 1;
-    const BLK_MASK: u16 = ~IDX_MASK;
-    return .{
-        .block = (ref & BLK_MASK) >> BLK_SHIFT,
-        .idx = ref & IDX_MASK,
-    };
+pub fn toref() u16 {
+    @compileError("REF USED");
 }
 
 const BIREF = struct { n: u16, i: *Inst };
@@ -800,7 +790,7 @@ pub fn addInstRef(self: *Self, node: u16, inst: u16) !u16 {
     }
 
     self.b.items[blkid].i[lastfree] = inst;
-    return toref(blkid, lastfree);
+    return inst;
 }
 
 // add inst to the beginning of the block, _without_ renumbering any existing instruction
@@ -834,7 +824,7 @@ pub fn preInst(self: *Self, node: u16, inst: Inst) !u16 {
     const free: u8 = @intCast(firstfree);
 
     self.b.items[blkid].i[free] = ref;
-    return toref(blkid, free);
+    return ref;
 }
 
 pub fn new_blk(self: *Self) !u16 {
@@ -1162,9 +1152,9 @@ pub fn reorder_nodes(self: *Self) !void {
 }
 
 // ni = node id of user
-pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) u16 {
+pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
     _ = user;
-    const ref = self.biref(used) orelse return used;
+    const ref = self.biref(used) orelse return;
     //ref.i.n_use += 1;
     // it leaks to another block: give it a virtual register number
     if (ref.n != ni) {
@@ -1172,7 +1162,7 @@ pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) u16 {
             ref.i.f.is_vreg = true;
             ref.i.vreg_scratch = self.nvreg;
             self.nvreg += 1;
-            self.vregs.appendAssumeCapacity(.{ .ref = used });
+            self.vregs.appendAssumeCapacity(.{ .ref = used, .def_node = ref.n });
         }
     }
 }
@@ -1323,39 +1313,33 @@ pub fn calc_use(self: *Self) !void {
         }
         var killed = n.live_in & ~live_out;
 
-        var cur_blk: ?u16 = n.lastblk;
-        while (cur_blk) |blk| {
-            var b = &self.b.items[blk];
-            var idx: usize = BLK_SIZE;
-            while (idx > 0) {
-                idx -= 1;
-                const i = &b.i[idx];
-                for (i.ops(false), 0..) |op, i_op| {
-                    var kill: bool = false;
-                    if (self.iref(op)) |ref| {
-                        if (ref.vreg()) |vreg| {
-                            const bit = vreg_flag(@intCast(vreg));
-                            if ((killed & bit) != 0) {
-                                killed = killed & ~bit;
-                                kill = true;
-                            }
-                        } else {
-                            if (!ref.f.killed) {
-                                ref.f.killed = true;
-                                kill = true;
-                            }
+        var it = self.ins_iterator_rev(n.lastblk);
+        while (it.next_rev()) |item| {
+            const i = item.i;
+            for (i.ops(false), 0..) |op, i_op| {
+                var kill: bool = false;
+                if (self.iref(op)) |ref| {
+                    if (ref.vreg()) |vreg| {
+                        const bit = vreg_flag(@intCast(vreg));
+                        if ((killed & bit) != 0) {
+                            killed = killed & ~bit;
+                            kill = true;
                         }
-                    }
-                    if (kill) {
-                        if (i_op == 1) {
-                            i.f.kill_op2 = true;
-                        } else {
-                            i.f.kill_op1 = true;
+                    } else {
+                        if (!ref.f.killed) {
+                            ref.f.killed = true;
+                            kill = true;
                         }
                     }
                 }
+                if (kill) {
+                    if (i_op == 1) {
+                        i.f.kill_op2 = true;
+                    } else {
+                        i.f.kill_op1 = true;
+                    }
+                }
             }
-            cur_blk = b.prev();
         }
     }
 }
@@ -1379,7 +1363,7 @@ pub fn alloc(self: *Self, node: u16, size: u8) !u16 {
 //
 // TODO: take an arg for how many slots are needed?
 pub fn maybe_split(self: *Self, after: u16) !u16 {
-    const r = fromref(after);
+    const r = undefined; // fromref(after);
     const blk = &self.b.items[r.block];
     const node = &self.n.items[blk.node];
     if (r.idx < BLK_SIZE - 1) {
@@ -1841,7 +1825,7 @@ const InsIterator = struct {
     cur_blk: u16,
     idx: u16,
 
-    pub const IYtem = struct { i: *Inst, ref: u16 };
+    pub const IYtem = struct { i: *Inst, ref: u16, blk: u16, idx_in_blk: u16 };
 
     pub fn next(it: *InsIterator) ?IYtem {
         return it.get(true);
@@ -1854,9 +1838,15 @@ const InsIterator = struct {
     fn get(it: *InsIterator, advance: bool) ?IYtem {
         while (true) {
             if (it.cur_blk == NoRef) return null;
+
             const ref = it.self.b.items[it.cur_blk].i[it.idx];
+            const retval: IYtem = .{
+                .i = if (ref != NoRef) &it.self.i.items[ref] else undefined, // GESUNDHEIT
+                .ref = ref,
+                .blk = it.cur_blk,
+                .idx_in_blk = it.idx,
+            };
             if (!advance and ref != NoRef) {
-            const retval = IYtem{ .i = &it.self.i.items[ref], .ref = ref };
                 return retval;
             }
 
@@ -1865,7 +1855,7 @@ const InsIterator = struct {
                 it.idx = 0;
                 it.cur_blk = it.self.b.items[it.cur_blk].succ;
             }
-            if (retval.i.tag != .empty) {
+            if (ref != NoRef) {
                 return retval;
             }
         }
@@ -1885,7 +1875,7 @@ const InsIterator = struct {
         if (first and last) return;
 
         for (b.i) |i| {
-            if (i.tag != .empty) return; // not empty
+            if (i != NoRef) return; // not empty
         }
 
         const n = &self.n.items[b.node];
@@ -1918,12 +1908,13 @@ const InsIterator = struct {
             }
 
             const myidx = it.idx - 1;
-            const retval = IYtem{ .i = &it.self.b.items[it.cur_blk].i[myidx], .ref = toref(it.cur_blk, myidx) };
-            if (advance or retval.i.tag == .empty) {
+
+            const ref = it.self.b.items[it.cur_blk].i[myidx];
+            if (advance or ref == NoRef) {
                 it.idx = myidx;
             }
-            if (retval.i.tag != .empty) {
-                return retval;
+            if (ref != NoRef) {
+                return .{ .i = &it.self.i.items[ref], .ref = ref, .blk = it.cur_blk, .idx_in_blk = myidx };
             }
         }
     }
@@ -1935,6 +1926,13 @@ pub fn ins_iterator(self: *Self, first_blk: u16) InsIterator {
 
 pub fn ins_iterator_rev(self: *Self, last_blk: u16) InsIterator {
     return .{ .self = self, .cur_blk = last_blk, .idx = BLK_SIZE };
+}
+
+// delet item from iterator, but keep iterating safely (both fwd and rev)
+pub fn delete_itersafe(self: *Self, item: InsIterator.IYtem) void {
+    // TODO: actually put on freelist
+    self.i.items[item.ref].tag = .freelist;
+    self.b.items[item.blk].i[item.idx_in_blk] = NoRef;
 }
 
 // TODO: not yet sure if ABI should be comptime or runtime struct. this works for now
@@ -1995,9 +1993,9 @@ pub fn mark_empty(self: *Self) !void {
     }
 }
 
+// TODO: another thing which becomes delenda with phi reform
 pub fn trivial_ins(self: *Self, i: *Inst) bool {
     switch (i.tag) {
-        .empty => return true,
         .putphi => {
             // TODO: src being Undef is trivial, strictly speaking
             const src = self.iref(i.op1) orelse return false;
@@ -2014,6 +2012,7 @@ pub fn empty(self: *Self, ni: u16, allow_succ: bool) bool {
     const node = &self.n.items[ni];
     if (!allow_succ and node.s[0] != 0) return false;
     var it = self.ins_iterator(node.firstblk);
+
     while (it.next()) |item| {
         if (!self.trivial_ins(item.i)) return false;
     }

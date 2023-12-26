@@ -226,8 +226,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
             const i = item.i;
 
             switch (i.tag) {
-                // empty doesn't flush fused value
-                .empty => continue,
+                .freelist => @panic("KATASTROFEN"),
                 .phi => {
                     // work is done by putphi, this is just optional debug info
                     if (options.dbg_trap_join_nodes) {

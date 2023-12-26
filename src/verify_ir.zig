@@ -157,9 +157,8 @@ fn fake_ref(self: *FLIR, ref: u16) u16 {
     if (ref >= FLIR.ConstOff) {
         return ref;
     }
-    const both = FLIR.fromref(ref);
-    const blk = self.b.items[both.block];
-    return FLIR.toref(blk.fakenum_, both.idx);
+    _ = self;
+    return ref;
 }
 
 pub fn debug_print(self: *FLIR) void {
@@ -234,7 +233,8 @@ pub fn debug_print(self: *FLIR) void {
     }
 }
 
-const empty_inst = FLIR.Inst{ .tag = .empty, .op1 = 0, .op2 = 0 };
+// TODO: bull, but here we just use it as "anything unallocated"
+const empty_inst = FLIR.Inst{ .tag = .freelist, .op1 = 0, .op2 = 0 };
 pub fn print_node(self: *FLIR, firstblk: u16) void {
     var it = self.ins_iterator(firstblk);
     while (it.next()) |item| {
@@ -338,8 +338,7 @@ fn print_op(self: *FLIR, pre: []const u8, kill: bool, ref: u16) void {
         print("const {}", .{c});
     } else {
         const k = if (kill) "!" else "";
-        const bref = self.unvref(ref);
-        print("{s}%{}", .{ k, fake_ref(self, bref) });
+        print("{s}%{}", .{ k, fake_ref(self, ref) });
     }
 }
 
