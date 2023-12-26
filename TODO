@@ -1,3 +1,15 @@
+- NEW SSA/arg handling:
+  - run the first phase of SSA_GVN as part of IR construction:
+    - Get rid of "variables" as instructions in block 0
+    -  read/write from vars X nodes table while filling nodes
+
+  - conditionally get rid of "args" as instruction in node 0:
+    - depending on if we actually have calls or not, we might want to get args out of the way to other regs
+
+  - always get rid of "phi" nodes from join nodes blocks
+  - don't put "putphi" instructions in block as part of phi constructions
+  - only schedule these as part of "resolve_moveblock" later
+
 - calls:
   - vregs+temps now have for all clobbered regs, not just "overlaps a call" bit but we need to use it
    - for syscalls: much fewer clobbers
