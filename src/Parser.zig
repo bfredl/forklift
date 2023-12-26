@@ -98,7 +98,7 @@ pub fn parse(self: *Self, dbg: bool, one: bool) !void {
                 return;
             }
 
-            if (options.dbg_raw_ir) self.ir.debug_print();
+            if (options.dbg_raw_ir or dbg) self.ir.debug_print();
             try self.ir.test_analysis(FLIR.X86ABI, true);
             if (options.dbg_analysed_ir) self.ir.debug_print();
             if (options.dbg_vregs) self.ir.print_intervals();

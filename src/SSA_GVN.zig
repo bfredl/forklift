@@ -52,11 +52,11 @@ fn fill_blk(self: Self, n: u16, first_blk: u16) !void {
         if (i.tag == .putvar) {
             // TODO: store debug info, or some shit
             // careful with pointers, i.* is valid before read_ref():
-            i.tag = .empty;
             const op1 = i.op1;
             const readval = try self.read_ref(n, i.op2);
             const ivar = self.f.iref(op1) orelse return error.UW0tM8;
             self.vdi(n, ivar.op1).* = readval;
+            self.f.delete_itersafe(item);
         } else if (.tag == .phi) {
             // TODO: likely we'll never need to consider an existing
             // phi node here but verify this!
@@ -206,7 +206,7 @@ fn delete_vars(self: Self, first_blk: u16) !void {
     var it = self.f.ins_iterator(first_blk);
     while (it.next()) |item| {
         if (item.i.tag == .variable) {
-            item.i.tag = .empty;
+            self.f.delete_itersafe(item);
         }
     }
 }
@@ -234,14 +234,13 @@ fn cleanup_trivial_phi(self: Self) !void {
                 // phi reading phi was already handled in resolve_phi()
                 if (i.op2 != NoRef) {
                     // by effect by reverse traversal, have already fixed any uses
-                    i.tag = .empty;
+                    self.f.delete_itersafe(item);
                 }
             } else if (i.tag == .putphi) {
                 const ref = self.f.iref(i.op2) orelse return error.FLIRError;
-                // Not really robust, just assume any .empty seen here must have been
-                // from deleted phi/op2=NoRef nodes above. Because YOLO.
-                if (ref.tag == .empty or ref.op2 != NoRef) {
-                    i.tag = .empty;
+                // TODO: accessing "freelist" NOT ok, but soon we are gonna change over all this anyway
+                if (ref.tag == .freelist or ref.op2 != NoRef) {
+                    self.f.delete_itersafe(item);
                 } else {
                     i.op1 = self.check_trivial(i.op1);
                 }

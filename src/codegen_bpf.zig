@@ -268,7 +268,7 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
 
             switch (i.tag) {
                 // empty doesn't flush fused value
-                .empty => continue,
+                .freelist => @panic("KATASTROFEN"),
                 // work is done by putphi
                 .phi => {},
                 .ret => try regmovmc(code, r0, self.ipval(i.op1).?),

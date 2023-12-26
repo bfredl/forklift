@@ -32,6 +32,7 @@ a: Allocator,
 // TODO: unmanage all these:
 n: ArrayList(Node),
 b: ArrayList(Block),
+i: ArrayList(Inst),
 preorder: ArrayList(u16),
 blkorder: ArrayList(u16),
 // This only handles int and float64 constants,
@@ -51,7 +52,7 @@ nvar: u16 = 0,
 // variables 2.0: virtual registero
 // vregs is any result which is live outside of its defining node, that's it.
 nvreg: u16 = 0,
-vregs: ArrayList(struct { ref: u16, live_in: u64 = 0, conflicts: u16 = 0 }),
+vregs: ArrayList(struct { ref: u16, def_node: u16, live_in: u64 = 0, conflicts: u16 = 0 }),
 
 // 8-byte slots in stack frame
 nslots: u8 = 0,
@@ -70,9 +71,6 @@ pub const NoRef: u16 = 0xFFFF;
 // 255 constants should be enough for everyone
 // could be smarter, like dedicated Block type for constants!
 pub const ConstOff: u16 = 0xFF00;
-// 256 vrefs should be enough for everyone
-// could be smarter, like dedicated Block type for vrefs!
-pub const VRefOff: u16 = 0xFE00;
 
 pub fn uv(s: usize) u16 {
     return @intCast(s);
@@ -86,6 +84,7 @@ pub const Node = struct {
     npred: u16 = 0,
     // NB: might be NoRef if the node was deleted,
     // a reachable node must have at least one block even if empty!
+    // TODO: now what blocks are not "referenced", first block should be inline (and sm0ler, mayhaps)
     firstblk: u16,
     lastblk: u16,
     live_in: u64 = 0, // TODO: globally allocate a [n_nodes*nvreg] multibitset
@@ -146,17 +145,13 @@ pub const BPF_ABI = struct {
     const reg_order: [10]IPReg = call_unsaved ++ callee_saved;
 };
 
-// TODO: these blocks are likely too small, maybe header+15 instructions
-// in 256-byte blocks would be better, although it makes many small nodes worse,
-// maybe a few instructions inline in Node for a tiny block.
-pub const BLK_SIZE = 4;
-pub const BLK_SHIFT = 2;
+pub const BLK_SIZE = 16;
 pub const Block = struct {
     node: u16,
     succ: u16 = NoRef,
     pred: u16 = NoRef,
     fakenum_: u16 = undefined, // only used for printing. could be eliminated if we really need it
-    i: [BLK_SIZE]Inst = .{EMPTY} ** BLK_SIZE,
+    i: [BLK_SIZE]u16 = .{NoRef} ** BLK_SIZE,
 
     pub fn next(self: @This()) ?u16 {
         return if (self.succ != NoRef) self.succ else null;
@@ -237,6 +232,8 @@ pub const Inst = struct {
     mckind: MCKind = .unallocated_raw,
     mcidx: u8 = undefined,
     vreg_scratch: u16 = NoRef,
+    // can share space with vreg_scratch later?
+    node_delete_this: u16 = NoRef,
     f: packed struct {
         // note: if the reference is a vreg, it might
         // be alive in an other branch processed later
@@ -265,10 +262,6 @@ pub const Inst = struct {
 
     pub fn vreg(self: Inst) ?u16 {
         return if (self.f.is_vreg) self.vreg_scratch else return null;
-    }
-
-    fn free(self: @This()) bool {
-        return self.tag == .empty;
     }
 
     fn spec_type(self: Inst) ValType {
@@ -310,7 +303,7 @@ pub const Inst = struct {
 
     pub fn res_type(inst: Inst) ?ValType {
         return switch (inst.tag) {
-            .empty => null,
+            .freelist => null,
             .arg => inst.mem_type(), // TODO: haIIIII
             .variable => inst.mem_type(), // gets preserved to the phis
             .putvar => null,
@@ -344,7 +337,7 @@ pub const Inst = struct {
     // otherwise they can store whatever data
     pub fn n_op(inst: Inst, rw: bool) u2 {
         return switch (inst.tag) {
-            .empty => 0,
+            .freelist => 0,
             .arg => 0,
             .variable => 0,
             // really only one, but we will get rid of this lie
@@ -453,7 +446,7 @@ pub fn avxreg(self: *Self, ref: u16) ?u4 {
 }
 
 pub const Tag = enum(u8) {
-    empty = 0, // empty slot. must not be refered to!
+    freelist = 0, // item in freelist. must not be refered to!
     alloc,
     arg,
     variable,
@@ -648,13 +641,14 @@ pub fn init(n: u16, allocator: Allocator) !Self {
     var self = Self{
         .a = allocator,
         .n = try ArrayList(Node).initCapacity(allocator, n),
+        .b = try ArrayList(Block).initCapacity(allocator, n),
+        .i = try ArrayList(Inst).initCapacity(allocator, 4 * n),
         .vregs = @TypeOf(@as(Self, undefined).vregs).init(allocator),
         .blkorder = ArrayList(u16).init(allocator),
         .preorder = ArrayList(u16).init(allocator),
         .var_names = ArrayList(?[]const u8).init(allocator),
         .refs = try ArrayList(u16).initCapacity(allocator, 4 * n),
         .constvals = try ArrayList(u64).initCapacity(allocator, 8),
-        .b = try ArrayList(Block).initCapacity(allocator, 2 * n),
     };
     self.initConsts();
     return self;
@@ -681,31 +675,18 @@ pub fn reinit(self: *Self) void {
 
 pub fn deinit(self: *Self) void {
     self.n.deinit();
+    self.b.deinit();
+    self.i.deinit();
     self.blkorder.deinit();
     self.preorder.deinit();
     self.var_names.deinit(); // actual strings are owned by producer
     self.refs.deinit();
     self.constvals.deinit();
-    self.b.deinit();
     self.vregs.deinit();
 }
 
-pub fn toref(blkid: u16, idx: u16) u16 {
-    assert(idx < BLK_SIZE);
-    return (blkid << BLK_SHIFT) | idx;
-}
-
-pub fn fromref(ref: u16) struct { block: u16, idx: u16 } {
-    const IDX_MASK: u16 = BLK_SIZE - 1;
-    const BLK_MASK: u16 = ~IDX_MASK;
-    return .{
-        .block = (ref & BLK_MASK) >> BLK_SHIFT,
-        .idx = ref & IDX_MASK,
-    };
-}
-
-pub fn unvref(self: *Self, ref: u16) u16 {
-    return if (ref >= VRefOff and ref < ConstOff) self.vregs.items[ref - VRefOff].ref else ref;
+pub fn toref() u16 {
+    @compileError("REF USED");
 }
 
 const BIREF = struct { n: u16, i: *Inst };
@@ -713,15 +694,17 @@ pub fn biref(self: *Self, ref: u16) ?BIREF {
     if (ref >= ConstOff) {
         return null;
     }
-    const blkref = self.unvref(ref);
-    if (blkref >= VRefOff) @panic("NOT LIKE THIS");
-    const r = fromref(blkref);
-    const blk = &self.b.items[r.block];
-    return BIREF{ .n = blk.node, .i = &blk.i[r.idx] };
+    const inst = self.iref(ref) orelse return null;
+
+    return BIREF{ .n = inst.node_delete_this, .i = inst };
 }
 
 pub fn iref(self: *Self, ref: u16) ?*Inst {
-    return if (self.biref(ref)) |bi| bi.i else null;
+    if (ref >= ConstOff) {
+        return null;
+    }
+    if (ref >= self.i.items.len) @panic("INVALID REF :(((");
+    return &self.i.items[ref];
 }
 
 fn sphigh(high: u3, low: u5) u8 {
@@ -764,17 +747,30 @@ pub fn addLink(self: *Self, node_from: u16, branch: u1, node_to: u16) !void {
     succ.* = node_to;
 }
 
-// add inst to the end of block
+pub fn addRawInst(self: *Self, inst: Inst) !u16 {
+    const ref = uv(self.i.items.len);
+    try self.i.append(inst);
+    return ref;
+}
+
 pub fn addInst(self: *Self, node: u16, inst: Inst) !u16 {
+    return self.addInstRef(node, try self.addRawInst(inst));
+}
+
+// add inst to the end of block
+pub fn addInstRef(self: *Self, node: u16, inst: u16) !u16 {
+    if (inst >= ConstOff) @panic("NOT LIKE THIS");
     const n = &self.n.items[node];
     // must exist:
     var blkid = n.lastblk;
 
-    // TODO: later we can add more constraints for where "empty" ins can be
+    self.iref(inst).?.node_delete_this = node; // This Says itself, DELET THIS eventually
+
+    // TODO: later we can add more constraints for where "NoRef" ins can be
     var lastfree: u8 = BLK_SIZE;
     var i: u8 = BLK_SIZE - 1;
     while (true) : (i -= 1) {
-        if (self.b.items[blkid].i[@as(u8, @intCast(i))].free()) {
+        if (self.b.items[blkid].i[@as(u8, @intCast(i))] == NoRef) {
             lastfree = i;
         } else {
             break;
@@ -794,7 +790,7 @@ pub fn addInst(self: *Self, node: u16, inst: Inst) !u16 {
     }
 
     self.b.items[blkid].i[lastfree] = inst;
-    return toref(blkid, lastfree);
+    return inst;
 }
 
 // add inst to the beginning of the block, _without_ renumbering any existing instruction
@@ -802,9 +798,14 @@ pub fn preInst(self: *Self, node: u16, inst: Inst) !u16 {
     const n = &self.n.items[node];
     var blkid = n.firstblk;
 
+    var modInst = inst;
+    modInst.node_delete_this = node;
+
+    const ref = try self.addRawInst(modInst);
+
     var firstfree: i8 = -1;
     for (0..BLK_SIZE) |i| {
-        if (self.b.items[blkid].i[i].free()) {
+        if (self.b.items[blkid].i[i] == NoRef) {
             firstfree = @intCast(i);
         } else {
             break;
@@ -822,8 +823,8 @@ pub fn preInst(self: *Self, node: u16, inst: Inst) !u16 {
 
     const free: u8 = @intCast(firstfree);
 
-    self.b.items[blkid].i[free] = inst;
-    return toref(blkid, free);
+    self.b.items[blkid].i[free] = ref;
+    return ref;
 }
 
 pub fn new_blk(self: *Self) !u16 {
@@ -1147,13 +1148,18 @@ pub fn reorder_nodes(self: *Self) !void {
 
             cur_blk = b.next();
         }
+
+        var it = self.ins_iterator(n.firstblk);
+        while (it.next()) |item| {
+            item.i.node_delete_this = uv(ni); // This Says itself, DELET THIS eventually
+        }
     }
 }
 
 // ni = node id of user
-pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) u16 {
+pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
     _ = user;
-    const ref = self.biref(used) orelse return used;
+    const ref = self.biref(used) orelse return;
     //ref.i.n_use += 1;
     // it leaks to another block: give it a virtual register number
     if (ref.n != ni) {
@@ -1161,11 +1167,9 @@ pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) u16 {
             ref.i.f.is_vreg = true;
             ref.i.vreg_scratch = self.nvreg;
             self.nvreg += 1;
-            self.vregs.appendAssumeCapacity(.{ .ref = used });
+            self.vregs.appendAssumeCapacity(.{ .ref = used, .def_node = ref.n });
         }
-        return uv(VRefOff + ref.i.vreg_scratch);
     }
-    return used;
 }
 
 // TODO: not idempotent! does not reset n_use=0 first.
@@ -1180,7 +1184,7 @@ pub fn calc_use(self: *Self) !void {
         while (it.next()) |item| {
             const i = item.i;
             for (i.ops(false)) |*op| {
-                op.* = self.adduse(uv(ni), item.ref, op.*);
+                self.adduse(uv(ni), item.ref, op.*);
             }
         }
     }
@@ -1314,39 +1318,33 @@ pub fn calc_use(self: *Self) !void {
         }
         var killed = n.live_in & ~live_out;
 
-        var cur_blk: ?u16 = n.lastblk;
-        while (cur_blk) |blk| {
-            var b = &self.b.items[blk];
-            var idx: usize = BLK_SIZE;
-            while (idx > 0) {
-                idx -= 1;
-                const i = &b.i[idx];
-                for (i.ops(false), 0..) |op, i_op| {
-                    var kill: bool = false;
-                    if (self.iref(op)) |ref| {
-                        if (ref.vreg()) |vreg| {
-                            const bit = vreg_flag(@intCast(vreg));
-                            if ((killed & bit) != 0) {
-                                killed = killed & ~bit;
-                                kill = true;
-                            }
-                        } else {
-                            if (!ref.f.killed) {
-                                ref.f.killed = true;
-                                kill = true;
-                            }
+        var it = self.ins_iterator_rev(n.lastblk);
+        while (it.next_rev()) |item| {
+            const i = item.i;
+            for (i.ops(false), 0..) |op, i_op| {
+                var kill: bool = false;
+                if (self.iref(op)) |ref| {
+                    if (ref.vreg()) |vreg| {
+                        const bit = vreg_flag(@intCast(vreg));
+                        if ((killed & bit) != 0) {
+                            killed = killed & ~bit;
+                            kill = true;
                         }
-                    }
-                    if (kill) {
-                        if (i_op == 1) {
-                            i.f.kill_op2 = true;
-                        } else {
-                            i.f.kill_op1 = true;
+                    } else {
+                        if (!ref.f.killed) {
+                            ref.f.killed = true;
+                            kill = true;
                         }
                     }
                 }
+                if (kill) {
+                    if (i_op == 1) {
+                        i.f.kill_op2 = true;
+                    } else {
+                        i.f.kill_op1 = true;
+                    }
+                }
             }
-            cur_blk = b.prev();
         }
     }
 }
@@ -1370,7 +1368,7 @@ pub fn alloc(self: *Self, node: u16, size: u8) !u16 {
 //
 // TODO: take an arg for how many slots are needed?
 pub fn maybe_split(self: *Self, after: u16) !u16 {
-    const r = fromref(after);
+    const r = undefined; // fromref(after);
     const blk = &self.b.items[r.block];
     const node = &self.n.items[blk.node];
     if (r.idx < BLK_SIZE - 1) {
@@ -1832,7 +1830,7 @@ const InsIterator = struct {
     cur_blk: u16,
     idx: u16,
 
-    pub const IYtem = struct { i: *Inst, ref: u16 };
+    pub const IYtem = struct { i: *Inst, ref: u16, blk: u16, idx_in_blk: u16 };
 
     pub fn next(it: *InsIterator) ?IYtem {
         return it.get(true);
@@ -1845,8 +1843,15 @@ const InsIterator = struct {
     fn get(it: *InsIterator, advance: bool) ?IYtem {
         while (true) {
             if (it.cur_blk == NoRef) return null;
-            const retval = IYtem{ .i = &it.self.b.items[it.cur_blk].i[it.idx], .ref = toref(it.cur_blk, it.idx) };
-            if (!advance and retval.i.tag != .empty) {
+
+            const ref = it.self.b.items[it.cur_blk].i[it.idx];
+            const retval: IYtem = .{
+                .i = if (ref != NoRef) &it.self.i.items[ref] else undefined, // GESUNDHEIT
+                .ref = ref,
+                .blk = it.cur_blk,
+                .idx_in_blk = it.idx,
+            };
+            if (!advance and ref != NoRef) {
                 return retval;
             }
 
@@ -1855,7 +1860,7 @@ const InsIterator = struct {
                 it.idx = 0;
                 it.cur_blk = it.self.b.items[it.cur_blk].succ;
             }
-            if (retval.i.tag != .empty) {
+            if (ref != NoRef) {
                 return retval;
             }
         }
@@ -1875,7 +1880,7 @@ const InsIterator = struct {
         if (first and last) return;
 
         for (b.i) |i| {
-            if (i.tag != .empty) return; // not empty
+            if (i != NoRef) return; // not empty
         }
 
         const n = &self.n.items[b.node];
@@ -1908,12 +1913,13 @@ const InsIterator = struct {
             }
 
             const myidx = it.idx - 1;
-            const retval = IYtem{ .i = &it.self.b.items[it.cur_blk].i[myidx], .ref = toref(it.cur_blk, myidx) };
-            if (advance or retval.i.tag == .empty) {
+
+            const ref = it.self.b.items[it.cur_blk].i[myidx];
+            if (advance or ref == NoRef) {
                 it.idx = myidx;
             }
-            if (retval.i.tag != .empty) {
-                return retval;
+            if (ref != NoRef) {
+                return .{ .i = &it.self.i.items[ref], .ref = ref, .blk = it.cur_blk, .idx_in_blk = myidx };
             }
         }
     }
@@ -1925,6 +1931,13 @@ pub fn ins_iterator(self: *Self, first_blk: u16) InsIterator {
 
 pub fn ins_iterator_rev(self: *Self, last_blk: u16) InsIterator {
     return .{ .self = self, .cur_blk = last_blk, .idx = BLK_SIZE };
+}
+
+// delet item from iterator, but keep iterating safely (both fwd and rev)
+pub fn delete_itersafe(self: *Self, item: InsIterator.IYtem) void {
+    // TODO: actually put on freelist
+    self.i.items[item.ref].tag = .freelist;
+    self.b.items[item.blk].i[item.idx_in_blk] = NoRef;
 }
 
 // TODO: not yet sure if ABI should be comptime or runtime struct. this works for now
@@ -1944,6 +1957,7 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
     try self.set_abi(ABI);
 
     try self.reorder_nodes();
+
     if (check) try self.check_ir_valid();
     if (@TypeOf(options) != @TypeOf(null) and options.dbg_raw_reorder_ir) {
         self.debug_print();
@@ -1985,9 +1999,9 @@ pub fn mark_empty(self: *Self) !void {
     }
 }
 
+// TODO: another thing which becomes delenda with phi reform
 pub fn trivial_ins(self: *Self, i: *Inst) bool {
     switch (i.tag) {
-        .empty => return true,
         .putphi => {
             // TODO: src being Undef is trivial, strictly speaking
             const src = self.iref(i.op1) orelse return false;
