@@ -1944,7 +1944,6 @@ pub fn ins_iterator_rev(self: *Self, last_blk: u16) InsIterator {
 
 // delet item from iterator, but keep iterating safely (both fwd and rev)
 pub fn delete_itersafe(self: *Self, item: InsIterator.IYtem) void {
-    // TODO: actually put on freelist
     self.i.items[item.ref].tag = .freelist;
     self.i.items[item.ref].op1 = self.i_free;
     self.i_free = item.ref;
