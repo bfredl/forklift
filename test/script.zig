@@ -160,3 +160,29 @@ test "float square array" {
     try expect(usize, 0, func(&data, data.len));
     try expect([4]f64, .{ 1.0, 9.0, 0.25, 100.0 }, data);
 }
+
+test "float variable" {
+    if (true) {
+        return error.SkipZigTest;
+    }
+    var cfo = try parse_test(
+        \\func scripter {
+        \\  args lim;
+        \\  vars i sum;
+        \\  i := 0;
+        \\  sum :1d= 0;
+        \\  let flim 1d= $lim;
+        \\  loop {
+        \\    i := i + 1;
+        \\    let incr 1d= 1 / ~i;
+        \\    sum :1d= sum + incr;
+        \\    if 1d(sum > flim) break;
+        \\  }
+        \\  return i;
+        \\}
+    );
+    defer cfo.deinit();
+
+    const func = cfo.get_ptr(0, *const fn (arg: usize) callconv(.C) usize);
+    try expect(usize, 4, func(2));
+}

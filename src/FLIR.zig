@@ -856,7 +856,7 @@ pub fn const_int(self: *Self, val: i32) !u16 {
 // TODO: special case zero, one, mayhaps?
 // TODO: tricky with vectors, we might both simple broadcast and vector constants.
 pub fn const_float(self: *Self, node: u16, val: f64) !u16 {
-    const constref = self.const_uint(@bitCast(val));
+    const constref = try self.const_uint(@bitCast(val));
     return self.addInst(node, .{ .tag = .vconst, .op1 = constref, .op2 = NoRef, .spec = sphigh(@intFromEnum(FMode.sd), 0) });
 }
 
