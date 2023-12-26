@@ -212,6 +212,9 @@ test "diamond cfg" {
 }
 
 test "maybe_split" {
+    if (true) {
+        return error.reconsider_splitting;
+    }
     var mod = try CFOModule.init(test_allocator);
     defer mod.deinit_mem();
     var parser = try Parser.init(

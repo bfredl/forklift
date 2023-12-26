@@ -61,7 +61,7 @@ pub fn get_jmp_or_last(self: *FLIR, n: *FLIR.Node) !?Tag {
 pub fn check_inst(self: *FLIR, i: *FLIR.Inst) !void {
     for (i.ops(false)) |op| {
         if (self.iref(op)) |ref| {
-            if (ref.tag == .empty) {
+            if (ref.tag == .freelist) {
                 return error.FLIRError;
             }
         }
@@ -101,8 +101,11 @@ pub fn check_ir_valid(self: *FLIR) !void {
         while (blk != NoRef) {
             const b = &self.b.items[blk];
             if (b.pred != prev_blk) return error.InvalidCFG;
-            for (&b.i) |*i| {
-                try self.check_inst(i);
+            for (b.i) |i| {
+                if (i != NoRef) {
+                    if (i >= self.i.items.len) return error.FLIRError;
+                    try self.check_inst(self.iref(i).?);
+                }
             }
             prev_blk = blk;
             blk = b.succ;
