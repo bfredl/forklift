@@ -1148,6 +1148,11 @@ pub fn reorder_nodes(self: *Self) !void {
 
             cur_blk = b.next();
         }
+
+        var it = self.ins_iterator(n.firstblk);
+        while (it.next()) |item| {
+            item.i.node_delete_this = uv(ni); // This Says itself, DELET THIS eventually
+        }
     }
 }
 
@@ -1952,6 +1957,7 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
     try self.set_abi(ABI);
 
     try self.reorder_nodes();
+
     if (check) try self.check_ir_valid();
     if (@TypeOf(options) != @TypeOf(null) and options.dbg_raw_reorder_ir) {
         self.debug_print();
