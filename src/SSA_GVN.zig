@@ -41,7 +41,7 @@ fn ssa(self: Self) !void {
         if (!did_phi) break;
     }
 
-    try self.delete_vars(self.f.n.items[0].firstblk);
+    try self.delete_vars();
     try self.cleanup_trivial_phi();
 }
 
@@ -202,12 +202,11 @@ fn resolve_phi(self: Self, n: u16, i: *FLIR.Inst, iref: u16) !bool {
     return changed;
 }
 
-fn delete_vars(self: Self, first_blk: u16) !void {
-    var it = self.f.ins_iterator(first_blk);
-    while (it.next()) |item| {
-        if (item.i.tag == .variable) {
-            self.f.delete_itersafe(item);
-        }
+fn delete_vars(self: Self) !void {
+    while (self.f.var_list != NoRef) {
+        const ref = self.f.var_list;
+        self.f.var_list = self.f.i.items[ref].next;
+        self.f.delete_raw(ref);
     }
 }
 

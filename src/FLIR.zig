@@ -48,9 +48,11 @@ b_free: u16 = NoRef,
 // free list for blocks. single linked, only use i.items[i_free].op1 !
 i_free: u16 = NoRef,
 
-// variables are references which do not fullfill the SSA-property.
-// we eleminate these early on in the ssa_gvn pass
+// variables are not really real, they are not referenced as such.
+// They act as a shorthand for adding phi nodes during IR construction
+// in a later ssa_gvn pass these get properly connected
 nvar: u16 = 0,
+var_list: u16 = NoRef, // first variable, then i.next
 
 // variables 2.0: virtual registero
 // vregs is any result which is live outside of its defining node, that's it.
@@ -237,6 +239,8 @@ pub const Inst = struct {
     vreg_scratch: u16 = NoRef,
     // can share space with vreg_scratch later?
     node_delete_this: u16 = NoRef,
+    // only var, phi and putphi currently use this. other types can assign other meaning:
+    next: u16 = NoRef,
     f: packed struct {
         // note: if the reference is a vreg, it might
         // be alive in an other branch processed later
@@ -964,7 +968,8 @@ pub fn arg(self: *Self) !u16 {
 
 pub fn variable(self: *Self) !u16 {
     if (self.n.items.len == 0) return error.FLIRError;
-    const inst = try self.addInst(0, .{ .tag = .variable, .op1 = self.nvar, .op2 = 0, .spec = intspec(.dword).into() });
+    const inst = try self.addRawInst(.{ .tag = .variable, .op1 = self.nvar, .op2 = 0, .spec = intspec(.dword).into(), .next = self.var_list });
+    self.var_list = inst;
     self.nvar += 1;
     return inst;
 }
@@ -1942,11 +1947,15 @@ pub fn ins_iterator_rev(self: *Self, last_blk: u16) InsIterator {
     return .{ .self = self, .cur_blk = last_blk, .idx = BLK_SIZE };
 }
 
+pub fn delete_raw(self: *Self, ref: u16) void {
+    self.i.items[ref].tag = .freelist;
+    self.i.items[ref].op1 = self.i_free;
+    self.i_free = ref;
+}
+
 // delet item from iterator, but keep iterating safely (both fwd and rev)
 pub fn delete_itersafe(self: *Self, item: InsIterator.IYtem) void {
-    self.i.items[item.ref].tag = .freelist;
-    self.i.items[item.ref].op1 = self.i_free;
-    self.i_free = item.ref;
+    self.delete_raw(item.ref);
     self.b.items[item.blk].i[item.idx_in_blk] = NoRef;
 }
 
