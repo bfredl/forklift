@@ -6,7 +6,6 @@ const Self = @This();
 const print = std.debug.print;
 const common = @import("./common.zig");
 const X86Asm = @import("./X86Asm.zig");
-const SSA_GVN = @import("./SSA_GVN.zig");
 const builtin = @import("builtin");
 const BPF = std.os.linux.BPF;
 
@@ -17,6 +16,8 @@ pub const minimal = false;
 // this currently causes a curious bug as of zig nightly 26dec2022.
 // recursive method calls like self.rpo_visit() within itself do not work!
 pub usingnamespace @import("./verify_ir.zig");
+
+pub usingnamespace @import("./SSA_GVN.zig");
 
 const ArrayList = std.ArrayList;
 const assert = std.debug.assert;
@@ -53,6 +54,11 @@ i_free: u16 = NoRef,
 // in a later ssa_gvn pass these get properly connected
 nvar: u16 = 0,
 var_list: u16 = NoRef, // first variable, then i.next
+
+// this is a bit crude, we assume all nodes are unsealed during construction
+// (i e any node could have not yet known predecessors)
+// and then seal all blocks at once in the ssa cleanup step.
+unsealed: bool = true,
 
 // variables 2.0: virtual registero
 // vregs is any result which is live outside of its defining node, that's it.
@@ -102,6 +108,9 @@ pub const Node = struct {
     // if true, block will not contain any instructions and will not be emitted
     // codegen should chase through n.s[0] until an non-empty block is found
     is_empty: bool = false,
+
+    phi_list: u16 = NoRef, // currently also scheduled (CRINGE)
+    putphi_list: u16 = NoRef, // also used for "putvar" entries in the construction phase
 };
 
 pub const EMPTY: Inst = .{ .tag = .empty, .op1 = 0, .op2 = 0 };
@@ -457,7 +466,7 @@ pub const Tag = enum(u8) {
     alloc,
     arg,
     variable,
-    putvar, // non-phi assignment op1 := op2
+    putvar, // unresolved phi assignment: VAR op2 := op1
     phi,
     /// put op1 into phi op2 of (only) successor
     putphi,
@@ -768,7 +777,17 @@ pub fn addRawInst(self: *Self, inst: Inst) !u16 {
 }
 
 pub fn addInst(self: *Self, node: u16, inst: Inst) !u16 {
-    return self.addInstRef(node, try self.addRawInst(inst));
+    var i = inst;
+    if (self.unsealed) {
+        const nop = i.n_op(false);
+        if (nop > 0) {
+            i.op1 = try self.read_ref(node, i.op1);
+            if (nop > 1) {
+                i.op2 = try self.read_ref(node, i.op2);
+            }
+        }
+    }
+    return self.addInstRef(node, try self.addRawInst(i));
 }
 
 // add inst to the end of block
@@ -923,8 +942,23 @@ pub fn icmp(self: *Self, node: u16, cond: IntCond, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .icmp, .spec = cond.off(), .op1 = op1, .op2 = op2 });
 }
 
-pub fn putvar(self: *Self, node: u16, op1: u16, op2: u16) !void {
-    _ = try self.binop(node, .putvar, op1, op2);
+pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
+    // value could be another varref
+    const refval = try self.read_ref(node, value);
+    const v = self.iref(vref) orelse return error.FLIRError;
+    if (v.tag != .variable) return error.FLIRError;
+
+    const n = &self.n.items[node];
+    var put_iter = n.putphi_list;
+    while (put_iter != NoRef) {
+        const p = &self.i.items[put_iter];
+        if (p.tag == .putvar and p.op2 == v.op1) {
+            p.op1 = refval;
+            return;
+        }
+        put_iter = p.next;
+    }
+    n.putphi_list = try self.addRawInst(.{ .tag = .putvar, .op1 = refval, .op2 = v.op1, .next = n.putphi_list, .node_delete_this = node });
 }
 
 pub fn ret(self: *Self, node: u16, val: u16) !void {
@@ -952,9 +986,11 @@ pub fn call(self: *Self, node: u16, kind: CallKind, num: u16) !u16 {
     return self.addInst(node, .{ .tag = .copy, .spec = intspec(.dword).into(), .op1 = c, .op2 = NoRef });
 }
 
-pub fn prePhi(self: *Self, node: u16, vref: u16) !u16 {
-    const v = self.iref(vref) orelse return error.FLIRError;
-    return self.preInst(node, .{ .tag = .phi, .op1 = vref, .op2 = NoRef, .spec = v.spec, .f = .{ .kill_op1 = true } });
+pub fn prePhi(self: *Self, node: u16, vidx: u16, vspec: u8) !u16 {
+    const n = &self.n.items[node];
+    const ref = try self.preInst(node, .{ .tag = .phi, .op1 = vidx, .op2 = NoRef, .spec = vspec, .f = .{ .kill_op1 = true }, .next = n.phi_list });
+    n.phi_list = ref;
+    return ref;
 }
 
 // TODO: maintain wf of block 0: first all args, then all vars.
@@ -1982,7 +2018,7 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
         self.debug_print();
     }
 
-    try SSA_GVN.ssa_gvn(self);
+    try self.resolve_ssa();
     if (@TypeOf(options) != @TypeOf(null) and options.dbg_ssa_ir) {
         self.debug_print();
     }
