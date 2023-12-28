@@ -144,7 +144,7 @@ pub fn check_vregs(self: *FLIR) !void {
                 if ((born & (@as(usize, 1) << @as(u6, @intCast(ireg)))) != 0) {
                     const i = self.vregs.items[ireg].ref;
                     // print(" %{}", .{i});
-                    if (self.biref(i).?.n != ni) {
+                    if (self.iref(i).?.node_delete_this != ni) {
                         // print("!!", .{});
                         err = true;
                     }
@@ -385,12 +385,12 @@ pub fn print_interval(self: *FLIR, ref: u16) void {
     if (comptime FLIR.minimal) {
         return;
     }
-    const b = self.biref(ref).?;
-    const vreg_flag = if (b.i.vreg()) |vreg| @as(u64, 1) << @as(u6, @intCast(vreg)) else null;
+    const i = self.iref(ref).?;
+    const vreg_flag = if (i.vreg()) |vreg| @as(u64, 1) << @as(u6, @intCast(vreg)) else null;
     print("\x1b[4m", .{});
     for (self.n.items, 0..) |n, ni| {
         var live: bool = if (vreg_flag) |f| (f & n.live_in) != 0 else false;
-        if (b.i.tag == .phi and b.n == ni) {
+        if (i.tag == .phi and i.node_delete_this == ni) {
             live = true;
         }
         var it = self.ins_iterator(n.firstblk);

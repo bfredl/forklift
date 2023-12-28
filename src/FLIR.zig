@@ -705,16 +705,6 @@ pub fn toref() u16 {
     @compileError("REF USED");
 }
 
-const BIREF = struct { n: u16, i: *Inst };
-pub fn biref(self: *Self, ref: u16) ?BIREF {
-    if (ref >= ConstOff) {
-        return null;
-    }
-    const inst = self.iref(ref) orelse return null;
-
-    return BIREF{ .n = inst.node_delete_this, .i = inst };
-}
-
 pub fn iref(self: *Self, ref: u16) ?*Inst {
     if (ref >= ConstOff) {
         return null;
@@ -1209,15 +1199,15 @@ pub fn reorder_nodes(self: *Self) !void {
 // ni = node id of user
 pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
     _ = user;
-    const ref = self.biref(used) orelse return;
+    const i = self.iref(used) orelse return;
     //ref.i.n_use += 1;
     // it leaks to another block: give it a virtual register number
-    if (ref.n != ni) {
-        if (!ref.i.f.is_vreg) {
-            ref.i.f.is_vreg = true;
-            ref.i.vreg_scratch = self.nvreg;
+    if (i.node_delete_this != ni) {
+        if (!i.f.is_vreg) {
+            i.f.is_vreg = true;
+            i.vreg_scratch = self.nvreg;
             self.nvreg += 1;
-            self.vregs.appendAssumeCapacity(.{ .ref = used, .def_node = ref.n });
+            self.vregs.appendAssumeCapacity(.{ .ref = used, .def_node = i.node_delete_this });
         }
     }
 }
