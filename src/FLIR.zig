@@ -466,7 +466,7 @@ pub const Tag = enum(u8) {
     alloc,
     arg,
     variable,
-    putvar, // non-phi assignment op1 := op2
+    putvar, // unresolved phi assignment: VAR op2 := op1
     phi,
     /// put op1 into phi op2 of (only) successor
     putphi,
@@ -945,17 +945,20 @@ pub fn icmp(self: *Self, node: u16, cond: IntCond, op1: u16, op2: u16) !u16 {
 pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
     // value could be another varref
     const refval = try self.read_ref(node, value);
+    const v = self.iref(vref) orelse return error.FLIRError;
+    if (v.tag != .variable) return error.FLIRError;
+    print("PUTTA: nod {} med {} := {}\n", .{ node, v.op1, value });
 
     const n = &self.n.items[node];
     var put_iter = n.putphi_list;
     while (put_iter != NoRef) {
         const p = &self.i.items[put_iter];
-        if (p.tag == .putvar and p.op2 == vref) {
+        if (p.tag == .putvar and p.op2 == v.op1) {
             p.op1 = refval;
         }
         put_iter = p.next;
     }
-    n.putphi_list = try self.addRawInst(.{ .tag = .putvar, .op1 = refval, .op2 = vref, .next = n.putphi_list, .node_delete_this = node });
+    n.putphi_list = try self.addRawInst(.{ .tag = .putvar, .op1 = refval, .op2 = v.op1, .next = n.putphi_list, .node_delete_this = node });
 }
 
 pub fn ret(self: *Self, node: u16, val: u16) !void {
@@ -983,10 +986,9 @@ pub fn call(self: *Self, node: u16, kind: CallKind, num: u16) !u16 {
     return self.addInst(node, .{ .tag = .copy, .spec = intspec(.dword).into(), .op1 = c, .op2 = NoRef });
 }
 
-pub fn prePhi(self: *Self, node: u16, vref: u16) !u16 {
-    const v = self.iref(vref) orelse return error.FLIRError;
+pub fn prePhi(self: *Self, node: u16, vidx: u16, vspec: u8) !u16 {
     const n = &self.n.items[node];
-    const ref = try self.preInst(node, .{ .tag = .phi, .op1 = vref, .op2 = NoRef, .spec = v.spec, .f = .{ .kill_op1 = true }, .next = n.phi_list });
+    const ref = try self.preInst(node, .{ .tag = .phi, .op1 = vidx, .op2 = NoRef, .spec = vspec, .f = .{ .kill_op1 = true }, .next = n.phi_list });
     n.phi_list = ref;
     return ref;
 }
@@ -2016,6 +2018,7 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
         self.debug_print();
     }
 
+    print("BEGEHEN-ZEIT:\n", .{});
     try self.resolve_ssa();
     if (@TypeOf(options) != @TypeOf(null) and options.dbg_ssa_ir) {
         self.debug_print();

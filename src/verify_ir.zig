@@ -35,9 +35,14 @@ pub fn check_phi(self: *FLIR, worklist: *ArrayList(u16), pred: u16, succ: u16) !
     var siter = self.ins_iterator(self.n.items[succ].firstblk);
     while (siter.next()) |it| {
         if (it.i.tag == .phi) {
-            const idx = mem.indexOfScalar(u16, worklist.items, it.ref) orelse return error.InvalidCFG;
-            left -= 1;
-            worklist.items[idx] = NoRef;
+            if (mem.indexOfScalar(u16, worklist.items, it.ref)) |idx| {
+                left -= 1;
+                worklist.items[idx] = NoRef;
+            } else {
+                if (!self.unsealed) {
+                    return error.InvalidCFG;
+                }
+            }
         } else {
             // TODO: check for phi in the wild if we memoize this before going thu preds
             break;
@@ -194,14 +199,9 @@ pub fn debug_print(self: *FLIR) void {
             }
         }
 
-        if (n.firstblk == NoRef) {
-            print(" VERY DEAD\n", .{});
-            continue;
-        }
-
         print("\n", .{});
 
-        self.print_node(n.firstblk);
+        self.print_node(n);
 
         // only print liveout if we have more than one sucessor, otherwise it is BOOORING
         if (n.s[1] != 0) {
@@ -235,8 +235,8 @@ pub fn debug_print(self: *FLIR) void {
 
 // TODO: bull, but here we just use it as "anything unallocated"
 const empty_inst = FLIR.Inst{ .tag = .freelist, .op1 = 0, .op2 = 0 };
-pub fn print_node(self: *FLIR, firstblk: u16) void {
-    var it = self.ins_iterator(firstblk);
+pub fn print_node(self: *FLIR, n: *FLIR.Node) void {
+    var it = self.ins_iterator(n.firstblk);
     while (it.next()) |item| {
         const i = item.i.*;
 
@@ -269,14 +269,9 @@ pub fn print_node(self: *FLIR, firstblk: u16) void {
             print(".{s}", .{@tagName(@as(FLIR.IntCond, @enumFromInt(i.spec)))});
         } else if (i.tag == .phi) {
             if (self.get_varname(i.op1)) |nam| {
-                print(" ({s})", .{nam});
-            }
-        } else if (i.tag == .putvar) {
-            const vref = self.iref(i.op1);
-            if (vref) |v| {
-                if (self.get_varname(v.op1)) |nam| {
-                    print(" {s}", .{nam});
-                }
+                print(" {s}", .{nam});
+            } else if (self.unsealed) {
+                print(" ${}", .{i.op1});
             }
         } else if (i.tag == .putphi) {
             print(" %{} <-", .{fake_ref(self, i.op2)});
@@ -328,12 +323,31 @@ pub fn print_node(self: *FLIR, firstblk: u16) void {
         }
         print("\n", .{});
     }
+
+    var put_iter = n.putphi_list;
+    while (put_iter != NoRef) {
+        const i = &self.i.items[put_iter];
+        if (i.tag == .putvar) {
+            print("  VAR ", .{});
+            const vref = self.iref(i.op2);
+            if (vref) |v| {
+                if (self.get_varname(v.op1)) |nam| {
+                    print("{s}", .{nam});
+                } else {
+                    print("${}", .{v.op1});
+                }
+            }
+            print_op(self, " := ", i.f.kill_op1, i.op1);
+            print("\n", .{});
+        }
+        put_iter = i.next;
+    }
 }
 
 fn print_op(self: *FLIR, pre: []const u8, kill: bool, ref: u16) void {
     print("{s}", .{pre});
     if (ref == NoRef) {
-        print(" %None", .{});
+        print("%NoRef", .{});
     } else if (self.constval(ref)) |c| {
         print("const {}", .{c});
     } else {
