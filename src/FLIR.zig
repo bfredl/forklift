@@ -947,7 +947,6 @@ pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
     const refval = try self.read_ref(node, value);
     const v = self.iref(vref) orelse return error.FLIRError;
     if (v.tag != .variable) return error.FLIRError;
-    print("PUTTA: nod {} med {} := {}\n", .{ node, v.op1, value });
 
     const n = &self.n.items[node];
     var put_iter = n.putphi_list;
@@ -2018,7 +2017,6 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
         self.debug_print();
     }
 
-    print("BEGEHEN-ZEIT:\n", .{});
     try self.resolve_ssa();
     if (@TypeOf(options) != @TypeOf(null) and options.dbg_ssa_ir) {
         self.debug_print();

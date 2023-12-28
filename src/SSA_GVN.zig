@@ -44,7 +44,6 @@ pub fn read_ref(self: *FLIR, node: u16, ref: u16) !u16 {
 pub fn read_var(self: *FLIR, node: u16, vidx: u16, vspec: u8) !u16 {
     // It matters where you are
     const n = self.n.items[node];
-    print("node {} read {}\n", .{ node, vidx });
 
     // HOW CAN VARIABLES BE REAL IF PHI:s AREN'T REAL?
     // first check if the value was assigned a value in this block.
@@ -52,7 +51,6 @@ pub fn read_var(self: *FLIR, node: u16, vidx: u16, vspec: u8) !u16 {
     var put_iter = n.putphi_list;
     while (put_iter != NoRef) {
         const p = &self.i.items[put_iter];
-        print("BEGEHEN {}\n", .{p.*});
         if (p.tag == .putvar and p.op2 == vidx) {
             return self.check_trivial(p.op1);
         }
