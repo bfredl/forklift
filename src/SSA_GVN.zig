@@ -10,8 +10,8 @@ const NoRef = FLIR.NoRef;
 // Simple and Eﬃcient Construction of Static Single Assignment Form
 // Matthias Braun et al, 2013
 pub fn resolve_ssa(self: *FLIR) !void {
-    const predbuf = try self.a.alloc(u16, self.n.items.len);
-    defer self.a.free(predbuf);
+    const pred_buf = try self.a.alloc(PredItem, self.n.items.len);
+    defer self.a.free(pred_buf);
 
     self.unsealed = false;
 
@@ -21,7 +21,7 @@ pub fn resolve_ssa(self: *FLIR) !void {
     while (true) {
         var did_phi: bool = false;
         for (self.n.items, 0..) |*n, ni| {
-            did_phi = did_phi or try self.resolve_node(@intCast(ni), n, predbuf);
+            did_phi = did_phi or try self.resolve_node(@intCast(ni), n, pred_buf);
         }
         if (!did_phi) break;
     }
@@ -33,15 +33,14 @@ pub fn resolve_ssa(self: *FLIR) !void {
 pub fn read_ref(self: *FLIR, node: u16, ref: u16) !u16 {
     const i = self.iref(ref) orelse return ref;
     if (i.tag == .variable) {
-        // return try self.read_var(node, ref, i.op1);
-        return try self.read_var(node, i.op1, i.spec);
+        return try self.read_var(node, i.op1, i.spec, null);
     } else {
         // already on SSA-form, nothing to do
         return ref;
     }
 }
 
-pub fn read_var(self: *FLIR, node: u16, vidx: u16, vspec: u8) !u16 {
+pub fn read_var(self: *FLIR, node: u16, vidx: u16, vspec: u8, direct_putvar: ?*u16) !u16 {
     // It matters where you are
     const n = self.n.items[node];
 
@@ -52,6 +51,9 @@ pub fn read_var(self: *FLIR, node: u16, vidx: u16, vspec: u8) !u16 {
     while (put_iter != NoRef) {
         const p = &self.i.items[put_iter];
         if (p.tag == .putvar and p.op2 == vidx) {
+            if (direct_putvar) |put| {
+                put.* = put_iter;
+            }
             return self.check_trivial(p.op1);
         }
         put_iter = p.next;
@@ -77,7 +79,8 @@ pub fn read_var(self: *FLIR, node: u16, vidx: u16, vspec: u8) !u16 {
             // assert recursion eventually terminates
             assert(self.n.items[pred].dfnum < n.dfnum);
             // self.read_var() doesn't work (no recursive mixin methods :P)
-            break :thedef try read_var(self, pred, vidx, vspec);
+            // no longer direct, discard direct_putvar
+            break :thedef try read_var(self, pred, vidx, vspec, null);
         } else { // n.npred == 0
             return error.FLIRError; // undefined var
         }
@@ -97,7 +100,7 @@ pub fn check_trivial(self: *FLIR, ref: u16) u16 {
     return ref;
 }
 
-pub fn resolve_node(self: *FLIR, ni: u16, n: *FLIR.Node, pred_buf: []u16) !bool {
+pub fn resolve_node(self: *FLIR, ni: u16, n: *FLIR.Node, pred_buf: []PredItem) !bool {
     var any = false;
     var it = n.phi_list;
     while (it != NoRef) {
@@ -110,7 +113,8 @@ pub fn resolve_node(self: *FLIR, ni: u16, n: *FLIR.Node, pred_buf: []u16) !bool 
     return any;
 }
 
-pub fn resolve_phi(self: *FLIR, n: u16, i: *FLIR.Inst, iref: u16, pred_buf: []u16) !bool {
+const PredItem = struct { ref: u16, direct_putvar: u16 };
+pub fn resolve_phi(self: *FLIR, n: u16, i: *FLIR.Inst, iref: u16, pred_buf: []PredItem) !bool {
     var changed: bool = false;
     if (i.f.kill_op1) {
         // not resolved
@@ -120,14 +124,15 @@ pub fn resolve_phi(self: *FLIR, n: u16, i: *FLIR.Inst, iref: u16, pred_buf: []u1
         const vidx = i.op1; // TRICKY: i pointer might get invalidated by read_var()
         const vspec = i.spec;
         for (self.preds(n), 0..) |v, vi| {
-            const ref = try self.read_var(v, vidx, vspec);
+            var direct_putvar: u16 = NoRef;
+            const ref = try self.read_var(v, vidx, vspec, &direct_putvar);
             // XX: In principle we could already handle "Undefined" being represented
             // as NoRef, but we don't support undefined yets and we likely want
             // another sentinel value than Noref, to catch mistakes easier.
             if (ref != iref) {
                 onlyref = if (onlyref) |only| (if (only == ref or only == NoRef) ref else null) else null;
             }
-            pred_buf[vi] = ref;
+            pred_buf[vi] = .{ .ref = ref, .direct_putvar = direct_putvar };
         }
 
         if (onlyref) |ref| {
@@ -137,7 +142,15 @@ pub fn resolve_phi(self: *FLIR, n: u16, i: *FLIR.Inst, iref: u16, pred_buf: []u1
             i_ref.op2 = ref; // if set, this is a trivial alias to phi_i.op2
         } else {
             for (self.preds(n), 0..) |v, vi| {
-                _ = try self.binop(v, .putphi, pred_buf[vi], iref);
+                if (pred_buf[vi].direct_putvar != NoRef) {
+                    const p = &self.i.items[pred_buf[vi].direct_putvar];
+                    p.tag = .putphi;
+                    p.op1 = pred_buf[vi].ref;
+                    p.op2 = iref;
+                    try self.addInstRef(v, pred_buf[vi].direct_putvar);
+                } else {
+                    _ = try self.binop(v, .putphi, pred_buf[vi].ref, iref);
+                }
             }
             const i_ref = self.iref(iref).?;
             i_ref.f.kill_op1 = false; // flag for "resolved"

@@ -777,11 +777,13 @@ pub fn addInst(self: *Self, node: u16, inst: Inst) !u16 {
             }
         }
     }
-    return self.addInstRef(node, try self.addRawInst(i));
+    const ref = try self.addRawInst(i);
+    try self.addInstRef(node, ref);
+    return ref;
 }
 
 // add inst to the end of block
-pub fn addInstRef(self: *Self, node: u16, inst: u16) !u16 {
+pub fn addInstRef(self: *Self, node: u16, inst: u16) !void {
     if (inst >= ConstOff) @panic("NOT LIKE THIS");
     const n = &self.n.items[node];
     // must exist:
@@ -813,7 +815,6 @@ pub fn addInstRef(self: *Self, node: u16, inst: u16) !u16 {
     }
 
     self.b.items[blkid].i[lastfree] = inst;
-    return inst;
 }
 
 pub fn preInst(self: *Self, node: u16, inst: Inst) !u16 {
