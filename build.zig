@@ -1,5 +1,6 @@
 const std = @import("std");
 pub fn build(b: *std.Build) void {
+    const t = b.standardTargetOptions(.{});
     const opt = b.standardOptimizeOption(.{});
 
     const ir = b.step("ir", "run some ir");
@@ -7,18 +8,20 @@ pub fn build(b: *std.Build) void {
         .name = "run",
         .root_source_file = .{ .path = "src/run_ir.zig" },
         .optimize = opt,
+        .target = t,
     });
     b.installArtifact(exe_ir);
     ir.dependOn(&exe_ir.step);
 
     const forklift = b.createModule(.{
-        .source_file = .{ .path = "src/forklift.zig" },
+        .root_source_file = .{ .path = "src/forklift.zig" },
     });
 
     const exe_bpf = b.addExecutable(.{
         .name = "run_bpf",
         .root_source_file = .{ .path = "src/main_bpf.zig" },
         .optimize = opt,
+        .target = t,
     });
     b.installArtifact(exe_bpf);
 
@@ -26,6 +29,7 @@ pub fn build(b: *std.Build) void {
         .name = "bpf_helper",
         .root_source_file = .{ .path = "test/bpf_helper.zig" },
         .optimize = opt,
+        .target = t,
     });
     b.installArtifact(bpf_helper); // debug the test
 
@@ -33,7 +37,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = .{ .path = "test/all_user.zig" },
         .optimize = opt,
     });
-    test_user.addModule("forklift", forklift);
+    test_user.root_module.addImport("forklift", forklift);
     const run_test_user = b.addRunArtifact(test_user);
 
     // requires root or virtualization, so separate
@@ -41,7 +45,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = .{ .path = "test/bpf.zig" },
         .optimize = opt,
     });
-    test_bpf.addModule("forklift", forklift);
+    test_bpf.root_module.addImport("forklift", forklift);
 
     b.installArtifact(test_bpf);
     const run_test_bpf_sudo = b.addRunArtifact(test_bpf);
