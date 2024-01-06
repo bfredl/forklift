@@ -93,6 +93,13 @@ pub fn expr_0(self: *Self, type_ctx: SpecType) !?u16 {
             const op = try self.expr_0(int_ctx) orelse return error.ParseError;
             return try self.ir.int2float(self.curnode, fmode, op);
         },
+        '#' => { // float to int
+            self.t.pos += 1;
+            // TODO: bullshit, check if referenced var is sd or ss
+            const fmode: FMode = .sd;
+            const op = try self.expr_0(.{ .avxval = fmode }) orelse return error.ParseError;
+            return try self.ir.float2int(self.curnode, fmode, op);
+        },
         else => return null,
     }
 }

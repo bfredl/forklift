@@ -919,7 +919,6 @@ pub fn int2float(self: *Self, node: u16, fmode: FMode, op1: u16) !u16 {
 }
 
 pub fn float2int(self: *Self, node: u16, fmode: FMode, op1: u16) !u16 {
-    // maybe a packed should implicitly convert and then broadcast?
     if (!fmode.scalar()) return error.FLIRError;
     return self.addInst(node, .{ .tag = .vf2int, .spec = vcvtspec(fmode), .op1 = op1, .op2 = NoRef });
 }

@@ -259,6 +259,20 @@ test "shift hr" {
     try expect(isize, 0x1fffffffffffffff, fun(-3));
 }
 
+test "shift variable" {
+    var cfo = try parse_test(
+        \\func shifter(x, y) {
+        \\  return x << y;
+        \\}
+    );
+    defer cfo.deinit();
+
+    const fun = cfo.get_ptr(0, BFunc);
+    try expect(usize, 6, fun(6, 0));
+    try expect(usize, 10, fun(5, 1));
+    try expect(usize, 24, fun(6, 2));
+}
+
 test "swap simple" {
     // FLIR.noisy = true;
     // defer FLIR.noisy = false;
@@ -341,6 +355,41 @@ test "float square array" {
     var data = [_]f64{ 1.0, 3.0, 0.5, 10.0 };
     try expect(usize, 0, func(&data, data.len));
     try expect([4]f64, .{ 1.0, 9.0, 0.25, 100.0 }, data);
+}
+
+test "int2float" {
+    var cfo = try parse_test(
+        \\func returner(x, y, z) {
+        \\  let val 1d= ~x / ~y;
+        \\  z[0] 1d= val;
+        \\  return 0;
+        \\}
+    );
+    defer cfo.deinit();
+
+    var z: f64 = undefined;
+    const FFunc = *const fn (x: usize, y: usize, z: *f64) callconv(.C) usize;
+    const fun = cfo.get_ptr(0, FFunc);
+    try expect(usize, 0, fun(3, 4, &z));
+    try expect(f64, 0.75, z);
+
+    try expect(usize, 0, fun(9, 2, &z));
+    try expect(f64, 4.5, z);
+}
+
+test "float2int" {
+    var cfo = try parse_test(
+        \\func returner(x) {
+        \\  let xa 1d= @x[0];
+        \\  let res 1d= xa*xa;
+        \\  return #res;
+        \\}
+    );
+    defer cfo.deinit();
+
+    const FFunc = *const fn (z: *const f64) callconv(.C) usize;
+    const fun = cfo.get_ptr(0, FFunc);
+    try expect(usize, 23, fun(&4.8));
 }
 
 test "float variable" {

@@ -142,62 +142,6 @@ test "vopper" {
     try expect(f64, 30.75, x);
 }
 
-test "int2float" {
-    var cfo = try parse_test(
-        \\func returner
-        \\  %x = arg
-        \\  %y = arg
-        \\  %z = arg
-        \\  %xf = int2float sd %x
-        \\  %yf = int2float sd %y
-        \\  %za = vop sd div %xf %yf
-        \\  store sd [%z 0] %za
-        \\  ret 0
-        \\end
-    );
-    defer cfo.deinit();
-
-    var z: f64 = undefined;
-    const FFunc = *const fn (x: usize, y: usize, z: *f64) callconv(.C) usize;
-    const fun = cfo.get_ptr(0, FFunc);
-    try expect(usize, 0, fun(3, 4, &z));
-    try expect(f64, 0.75, z);
-}
-
-test "float2int" {
-    var cfo = try parse_test(
-        \\func returner
-        \\  %x = arg
-        \\  %xa = load sd [%x 0]
-        \\  %y = vop sd mul %xa %xa
-        \\  %res = float2int sd %y
-        \\  ret %res
-        \\end
-    );
-    defer cfo.deinit();
-
-    const FFunc = *const fn (z: *const f64) callconv(.C) usize;
-    const fun = cfo.get_ptr(0, FFunc);
-    try expect(usize, 23, fun(&4.8));
-}
-
-test "shift variable" {
-    var cfo = try parse_test(
-        \\func shifter
-        \\  %x = arg
-        \\  %y = arg
-        \\  %z = shl %x %y
-        \\  ret %z
-        \\end
-    );
-    defer cfo.deinit();
-
-    const fun = cfo.get_ptr(0, BFunc);
-    try expect(usize, 6, fun(6, 0));
-    try expect(usize, 10, fun(5, 1));
-    try expect(usize, 24, fun(6, 2));
-}
-
 test "multi function" {
     var res = try parse_multi(
         \\func adder
