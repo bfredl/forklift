@@ -90,12 +90,9 @@ test "maybe_split" {
     var mod = try CFOModule.init(test_allocator);
     defer mod.deinit_mem();
     var parser = try Parser.init(
-        \\func returner
-        \\  %x = arg
-        \\  %c = 1
-        \\  %y = add %x %c
-        \\  ret %y
-        \\end
+        \\func returner(arg) {
+        \\  return arg+1;
+        \\}
     , test_allocator, &mod);
     defer parser.deinit();
     _ = parser.parse(false, true) catch |e| {
@@ -116,80 +113,4 @@ test "maybe_split" {
     try cfo.finalize();
     const fun = cfo.get_ptr(0, AFunc);
     try expect(usize, 12, fun(11));
-}
-
-test "vopper" {
-    // TODO: lol obviously support this without %z arg as well
-    var cfo = try parse_test(
-        \\func returner
-        \\  %x = arg
-        \\  %y = arg
-        \\  %z = arg
-        \\  %xa = load sd [%x %z]
-        \\  %ya = load sd [%y %z]
-        \\  %za = vop sd add %xa %ya
-        \\  store sd [%x %z] %za
-        \\  ret 0
-        \\end
-    );
-    defer cfo.deinit();
-    var x: f64 = 28.0;
-    var y: f64 = 2.75;
-
-    const FFunc = *const fn (arg1: *f64, arg2: *f64, yark: usize) callconv(.C) usize;
-    const fun = cfo.get_ptr(0, FFunc);
-    try expect(usize, 0, fun(&x, &y, 0));
-    try expect(f64, 30.75, x);
-}
-
-test "multi function" {
-    var res = try parse_multi(
-        \\func adder
-        \\  %x = arg
-        \\  %y = arg
-        \\  %z = shl %x 1
-        \\  %sum = add %y %z
-        \\  ret %sum
-        \\end
-        \\
-        \\func multiplier
-        \\  %x = arg
-        \\  %y = arg
-        \\  %z = mul %x %y
-        \\  ret %z
-        \\end
-    );
-    defer res.deinit_mem();
-
-    const fun1 = try res.get_func_ptr("adder", BFunc);
-    const fun2 = try res.get_func_ptr("multiplier", BFunc);
-    try expect(usize, 210, fun1(100, 10));
-    try expect(usize, 1000, fun2(100, 10));
-}
-
-test "call near" {
-    var res = try parse_multi(
-        \\func kuben
-        \\  %x = arg
-        \\  %prod = mul %x %x
-        \\  %prod2 = mul %prod %x
-        \\  ret %prod2
-        \\end
-        \\
-        \\func twokube
-        \\  %x = arg
-        \\  %y = arg
-        \\  %xx = call kuben %x
-        \\  %yy = call kuben %y
-        \\  %summa = add %xx %yy
-        \\  ret %summa
-        \\end
-    );
-    defer res.deinit_mem();
-
-    const fun1 = try res.get_func_ptr("kuben", AFunc);
-    try expect(usize, 1000000, fun1(100));
-
-    const fun2 = try res.get_func_ptr("twokube", BFunc);
-    try expect(usize, 1008, fun2(2, 10));
 }

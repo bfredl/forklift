@@ -273,6 +273,46 @@ test "shift variable" {
     try expect(usize, 24, fun(6, 2));
 }
 
+test "multi function" {
+    var res = try parse_multi(
+        \\func adder(x, y) {
+        \\  return y + (x << 1);
+        \\}
+        \\
+        \\func multiplier(x, y) {
+        \\  return x*y;
+        \\}
+    );
+    defer res.deinit_mem();
+
+    const fun1 = try res.get_func_ptr("adder", BFunc);
+    const fun2 = try res.get_func_ptr("multiplier", BFunc);
+    try expect(usize, 210, fun1(100, 10));
+    try expect(usize, 1000, fun2(100, 10));
+}
+
+test "call near" {
+    var res = try parse_multi(
+        \\func kuben(x) {
+        \\  let prod = x*x;
+        \\  return prod*x;
+        \\}
+        \\
+        \\func twokube(x, y) {
+        \\  let xx = %near kuben(x);
+        \\  let yy = %near kuben(y);
+        \\  return xx+yy;
+        \\}
+    );
+    defer res.deinit_mem();
+
+    const fun1 = try res.get_func_ptr("kuben", AFunc);
+    try expect(usize, 1000000, fun1(100));
+
+    const fun2 = try res.get_func_ptr("twokube", BFunc);
+    try expect(usize, 1008, fun2(2, 10));
+}
+
 test "swap simple" {
     // FLIR.noisy = true;
     // defer FLIR.noisy = false;
@@ -332,6 +372,28 @@ test "store loop" {
     var data1 = [_]u8{ 23, 15, 28, 2, 30, 7 };
     try expect(usize, 15, func(&data1, data1.len));
     try expect([6]u8, .{ 0, 15, 3, 2, 10, 7 }, data1);
+}
+
+test "vopper" {
+    // z arg lite fånigt but what is tested
+    var cfo = try parse_test(
+        \\func returner(x, y, z) {
+        \\  let xa 1d= @x[z];
+        \\  let ya 1d= @y[z];
+        \\  x[z] 1d= xa + ya;
+        \\  return 0;
+        \\}
+    );
+    defer cfo.deinit();
+    var x: f64 = 28.0;
+    var y: f64 = 2.75;
+
+    const FFunc = *const fn (arg1: *f64, arg2: *f64, yark: usize) callconv(.C) usize;
+    const fun = cfo.get_ptr(0, FFunc);
+    try expect(usize, 0, fun(&x, &y, 0));
+    try expect(f64, 30.75, x);
+    try expect(usize, 0, fun(&x, &y, 0));
+    try expect(f64, 33.5, x);
 }
 
 test "float square array" {

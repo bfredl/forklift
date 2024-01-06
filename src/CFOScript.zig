@@ -151,8 +151,14 @@ pub fn expr_3(self: *Self, type_ctx: SpecType) !?u16 {
         }
 
         if (f_ctx(type_ctx)) |fmode| {
-            _ = fmode;
-            return val;
+            const theop: FLIR.VMathOp = switch (char) {
+                '+' => .add,
+                '-' => .sub,
+                else => break,
+            };
+            self.t.pos += 1;
+            const op = (try self.expr_2(type_ctx)) orelse return error.SyntaxError;
+            val = try self.ir.vmath(self.curnode, theop, fmode, val, op);
         } else {
             const theop: FLIR.IntBinOp = switch (char) {
                 '+' => .add,
