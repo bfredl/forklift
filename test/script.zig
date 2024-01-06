@@ -1,6 +1,8 @@
 const testutil = @import("./flir.zig");
 const parse_test = testutil.parse_test;
 const expect = testutil.expect;
+const std = @import("std");
+const os = std.os;
 
 const AFunc = *const fn (arg1: usize) callconv(.C) usize;
 const PFunc = *const fn (arg1: [*]const u8) callconv(.C) usize;
@@ -183,4 +185,25 @@ test "float variable" {
 
     const func = cfo.get_ptr(0, *const fn (arg: usize) callconv(.C) usize);
     try expect(usize, 4, func(2));
+}
+
+test "syscall" {
+    var cfo = try parse_test(
+        \\func returner {
+        \\  args x;
+        \\  let y = $exit(x);
+        \\  return y;
+        \\}
+    );
+
+    defer cfo.deinit();
+    const fun = cfo.get_ptr(0, AFunc);
+    const pid = try os.fork();
+    if (pid > 0) {
+        const status = os.waitpid(pid, 0);
+        try expect(usize, 11 * 256, status.status);
+    } else {
+        _ = fun(11);
+        @panic("exit syscall failed");
+    }
 }

@@ -6,7 +6,6 @@ const Parser = forklift.Parser;
 const print = std.debug.print;
 
 const std = @import("std");
-const os = std.os;
 
 const test_allocator = std.testing.allocator;
 
@@ -243,27 +242,6 @@ test "maybe_split" {
     try cfo.finalize();
     const fun = cfo.get_ptr(0, AFunc);
     try expect(usize, 12, fun(11));
-}
-
-test "syscall" {
-    var cfo = try parse_test(
-        \\func returner
-        \\  %x = arg
-        \\  %y = syscall exit %x
-        \\  ret %y
-        \\end
-    );
-
-    defer cfo.deinit();
-    const fun = cfo.get_ptr(0, AFunc);
-    const pid = try os.fork();
-    if (pid > 0) {
-        const status = os.waitpid(pid, 0);
-        try expect(usize, 11 * 256, status.status);
-    } else {
-        _ = fun(11);
-        @panic("exit syscall failed");
-    }
 }
 
 test "bander" {
