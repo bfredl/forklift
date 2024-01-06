@@ -420,30 +420,3 @@ test "call near" {
     const fun2 = try res.get_func_ptr("twokube", BFunc);
     try expect(usize, 1008, fun2(2, 10));
 }
-
-test "swap simple" {
-    // FLIR.noisy = true;
-    // defer FLIR.noisy = false;
-    var res = try parse_multi(
-        \\func diff
-        \\  %x = arg
-        \\  %y = arg
-        \\  %d = sub %x %y
-        \\  ret %d
-        \\end
-        \\
-        \\func antidiff
-        \\  %x = arg
-        \\  %y = arg
-        \\  %ad = call diff %y %x
-        \\  ret %ad
-        \\end
-    );
-    defer res.deinit_mem();
-
-    const fun1 = try res.get_func_ptr("antidiff", BFunc);
-    try expect(usize, 30, fun1(70, 100));
-
-    const fun2 = try res.get_func_ptr("diff", BFunc);
-    try expect(usize, 40, fun2(50, 10));
-}

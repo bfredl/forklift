@@ -8,6 +8,7 @@ const Allocator = std.mem.Allocator;
 const FLIR = @import("./FLIR.zig");
 const print = std.debug.print;
 const mem = std.mem;
+const CFOModule = @import("./CFOModule.zig");
 const Tokenizer = @import("./Tokenizer.zig");
 const FMode = @import("./X86Asm.zig").FMode;
 
@@ -27,6 +28,7 @@ fn f_ctx(type_ctx: SpecType) ?FMode {
     };
 }
 
+mod: *CFOModule,
 ir: *FLIR,
 // tmp: [10]?u16 = .{null} ** 10,
 tmp: [10]?u16 = ([1]?u16{null}) ** 10,
@@ -166,37 +168,51 @@ pub fn arg_expr(self: *Self, type_ctx: SpecType) ParseError!u16 {
 }
 
 pub fn call_expr(self: *Self, type_ctx: SpecType) !u16 {
-    if (try self.t.prefixed('$')) |name| {
-        if (type_ctx != .intptr) return error.TypeError;
-        // TODO: non-native for
-        const syscall = std.meta.stringToEnum(std.os.linux.SYS, name) orelse {
-            print("unknown syscall: '{s}'\n", .{name});
-            return error.ParseError;
-        };
-        const sysnum = try self.ir.const_int(@intCast(@intFromEnum(syscall)));
-        try self.t.expect_char('(');
+    const calltype: FLIR.CallKind, const callwhat = target: {
+        if (try self.t.prefixed('$')) |name| {
+            if (type_ctx != .intptr) return error.TypeError;
+            // TODO: non-native for
+            const syscall = std.meta.stringToEnum(std.os.linux.SYS, name) orelse {
+                print("unknown syscall: '{s}'\n", .{name});
+                return error.ParseError;
+            };
+            const sysnum = try self.ir.const_int(@intCast(@intFromEnum(syscall)));
+            break :target .{ .syscall, sysnum };
+        } else if (try self.t.prefixed('%')) |kind| {
+            if (type_ctx != .intptr) return error.TypeError;
 
-        var args = [_]u16{0} ** 6;
-        var n_arg: u8 = 0;
-        while (true) {
-            const arg = (try self.expr_3(int_ctx)) orelse break;
-            if (n_arg == args.len) {
-                return error.TooManyArgs;
-            }
-            args[n_arg] = arg;
-            n_arg += 1;
-            if (self.t.nonws() != ',') break;
-            self.t.pos += 1;
+            if (!mem.eql(u8, kind, "near")) return error.ParseError;
+
+            const name = self.t.keyword() orelse return error.ParseError;
+            const off = self.mod.get_func_off(name) orelse return error.UndefinedName;
+
+            break :target .{ .near, try self.ir.const_uint(off) };
+        } else {
+            return self.arg_expr(type_ctx);
         }
+    };
 
-        try self.t.expect_char(')');
+    try self.t.expect_char('(');
 
-        for (0.., args[0..n_arg]) |i, arg| {
-            try self.ir.callarg(self.curnode, @intCast(i), arg);
+    var args = [_]u16{0} ** 6;
+    var n_arg: u8 = 0;
+    while (true) {
+        const arg = (try self.expr_3(int_ctx)) orelse break;
+        if (n_arg == args.len) {
+            return error.TooManyArgs;
         }
-        return self.ir.call(self.curnode, .syscall, sysnum);
+        args[n_arg] = arg;
+        n_arg += 1;
+        if (self.t.nonws() != ',') break;
+        self.t.pos += 1;
     }
-    return self.arg_expr(type_ctx);
+
+    try self.t.expect_char(')');
+
+    for (0.., args[0..n_arg]) |i, arg| {
+        try self.ir.callarg(self.curnode, @intCast(i), arg);
+    }
+    return self.ir.call(self.curnode, calltype, callwhat);
 }
 
 pub fn cond_op(op: []const u8) ?FLIR.IntCond {
@@ -486,9 +502,9 @@ fn do_parse(self: *Self) !bool {
     return did_ret;
 }
 
-pub fn parse(ir: *FLIR, t: *Tokenizer, allocator: Allocator) !void {
+pub fn parse(mod: *CFOModule, ir: *FLIR, t: *Tokenizer, allocator: Allocator) !void {
     const curnode = try ir.addNode();
-    var self: Self = .{ .ir = ir, .t = t.*, .curnode = curnode, .vars = std.StringArrayHashMap(IdInfo).init(allocator) };
+    var self: Self = .{ .mod = mod, .ir = ir, .t = t.*, .curnode = curnode, .vars = std.StringArrayHashMap(IdInfo).init(allocator) };
     defer self.vars.deinit();
     defer t.* = self.t;
     // TODO: use did_ret for something?

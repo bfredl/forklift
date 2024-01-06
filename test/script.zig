@@ -1,5 +1,6 @@
 const testutil = @import("./flir.zig");
 const parse_test = testutil.parse_test;
+const parse_multi = testutil.parse_multi;
 const expect = testutil.expect;
 const std = @import("std");
 const os = std.os;
@@ -122,6 +123,28 @@ test "complex control flow" {
     try expect(usize, 23, func(&data1, 1));
     const data2 = [_]u8{ 25, 28, 2, 30 };
     try expect(usize, 25, func(&data2, 4));
+}
+
+test "swap simple" {
+    // FLIR.noisy = true;
+    // defer FLIR.noisy = false;
+    var res = try parse_multi(
+        \\func diff(x, y) {
+        \\  return x - y;
+        \\}
+        \\
+        \\func antidiff(x, y) {
+        \\  let res = %near diff(y, x);
+        \\  return res;
+        \\}
+    );
+    defer res.deinit_mem();
+
+    const fun1 = try res.get_func_ptr("antidiff", BFunc);
+    try expect(usize, 30, fun1(70, 100));
+
+    const fun2 = try res.get_func_ptr("diff", BFunc);
+    try expect(usize, 40, fun2(50, 10));
 }
 
 test "store byte" {
