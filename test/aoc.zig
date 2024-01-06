@@ -17,18 +17,16 @@ fn t_call(func: TFunc, str: []const u8, tab: []const u8) usize {
 
 test "parse digit" {
     var cfo = try parse_test(
-        \\func parser
-        \\  var %num
-        \\  %x = arg
-        \\  %num := 127
-        \\  %byte = load byte [%x 0]
-        \\  %token = sub %byte 48
-        \\  ja %token 9 :enda
-        \\:
-        \\  %num := %token
-        \\:enda
-        \\  ret %num
-        \\end
+        \\func parser(x) {
+        \\  vars num;
+        \\  num := 127;
+        \\  let byte = @x[0];
+        \\  let token = byte - 48;
+        \\  if (token <| 9) {
+        \\    num := token;
+        \\  }
+        \\  return num;
+        \\}
     );
     defer cfo.deinit();
 
@@ -65,34 +63,25 @@ test "parse int" {
 test "summer 1" {
     // %ipos >= $len check is useless, but harmless
     var cfo = try parse_test(
-        \\func returner
-        \\  var %sum
-        \\  var %item
-        \\  var %ipos
-        \\  %x = arg
-        \\  %len = arg
-        \\  %ipos := 0
-        \\  %sum := 0
-        \\:sumloop
-        \\  %item := 0
-        \\  jge %ipos %len :retvrn
-        \\:parseloop
-        \\  %byte = load byte [%x %ipos]
-        \\  %token = sub %byte 48
-        \\  ja %token 9 :enda
-        \\:doit
-        \\  %base = 10
-        \\  %adjust = mul %item %base
-        \\  %item := add %adjust %token
-        \\  %ipos := add %ipos 1
-        \\  jmp :parseloop
-        \\:enda
-        \\  %sum := add %sum %item
-        \\  %ipos := add %ipos 1
-        \\  jmp :sumloop
-        \\:retvrn
-        \\  ret %sum
-        \\end
+        \\func returner(x, len) {
+        \\  vars sum, item, ipos;
+        \\  ipos := 0;
+        \\  sum := 0;
+        \\  loop {
+        \\    if (ipos > len) break;
+        \\    item := 0;
+        \\    loop {
+        \\      let byte = @x[ipos];
+        \\      let token = byte - 48;
+        \\      if (token |> 9) break;
+        \\      item := token + (item*10);
+        \\      ipos := ipos + 1;
+        \\    }
+        \\    sum := sum + item;
+        \\    ipos := ipos + 1;
+        \\  }
+        \\  return sum;
+        \\}
     );
     defer cfo.deinit();
 
