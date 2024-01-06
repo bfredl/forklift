@@ -114,7 +114,7 @@ test "bander" {
     try expect(usize, 2, fun(10, 34));
 }
 
-test "cfoscript basic" {
+test "loop adder" {
     var cfo = try parse_test(
         \\func scripter(foo) {
         \\  vars i, sum;
@@ -131,7 +131,11 @@ test "cfoscript basic" {
     defer cfo.deinit();
 
     const fun = cfo.get_ptr(0, AFunc);
+    try expect(usize, 0, fun(0));
+    try expect(usize, 0, fun(1));
+    try expect(usize, 1, fun(2));
     try expect(usize, 3, fun(3));
+    try expect(usize, 10, fun(5));
     try expect(usize, 15, fun(6));
     try expect(usize, 45, fun(10));
 }
