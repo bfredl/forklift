@@ -441,18 +441,21 @@ fn scoped_block(self: *Self) ParseError!bool {
 }
 
 fn do_parse(self: *Self) !bool {
-    if (self.t.peek_keyword()) |kw| {
-        if (mem.eql(u8, kw, "args")) {
-            _ = self.t.keyword();
-            while (self.t.keyword()) |name| {
-                const item = try nonexisting(&self.vars, name, "argument");
-                const val = try self.ir.arg();
-                item.* = .{ .ref = val, .is_mut = false };
-            }
-            try self.t.expect_char(';');
-            try self.t.lbrk();
+    try self.t.expect_char('(');
+    while (self.t.keyword()) |name| {
+        const item = try nonexisting(&self.vars, name, "argument");
+        const val = try self.ir.arg();
+        item.* = .{ .ref = val, .is_mut = false };
+        if (self.t.nonws() == ',') {
+            self.t.pos += 1;
+        } else {
+            break;
         }
     }
+    try self.t.expect_char(')');
+    try self.t.expect_char('{');
+    try self.t.lbrk();
+
     while (self.t.peek_keyword()) |kw| {
         if (mem.eql(u8, kw, "vars")) {
             _ = self.t.keyword();

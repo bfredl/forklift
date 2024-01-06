@@ -84,15 +84,13 @@ pub fn parse(self: *Self, dbg: bool, one: bool) !void {
 
             const obj_slot = try nonexisting(&mod.objs, name, "object");
 
-            if (self.t.nonws() == '{') {
-                self.t.pos += 1;
-                try self.t.lbrk();
+            if (self.t.nonws() == '(') { // arg list
                 try @import("./CFOScript.zig").parse(&self.ir, &self.t, self.allocator);
                 try self.t.expect_char('}');
                 try self.t.lbrk();
             } else {
                 try self.t.lbrk();
-                try self.parse_func_body();
+                try self.parse_func_body(); // DELENDA
             }
             if (one) {
                 return;

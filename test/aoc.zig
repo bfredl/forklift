@@ -340,8 +340,7 @@ test "score pairs" {
 
 test "aoc 2023 day 1 part one" {
     var cfo = try parse_test(
-        \\func main {
-        \\  args data len;
+        \\func main(data, len) {
         \\  vars x, first, current, sum;
         \\  x := 0;
         \\  sum := 0;
@@ -390,8 +389,7 @@ const table =
 test "numberfinderer borked" {
     // case where the OOB check is slightly wrong so that "ze" maps to zero and so on
     var cfo = try parse_test(
-        \\func main {
-        \\  args data len table tablelen;
+        \\func main(data, len, table, tablelen) {
         \\  vars x, tpos, i, imatch;
         \\  vars scan, result;
         \\  tpos := 0;
@@ -434,8 +432,7 @@ test "numberfinderer borked" {
 test "numberfinderer" {
     // case where the OOB check is slightly wrong so that "ze" maps to zero and so on
     var cfo = try parse_test(
-        \\func main {
-        \\  args data len table tablelen;
+        \\func main(data, len, table, tablelen) {
         \\  vars x, tpos, i, imatch;
         \\  vars scan, result;
         \\  tpos := 0;
@@ -480,8 +477,7 @@ test "numberfinderer" {
 
 test "aoc 2023 1a" {
     var cfo = try parse_test(
-        \\func main {
-        \\  args data len table tablelen;
+        \\func main(data, len, table, tablelen) {
         \\  vars x, tpos, i, imatch, scan;
         \\  vars first, current;
         \\  x := 0;
@@ -545,8 +541,7 @@ test "aoc 2023 1a" {
 // TODO: not complete, handles only values up to 63!
 test "aoc 2023 4a: one row" {
     var cfo = try parse_test(
-        \\func main {
-        \\  args data len;
+        \\func main(data, len) {
         \\  vars x, setlow, sethigh;
         \\  vars char, value, count;
         \\  x := 0;

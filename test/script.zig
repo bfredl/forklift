@@ -10,8 +10,7 @@ const SFunc = *const fn (arg1: [*]const u8, arg2: usize) callconv(.C) usize;
 
 test "cfoscript basic" {
     var cfo = try parse_test(
-        \\func scripter {
-        \\  args foo;
+        \\func scripter(foo) {
         \\  vars i, sum;
         \\  i := 0;
         \\  sum := 0;
@@ -33,8 +32,7 @@ test "cfoscript basic" {
 
 test "break in else" {
     var cfo = try parse_test(
-        \\func scripter {
-        \\  args data;
+        \\func scripter(data) {
         \\  vars i, sum;
         \\  i := 0;
         \\  sum := 0;
@@ -60,8 +58,7 @@ test "break in else" {
 
 test "break at end" {
     var cfo = try parse_test(
-        \\func main {
-        \\  args data len;
+        \\func main(data, len) {
         \\  vars i, imatch, result;
         \\  i := 0;
         \\  result := 0;
@@ -84,8 +81,7 @@ test "break at end" {
 
 test "complex control flow" {
     var cfo = try parse_test(
-        \\func main {
-        \\  args data len;
+        \\func main(data, len) {
         \\  vars i, imatch, result;
         \\  i := 0;
         \\  result := 0;
@@ -116,8 +112,7 @@ test "complex control flow" {
 
 test "store loop" {
     var cfo = try parse_test(
-        \\func scripter {
-        \\  args res len;
+        \\func scripter(res, len) {
         \\  vars i, sum;
         \\  i := 0;
         \\  sum := 0;
@@ -141,8 +136,7 @@ test "store loop" {
 
 test "float square array" {
     var cfo = try parse_test(
-        \\func scripter {
-        \\  args data len;
+        \\func scripter(data, len) {
         \\  vars i;
         \\  i := 0;
         \\  loop {
@@ -166,8 +160,7 @@ test "float square array" {
 test "float variable" {
     if (true) return error.SkipZigTest;
     var cfo = try parse_test(
-        \\func scripter {
-        \\  args lim;
+        \\func scripter(lim) {
         \\  vars i, sum: 1d;
         \\  i := 0;
         \\  sum :1d= 0;
@@ -189,8 +182,7 @@ test "float variable" {
 
 test "syscall" {
     var cfo = try parse_test(
-        \\func returner {
-        \\  args x;
+        \\func returner(x) {
         \\  let y = $exit(x);
         \\  return y;
         \\}
