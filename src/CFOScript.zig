@@ -11,6 +11,8 @@ const mem = std.mem;
 const CFOModule = @import("./CFOModule.zig");
 const Tokenizer = @import("./Tokenizer.zig");
 const FMode = @import("./X86Asm.zig").FMode;
+const BPF = std.os.linux.BPF;
+const meta = std.meta;
 
 const nonexisting = @import("./Parser.zig").nonexisting;
 
@@ -180,28 +182,58 @@ pub fn arg_expr(self: *Self, type_ctx: SpecType) ParseError!u16 {
     return (try self.expr_3(type_ctx)) orelse return error.SyntaxError;
 }
 
-pub fn call_expr(self: *Self, type_ctx: SpecType) !u16 {
-    const calltype: FLIR.CallKind, const callwhat = target: {
-        if (try self.t.prefixed('$')) |kind| {
-            if (type_ctx != .intptr) return error.TypeError;
+pub fn expr_bpf_map(self: *Self, is_value: bool) !u16 {
+    const name = self.t.keyword() orelse return error.ParseError;
+    const id = self.mod.objs.getIndex(name) orelse return error.UndefinedName;
+    return self.ir.bpf_load_map(self.curnode, @intCast(id), is_value);
+}
 
-            if (mem.eql(u8, kind, "near")) {
-                const name = self.t.keyword() orelse return error.ParseError;
-                const off = self.mod.get_func_off(name) orelse return error.UndefinedName;
-                break :target .{ .near, try self.ir.const_uint(off) };
-            } else if (mem.eql(u8, kind, "sys")) {
-                if (type_ctx != .intptr) return error.TypeError;
-                const name = self.t.keyword() orelse return error.ParseError;
-                // TODO: non-native for
-                const syscall = std.meta.stringToEnum(std.os.linux.SYS, name) orelse {
-                    print("unknown syscall: '{s}'\n", .{name});
-                    return error.ParseError;
-                };
-                const sysnum = try self.ir.const_int(@intCast(@intFromEnum(syscall)));
-                break :target .{ .syscall, sysnum };
-            }
+pub fn expr_toplevel(self: *Self, type_ctx: SpecType) !u16 {
+    if (try self.t.prefixed('$')) |kind| {
+        return self.call_expr(type_ctx, kind);
+    } else if (try self.t.prefixed('%')) |kind| {
+        if (mem.eql(u8, kind, "map")) {
+            return self.expr_bpf_map(false);
+        } else if (mem.eql(u8, kind, "map_value")) {
+            return self.expr_bpf_map(true);
+        } else if (mem.eql(u8, kind, "alloc")) {
+            // not strictly, but make it clear it is not scoped
+            if (self.curnode != 0) return error.ParseError;
+            const size = self.t.num() orelse return error.ParseError;
+            return self.ir.alloc(self.curnode, @intCast(size));
         } else {
-            return self.arg_expr(type_ctx);
+            return error.ParseError;
+        }
+    } else {
+        return self.arg_expr(type_ctx);
+    }
+}
+
+fn requireEnumKey(comptime T: type, key: []const u8, klagel: []const u8) !T {
+    return meta.stringToEnum(T, key) orelse {
+        print("{s}: '{s}'\n", .{ klagel, key });
+        return error.ParseError;
+    };
+}
+
+pub fn call_expr(self: *Self, type_ctx: SpecType, kind: []const u8) !u16 {
+    const calltype: FLIR.CallKind, const callwhat = target: {
+        if (type_ctx != .intptr) return error.TypeError;
+
+        if (mem.eql(u8, kind, "near")) {
+            const name = self.t.keyword() orelse return error.ParseError;
+            const off = self.mod.get_func_off(name) orelse return error.UndefinedName;
+            break :target .{ .near, try self.ir.const_uint(off) };
+        } else if (mem.eql(u8, kind, "sys")) {
+            const name = self.t.keyword() orelse return error.ParseError;
+            // TODO: non-native for
+            const syscall = try requireEnumKey(std.os.linux.SYS, name, "unknown syscall");
+            const sysnum = try self.ir.const_int(@intCast(@intFromEnum(syscall)));
+            break :target .{ .syscall, sysnum };
+        } else if (mem.eql(u8, kind, "bpf")) {
+            const name = self.t.keyword() orelse return error.ParseError;
+            const helper = try requireEnumKey(BPF.Helper, name, "unknown BPF helper");
+            break :target .{ .bpf_helper, try self.ir.const_int(@intCast(@intFromEnum(helper))) };
         }
     };
 
@@ -392,7 +424,7 @@ pub fn stmt(self: *Self) !?bool {
         const item = try nonexisting(&self.vars, name, "variable");
         const type_ctx = try self.maybe_type() orelse int_ctx;
         try self.t.expect_char('=');
-        const val = try self.call_expr(type_ctx);
+        const val = try self.expr_toplevel(type_ctx);
         item.* = .{ .ref = val, .is_mut = false };
     } else if (mem.eql(u8, kw, "if")) {
         try self.if_stmt();
@@ -426,7 +458,7 @@ pub fn stmt(self: *Self) !?bool {
             };
 
             try self.t.expect_char('=');
-            // ambigous if idx is evaluated before or after a call, avoid call_expr!
+            // ambigous if idx is evaluated before or after a call, avoid expr_toplevel with calls!
             const val = try self.arg_expr(type_ctx);
 
             _ = try self.ir.store(self.curnode, memtype, v.ref, idx, scale, val);
@@ -437,7 +469,7 @@ pub fn stmt(self: *Self) !?bool {
                 return error.SyntaxError;
             }
             try self.t.expect_char('=');
-            const res = try self.call_expr(int_ctx);
+            const res = try self.expr_toplevel(int_ctx);
             try self.ir.putvar(self.curnode, v.ref, res);
         }
     }

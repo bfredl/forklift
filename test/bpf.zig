@@ -146,11 +146,11 @@ test "just map" {
 test "map value" {
     var mod = try parse_multi(false,
         \\ bpf_map global_var .array 4 8 1
-        \\ bpf_func main
-        \\   %var = map_value global_var
-        \\   store quadword [%var 0] 17
-        \\   ret 0
-        \\ end
+        \\ bpf_func main() {
+        \\   let v = %map_value global_var;
+        \\   v[0] 4u= 17;
+        \\   return 0;
+        \\ }
     );
     defer mod.deinit_mem();
     try mod.load();
@@ -169,14 +169,14 @@ test "map value" {
 test "map + call" {
     var mod = try parse_multi(false,
         \\ bpf_map myhash .hash 4 8 16834
-        \\ bpf_func main
-        \\   %hash = map myhash
-        \\   %key = alloc 4
-        \\   store dword [%key 0] 86
-        \\   %value = call_bpf map_lookup_elem %hash %key
-        \\   store quadword [%value 0] 231
-        \\   ret 0
-        \\ end
+        \\ bpf_func main() {
+        \\   let hash = %map myhash;
+        \\   let key = %alloc 4;
+        \\   key[0] 4u= 86;
+        \\   let value = $bpf map_lookup_elem(hash, key);
+        \\   value[0] 4u= 231;
+        \\   return 0;
+        \\ }
     );
     defer mod.deinit_mem();
     try mod.load();
