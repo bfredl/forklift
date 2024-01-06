@@ -244,22 +244,6 @@ test "maybe_split" {
     try expect(usize, 12, fun(11));
 }
 
-test "bander" {
-    var cfo = try parse_test(
-        \\func returner
-        \\  %x = arg
-        \\  %y = arg
-        \\  %z = and %x %y
-        \\  ret %z
-        \\end
-    );
-    defer cfo.deinit();
-
-    const fun = cfo.get_ptr(0, BFunc);
-    try expect(usize, 4, fun(5, 6));
-    try expect(usize, 2, fun(10, 34));
-}
-
 test "vopper" {
     // TODO: lol obviously support this without %z arg as well
     var cfo = try parse_test(
@@ -321,26 +305,6 @@ test "float2int" {
     const FFunc = *const fn (z: *const f64) callconv(.C) usize;
     const fun = cfo.get_ptr(0, FFunc);
     try expect(usize, 23, fun(&4.8));
-}
-
-test "store byte" {
-    // TODO: lol obviously support this without %y arg as well
-    var cfo = try parse_test(
-        \\func storer
-        \\  %x = arg
-        \\  %y = arg
-        \\  %z = arg
-        \\  store byte [%x %y] %z
-        \\  ret 0
-        \\end
-    );
-    defer cfo.deinit();
-
-    const FFunc = *const fn (arg1: [*]u8, arg2: usize, val: usize) callconv(.C) usize;
-    const fun = cfo.get_ptr(0, FFunc);
-    var bytes: [4]u8 = .{ 17, 43, 6, 19 };
-    try expect(usize, 0, fun(&bytes, 1, 4));
-    try expect([4]u8, .{ 17, 4, 6, 19 }, bytes);
 }
 
 test "shift hl" {

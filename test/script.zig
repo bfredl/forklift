@@ -5,8 +5,22 @@ const std = @import("std");
 const os = std.os;
 
 const AFunc = *const fn (arg1: usize) callconv(.C) usize;
+const BFunc = *const fn (arg1: usize, arg2: usize) callconv(.C) usize;
 const PFunc = *const fn (arg1: [*]const u8) callconv(.C) usize;
 const SFunc = *const fn (arg1: [*]const u8, arg2: usize) callconv(.C) usize;
+
+test "bander" {
+    var cfo = try parse_test(
+        \\func returner(x, y) {
+        \\  return x & y;
+        \\}
+    );
+    defer cfo.deinit();
+
+    const fun = cfo.get_ptr(0, BFunc);
+    try expect(usize, 4, fun(5, 6));
+    try expect(usize, 2, fun(10, 34));
+}
 
 test "cfoscript basic" {
     var cfo = try parse_test(
@@ -110,6 +124,21 @@ test "complex control flow" {
     try expect(usize, 25, func(&data2, 4));
 }
 
+test "store byte" {
+    var cfo = try parse_test(
+        \\func storer(x, y, z) {
+        \\  x[y] = z;
+        \\  return 0;
+        \\}
+    );
+    defer cfo.deinit();
+
+    const FFunc = *const fn (arg1: [*]u8, arg2: usize, val: usize) callconv(.C) usize;
+    const fun = cfo.get_ptr(0, FFunc);
+    var bytes: [4]u8 = .{ 17, 43, 6, 19 };
+    try expect(usize, 0, fun(&bytes, 1, 4));
+    try expect([4]u8, .{ 17, 4, 6, 19 }, bytes);
+}
 test "store loop" {
     var cfo = try parse_test(
         \\func scripter(res, len) {
