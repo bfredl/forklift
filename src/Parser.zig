@@ -12,6 +12,8 @@ const mem = std.mem;
 const ParseError = error{ ParseError, OutOfMemory, FLIRError };
 const meta = std.meta;
 
+const CFOScript = @import("./CFOScript.zig");
+
 const Allocator = mem.Allocator;
 const CFOModule = @import("./CFOModule.zig");
 
@@ -85,7 +87,7 @@ pub fn parse(self: *Self, dbg: bool, one: bool) !void {
             const obj_slot = try nonexisting(&mod.objs, name, "object");
 
             if (self.t.nonws() == '(') { // arg list
-                try @import("./CFOScript.zig").parse(self.mod, &self.ir, &self.t, self.allocator);
+                try CFOScript.parse(self.mod, &self.ir, &self.t, self.allocator);
                 try self.t.expect_char('}');
                 try self.t.lbrk();
             } else {
@@ -107,8 +109,14 @@ pub fn parse(self: *Self, dbg: bool, one: bool) !void {
         } else if (mem.eql(u8, kw, "bpf_func")) {
             const name = try require(self.t.keyword(), "name");
             const obj_slot = try nonexisting(&mod.objs, name, "object");
-            try self.t.lbrk();
-            try self.parse_func_body();
+            if (self.t.nonws() == '(') { // arg list
+                try CFOScript.parse(self.mod, &self.ir, &self.t, self.allocator);
+                try self.t.expect_char('}');
+                try self.t.lbrk();
+            } else {
+                try self.t.lbrk();
+                try self.parse_func_body(); // DELENDA
+            }
 
             try self.ir.test_analysis(FLIR.BPF_ABI, true);
             if (dbg) flir.debug_print();

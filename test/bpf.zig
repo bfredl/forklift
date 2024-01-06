@@ -22,9 +22,9 @@ test "show code" {
     var mod = try CFOModule.init(test_allocator);
     defer mod.deinit_mem();
     var parser = try Parser.init(
-        \\ bpf_func returner
-        \\ ret 5
-        \\ end
+        \\ bpf_func returner() {
+        \\   return 5;
+        \\ }
     , test_allocator, &mod);
     defer parser.deinit();
     _ = parser.parse(false, false) catch |e| {
@@ -64,9 +64,9 @@ pub fn parse_multi(dbg: bool, ir: []const u8) !CFOModule {
 
 test "run simple" {
     var mod = try parse_load(
-        \\ bpf_func returner
-        \\ ret 5
-        \\ end
+        \\ bpf_func returner() {
+        \\   return 5;
+        \\ }
     );
     defer mod.deinit_mem();
     const ret = try mod.bpf_test_run("returner", null);
@@ -76,11 +76,9 @@ test "run simple" {
 test "load byte" {
     // std.debug.print("\nkod: \n", .{});
     var mod = try parse_load(
-        \\ bpf_func returner
-        \\ %ctx = arg
-        \\ %data = load byte [%ctx 0]
-        \\ ret %data
-        \\ end
+        \\ bpf_func returner(ctx) {
+        \\   return @ctx[0];
+        \\ }
     );
     defer mod.deinit_mem();
     // yes its LE specific. sorry if you use a weirdo processor
@@ -92,11 +90,9 @@ test "load byte" {
 test "load dword" {
     // std.debug.print("\nkod: \n", .{});
     var mod = try parse_load(
-        \\ bpf_func returner
-        \\ %ctx = arg
-        \\ %data = load dword [%ctx 0]
-        \\ ret %data
-        \\ end
+        \\ bpf_func returner(ctx) {
+        \\   return @4u ctx[0];
+        \\ }
     );
     defer mod.deinit_mem();
     var data: u64 = 0x222233331234abcd;
@@ -107,11 +103,9 @@ test "load dword" {
 test "load dword with offset" {
     // std.debug.print("\nkod: \n", .{});
     var mod = try parse_load(
-        \\ bpf_func returner
-        \\ %ctx = arg
-        \\ %data = load dword [%ctx 4]
-        \\ ret %data
-        \\ end
+        \\ bpf_func returner(ctx) {
+        \\ return @4u ctx[4];
+        \\ }
     );
     defer mod.deinit_mem();
     var data: u64 = 0x222233331234abcd;

@@ -182,24 +182,24 @@ pub fn arg_expr(self: *Self, type_ctx: SpecType) ParseError!u16 {
 
 pub fn call_expr(self: *Self, type_ctx: SpecType) !u16 {
     const calltype: FLIR.CallKind, const callwhat = target: {
-        if (try self.t.prefixed('$')) |name| {
-            if (type_ctx != .intptr) return error.TypeError;
-            // TODO: non-native for
-            const syscall = std.meta.stringToEnum(std.os.linux.SYS, name) orelse {
-                print("unknown syscall: '{s}'\n", .{name});
-                return error.ParseError;
-            };
-            const sysnum = try self.ir.const_int(@intCast(@intFromEnum(syscall)));
-            break :target .{ .syscall, sysnum };
-        } else if (try self.t.prefixed('%')) |kind| {
+        if (try self.t.prefixed('$')) |kind| {
             if (type_ctx != .intptr) return error.TypeError;
 
-            if (!mem.eql(u8, kind, "near")) return error.ParseError;
-
-            const name = self.t.keyword() orelse return error.ParseError;
-            const off = self.mod.get_func_off(name) orelse return error.UndefinedName;
-
-            break :target .{ .near, try self.ir.const_uint(off) };
+            if (mem.eql(u8, kind, "near")) {
+                const name = self.t.keyword() orelse return error.ParseError;
+                const off = self.mod.get_func_off(name) orelse return error.UndefinedName;
+                break :target .{ .near, try self.ir.const_uint(off) };
+            } else if (mem.eql(u8, kind, "sys")) {
+                if (type_ctx != .intptr) return error.TypeError;
+                const name = self.t.keyword() orelse return error.ParseError;
+                // TODO: non-native for
+                const syscall = std.meta.stringToEnum(std.os.linux.SYS, name) orelse {
+                    print("unknown syscall: '{s}'\n", .{name});
+                    return error.ParseError;
+                };
+                const sysnum = try self.ir.const_int(@intCast(@intFromEnum(syscall)));
+                break :target .{ .syscall, sysnum };
+            }
         } else {
             return self.arg_expr(type_ctx);
         }
@@ -357,6 +357,7 @@ fn maybe_type(self: *Self) !?SpecType {
     self.t.pos += 2;
 
     if (first == '1' and second == 'd') return .{ .avxval = .sd };
+    if (first == '4' and second == 'u') return .{ .intptr = .dword };
     return error.ParseError;
 }
 

@@ -407,8 +407,8 @@ test "call near" {
         \\}
         \\
         \\func twokube(x, y) {
-        \\  let xx = %near kuben(x);
-        \\  let yy = %near kuben(y);
+        \\  let xx = $near kuben(x);
+        \\  let yy = $near kuben(y);
         \\  return xx+yy;
         \\}
     );
@@ -430,7 +430,7 @@ test "swap simple" {
         \\}
         \\
         \\func antidiff(x, y) {
-        \\  let res = %near diff(y, x);
+        \\  let res = $near diff(y, x);
         \\  return res;
         \\}
     );
@@ -588,7 +588,7 @@ test "float variable" {
 test "syscall" {
     var cfo = try parse_test(
         \\func returner(x) {
-        \\  let y = $exit(x);
+        \\  let y = $sys exit(x);
         \\  return y;
         \\}
     );
