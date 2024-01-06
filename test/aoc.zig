@@ -93,7 +93,6 @@ test "summer 1" {
 }
 
 test "summer 2" {
-    // %ipos >= $len check is useless, but harmless
     var cfo = try parse_test(
         \\func returner(x, len) {
         \\  vars sum, item, ipos;

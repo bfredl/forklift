@@ -43,12 +43,6 @@ pub fn deinit(self: *Self) void {
     self.ir.deinit();
 }
 
-// consumes self
-pub fn to_map(self: *Self) std.StringHashMap(u32) {
-    self.ir.deinit(); // HaCKERY
-    return self.objs;
-}
-
 const Chunk = Tokenizer.Chunk;
 
 fn objname(self: *Self) ParseError!?Chunk {
