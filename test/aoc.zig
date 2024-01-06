@@ -201,40 +201,33 @@ test "summer/maxxer 3" {
 // aoc 2022 2
 test "scorer" {
     var cfo = try parse_test(
-        \\func scorer
-        \\  var %ipos
-        \\  var %summa
-        \\  %data = arg
-        \\  %len = arg
-        \\  %table = alloc 2
-        \\  store byte [%table 0] 4
-        \\  store byte [%table 1] 8
-        \\  store byte [%table 2] 3
-        \\  store byte [%table 3] 1
-        \\  store byte [%table 4] 5
-        \\  store byte [%table 5] 9
-        \\  store byte [%table 6] 7
-        \\  store byte [%table 7] 2
-        \\  store byte [%table 8] 6
-        \\  %ipos := 0
-        \\  %summa := 0
-        \\:loop
-        \\  jge %ipos %len :enda
-        \\:doit
-        \\  %abyte = load byte [%data %ipos]
-        \\  %apos = sub %abyte 65
-        \\  %ipos := add %ipos 2
-        \\  %xbyte = load byte [%data %ipos]
-        \\  %xpos = sub %xbyte 88
-        \\  %ipos := add %ipos 2
-        \\  %scaled = mul %apos 3
-        \\  %index = add %scaled %xpos
-        \\  %tabval = load byte [%table %index]
-        \\  %summa := add %summa %tabval
-        \\  jmp :loop
-        \\:enda
-        \\  ret %summa
-        \\end
+        \\func scorer(data, len) {
+        \\  vars ipos, summa;
+        \\  let table = %alloc 2;
+        \\  table[0] = 4;
+        \\  table[1] = 8;
+        \\  table[2] = 3;
+        \\  table[3] = 1;
+        \\  table[4] = 5;
+        \\  table[5] = 9;
+        \\  table[6] = 7;
+        \\  table[7] = 2;
+        \\  table[8] = 6;
+        \\  ipos := 0;
+        \\  summa := 0;
+        \\  loop {
+        \\    if (ipos >= len) break;
+        \\    let abyte = @data[ipos];
+        \\    let apos = abyte - 65;
+        \\    ipos := ipos + 2;
+        \\    let xbyte = @data[ipos];
+        \\    let xpos = xbyte - 88;
+        \\    ipos := ipos + 2;
+        \\    let index = (apos * 3) + xpos;
+        \\    summa := summa + @table[index];
+        \\  }
+        \\  return summa;
+        \\}
     );
     defer cfo.deinit();
     const func = cfo.get_ptr(0, SFunc);
