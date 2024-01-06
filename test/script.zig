@@ -5,11 +5,60 @@ const expect = testutil.expect;
 const std = @import("std");
 const os = std.os;
 
+const UFunc = *const fn () callconv(.C) usize;
 const AFunc = *const fn (arg1: usize) callconv(.C) usize;
 const AIFunc = *const fn (arg1: isize) callconv(.C) isize;
 const BFunc = *const fn (arg1: usize, arg2: usize) callconv(.C) usize;
 const PFunc = *const fn (arg1: [*]const u8) callconv(.C) usize;
 const SFunc = *const fn (arg1: [*]const u8, arg2: usize) callconv(.C) usize;
+
+test "returner" {
+    var cfo = try parse_test(
+        \\func returner() {
+        \\  return 7;
+        \\}
+    );
+    defer cfo.deinit();
+
+    try expect(usize, 7, cfo.get_ptr(0, UFunc)());
+}
+
+test "return u64" {
+    var cfo = try parse_test(
+        \\func returner() {
+        \\  return 5743024064959639452;
+        \\}
+    );
+    defer cfo.deinit();
+
+    try expect(usize, 5743024064959639452, cfo.get_ptr(0, UFunc)());
+}
+
+test "comment" {
+    var cfo = try parse_test(
+        \\func returner() {
+        \\  return 7; // this is a comment
+        \\}
+    );
+    defer cfo.deinit();
+
+    try expect(usize, 7, cfo.get_ptr(0, UFunc)());
+}
+
+test "var returner" {
+    var cfo = try parse_test(
+        \\func returner() {
+        \\  vars myvar;
+        \\  myvar := 57;
+        \\
+        \\
+        \\  return myvar;
+        \\}
+    );
+    defer cfo.deinit();
+
+    try expect(usize, 57, cfo.get_ptr(0, UFunc)());
+}
 
 test "bander" {
     var cfo = try parse_test(

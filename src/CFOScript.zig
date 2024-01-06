@@ -56,7 +56,7 @@ pub fn expr_0(self: *Self, type_ctx: SpecType) !?u16 {
             const i = self.t.num() orelse return error.SyntaxError;
             return switch (type_ctx) {
                 .avxval => |_| try self.ir.const_float(self.curnode, @floatFromInt(i)),
-                .intptr => |_| try self.ir.const_int(@intCast(i)),
+                .intptr => |_| try self.ir.const_uint(@intCast(i)),
             };
         },
         '\'' => {

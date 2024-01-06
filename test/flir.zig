@@ -44,57 +44,8 @@ pub fn expect(comptime T: type, x: T, y: T) !void {
     return std.testing.expectEqual(x, y);
 }
 
-const UFunc = *const fn () callconv(.C) usize;
 const AFunc = *const fn (arg1: usize) callconv(.C) usize;
 const BFunc = *const fn (arg1: usize, arg2: usize) callconv(.C) usize;
-
-test "returner" {
-    var cfo = try parse_test(
-        \\func returner
-        \\  ret 7
-        \\end
-    );
-    defer cfo.deinit();
-
-    try expect(usize, 7, cfo.get_ptr(0, UFunc)());
-}
-
-test "return u64" {
-    var cfo = try parse_test(
-        \\func returner
-        \\  ret 5743024064959639452
-        \\end
-    );
-    defer cfo.deinit();
-
-    try expect(usize, 5743024064959639452, cfo.get_ptr(0, UFunc)());
-}
-
-test "comment" {
-    var cfo = try parse_test(
-        \\func returner
-        \\  ret 7 // this is a comment
-        \\end
-    );
-    defer cfo.deinit();
-
-    try expect(usize, 7, cfo.get_ptr(0, UFunc)());
-}
-
-test "var returner" {
-    var cfo = try parse_test(
-        \\func returner
-        \\  var %myvar
-        \\  %myvar := 57
-        \\
-        \\
-        \\  ret %myvar
-        \\end
-    );
-    defer cfo.deinit();
-
-    try expect(usize, 57, cfo.get_ptr(0, UFunc)());
-}
 
 test "diamond returner" {
     var cfo = try parse_test(
