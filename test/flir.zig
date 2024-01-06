@@ -46,7 +46,6 @@ pub fn expect(comptime T: type, x: T, y: T) !void {
 
 const UFunc = *const fn () callconv(.C) usize;
 const AFunc = *const fn (arg1: usize) callconv(.C) usize;
-const AIFunc = *const fn (arg1: isize) callconv(.C) isize;
 const BFunc = *const fn (arg1: usize, arg2: usize) callconv(.C) usize;
 
 test "returner" {
@@ -305,51 +304,6 @@ test "float2int" {
     const FFunc = *const fn (z: *const f64) callconv(.C) usize;
     const fun = cfo.get_ptr(0, FFunc);
     try expect(usize, 23, fun(&4.8));
-}
-
-test "shift hl" {
-    var cfo = try parse_test(
-        \\func shifter
-        \\  %x = arg
-        \\  %z = shl %x 2
-        \\  ret %z
-        \\end
-    );
-    defer cfo.deinit();
-
-    const fun = cfo.get_ptr(0, AIFunc);
-    try expect(isize, 24, fun(6));
-    try expect(isize, -12, fun(-3));
-}
-
-test "shift ar" {
-    var cfo = try parse_test(
-        \\func shifter
-        \\  %x = arg
-        \\  %z = sar %x 3
-        \\  ret %z
-        \\end
-    );
-    defer cfo.deinit();
-
-    const fun = cfo.get_ptr(0, AIFunc);
-    try expect(isize, 9, fun(75));
-    try expect(isize, -1, fun(-3));
-}
-
-test "shift hr" {
-    var cfo = try parse_test(
-        \\func shifter
-        \\  %x = arg
-        \\  %z = shr %x 3
-        \\  ret %z
-        \\end
-    );
-    defer cfo.deinit();
-
-    const fun = cfo.get_ptr(0, AIFunc);
-    try expect(isize, 9, fun(75));
-    try expect(isize, 0x1fffffffffffffff, fun(-3));
 }
 
 test "shift variable" {

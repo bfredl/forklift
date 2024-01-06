@@ -120,7 +120,7 @@ pub fn expr_2(self: *Self, type_ctx: SpecType) !?u16 {
                 }
             else if (mem.eql(u8, opstr, "<<"))
                 .shl
-            else if (mem.eql(u8, opstr, ">>|"))
+            else if (mem.eql(u8, opstr, ">>"))
                 .sar
             else if (mem.eql(u8, opstr, "|>>"))
                 .shr

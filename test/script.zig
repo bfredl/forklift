@@ -6,6 +6,7 @@ const std = @import("std");
 const os = std.os;
 
 const AFunc = *const fn (arg1: usize) callconv(.C) usize;
+const AIFunc = *const fn (arg1: isize) callconv(.C) isize;
 const BFunc = *const fn (arg1: usize, arg2: usize) callconv(.C) usize;
 const PFunc = *const fn (arg1: [*]const u8) callconv(.C) usize;
 const SFunc = *const fn (arg1: [*]const u8, arg2: usize) callconv(.C) usize;
@@ -123,6 +124,45 @@ test "complex control flow" {
     try expect(usize, 23, func(&data1, 1));
     const data2 = [_]u8{ 25, 28, 2, 30 };
     try expect(usize, 25, func(&data2, 4));
+}
+
+test "shift hl" {
+    var cfo = try parse_test(
+        \\func shifter(x) {
+        \\  return x << 2;
+        \\}
+    );
+    defer cfo.deinit();
+
+    const fun = cfo.get_ptr(0, AIFunc);
+    try expect(isize, 24, fun(6));
+    try expect(isize, -12, fun(-3));
+}
+
+test "shift ar" {
+    var cfo = try parse_test(
+        \\func shifter(x) {
+        \\  return x >> 3;
+        \\}
+    );
+    defer cfo.deinit();
+
+    const fun = cfo.get_ptr(0, AIFunc);
+    try expect(isize, 9, fun(75));
+    try expect(isize, -1, fun(-3));
+}
+
+test "shift hr" {
+    var cfo = try parse_test(
+        \\func shifter(x) {
+        \\  return x |>> 3;
+        \\}
+    );
+    defer cfo.deinit();
+
+    const fun = cfo.get_ptr(0, AIFunc);
+    try expect(isize, 9, fun(75));
+    try expect(isize, 0x1fffffffffffffff, fun(-3));
 }
 
 test "swap simple" {
