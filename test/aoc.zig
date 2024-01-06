@@ -40,26 +40,19 @@ test "parse digit" {
 
 test "parse int" {
     var cfo = try parse_test(
-        \\func parser
-        \\  var %num
-        \\  var %ipos
-        \\  %x = arg
-        \\  %len = arg
-        \\  %ipos := 0
-        \\  %num := 0
-        \\:loop
-        \\  %byte = load byte [%x %ipos]
-        \\  %token = sub %byte 48
-        \\  ja %token 9 :enda
-        \\:doit
-        \\  %base = 10
-        \\  %adjust = mul %num %base
-        \\  %num := add %adjust %token
-        \\  %ipos := add %ipos 1
-        \\  jmp :loop
-        \\:enda
-        \\  ret %num
-        \\end
+        \\func parser(x, len) {
+        \\  vars num, ipos;
+        \\  ipos := 0;
+        \\  num := 0;
+        \\  loop {
+        \\    let byte = @x[ipos];
+        \\    let token = byte - 48;
+        \\    if (token |> 9) break;
+        \\    num := token + (num*10);
+        \\    ipos := ipos + 1;
+        \\  }
+        \\  return num;
+        \\}
     );
     defer cfo.deinit();
 
