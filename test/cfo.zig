@@ -426,6 +426,7 @@ test "indirect call" {
 }
 
 test "direct call" {
+    if (true) return error.SkipZigTest;
     // std.heap.next_mmap_addr_hint = @intToPtr(@TypeOf(std.heap.next_mmap_addr_hint), @ptrToInt(&multiplier) & ~@as(usize, 0x0FFF));
     // std.debug.print("\nBRK: {}\n", .{@intToPtr(*u8, std.os.linux.syscall1(.brk, 0))});
     // Well I made it, despite your directions

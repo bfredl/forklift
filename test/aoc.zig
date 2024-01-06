@@ -342,7 +342,7 @@ test "aoc 2023 day 1 part one" {
     var cfo = try parse_test(
         \\func main {
         \\  args data len;
-        \\  vars x first current sum;
+        \\  vars x, first, current, sum;
         \\  x := 0;
         \\  sum := 0;
         \\  loop {
@@ -392,7 +392,8 @@ test "numberfinderer borked" {
     var cfo = try parse_test(
         \\func main {
         \\  args data len table tablelen;
-        \\  vars x tpos i imatch scan result;
+        \\  vars x, tpos, i, imatch;
+        \\  vars scan, result;
         \\  tpos := 0;
         \\  i := 0;
         \\  result := 200;
@@ -435,7 +436,8 @@ test "numberfinderer" {
     var cfo = try parse_test(
         \\func main {
         \\  args data len table tablelen;
-        \\  vars x tpos i imatch scan result;
+        \\  vars x, tpos, i, imatch;
+        \\  vars scan, result;
         \\  tpos := 0;
         \\  i := 0;
         \\  result := 200;
@@ -480,7 +482,8 @@ test "aoc 2023 1a" {
     var cfo = try parse_test(
         \\func main {
         \\  args data len table tablelen;
-        \\  vars x tpos i imatch scan first current;
+        \\  vars x, tpos, i, imatch, scan;
+        \\  vars first, current;
         \\  x := 0;
         \\  first := 200;
         \\  current := 0;
@@ -544,7 +547,8 @@ test "aoc 2023 4a: one row" {
     var cfo = try parse_test(
         \\func main {
         \\  args data len;
-        \\  vars x setlow sethigh char value count;
+        \\  vars x, setlow, sethigh;
+        \\  vars char, value, count;
         \\  x := 0;
         \\  setlow := 0;
         \\  loop {

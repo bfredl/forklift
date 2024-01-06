@@ -10,7 +10,7 @@ test "cfoscript basic" {
     var cfo = try parse_test(
         \\func scripter {
         \\  args foo;
-        \\  vars i sum;
+        \\  vars i, sum;
         \\  i := 0;
         \\  sum := 0;
         \\  loop {
@@ -33,7 +33,7 @@ test "break in else" {
     var cfo = try parse_test(
         \\func scripter {
         \\  args data;
-        \\  vars i sum;
+        \\  vars i, sum;
         \\  i := 0;
         \\  sum := 0;
         \\  loop {
@@ -60,7 +60,7 @@ test "break at end" {
     var cfo = try parse_test(
         \\func main {
         \\  args data len;
-        \\  vars i imatch result;
+        \\  vars i, imatch, result;
         \\  i := 0;
         \\  result := 0;
         \\  loop {
@@ -84,7 +84,7 @@ test "complex control flow" {
     var cfo = try parse_test(
         \\func main {
         \\  args data len;
-        \\  vars i imatch result;
+        \\  vars i, imatch, result;
         \\  i := 0;
         \\  result := 0;
         \\  loop {
@@ -116,7 +116,7 @@ test "store loop" {
     var cfo = try parse_test(
         \\func scripter {
         \\  args res len;
-        \\  vars i sum;
+        \\  vars i, sum;
         \\  i := 0;
         \\  sum := 0;
         \\  loop {
@@ -162,13 +162,11 @@ test "float square array" {
 }
 
 test "float variable" {
-    if (true) {
-        return error.SkipZigTest;
-    }
+    if (true) return error.SkipZigTest;
     var cfo = try parse_test(
         \\func scripter {
         \\  args lim;
-        \\  vars i sum;
+        \\  vars i, sum: 1d;
         \\  i := 0;
         \\  sum :1d= 0;
         \\  let flim 1d= $lim;

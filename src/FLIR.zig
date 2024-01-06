@@ -993,9 +993,9 @@ pub fn arg(self: *Self) !u16 {
     return inst;
 }
 
-pub fn variable(self: *Self) !u16 {
+pub fn variable(self: *Self, typ: SpecType) !u16 {
     if (self.n.items.len == 0) return error.FLIRError;
-    const inst = try self.addRawInst(.{ .tag = .variable, .op1 = self.nvar, .op2 = 0, .spec = intspec(.dword).into(), .next = self.var_list });
+    const inst = try self.addRawInst(.{ .tag = .variable, .op1 = self.nvar, .op2 = 0, .spec = typ.into(), .next = self.var_list });
     self.var_list = inst;
     self.nvar += 1;
     return inst;

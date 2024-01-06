@@ -453,16 +453,30 @@ fn do_parse(self: *Self) !bool {
             try self.t.lbrk();
         }
     }
-    if (self.t.peek_keyword()) |kw| {
+    while (self.t.peek_keyword()) |kw| {
         if (mem.eql(u8, kw, "vars")) {
             _ = self.t.keyword();
             while (self.t.keyword()) |name| {
                 const item = try nonexisting(&self.vars, name, "variable");
-                const val = try self.ir.variable();
+                var typ: ?SpecType = null;
+                if (self.t.nonws() == ':') {
+                    self.t.pos += 1;
+                    typ = try self.maybe_type();
+                }
+
+                const val = try self.ir.variable(typ orelse int_ctx);
                 item.* = .{ .ref = val, .is_mut = true };
+
+                if (self.t.nonws() == ',') {
+                    self.t.pos += 1;
+                } else {
+                    break;
+                }
             }
             try self.t.expect_char(';');
             try self.t.lbrk();
+        } else {
+            break;
         }
     }
     const did_ret = self.block();

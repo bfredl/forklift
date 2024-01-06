@@ -208,7 +208,7 @@ pub fn stmt(self: *Self, f: *Func) ParseError!bool {
         } else if (mem.eql(u8, kw, "var")) {
             const name = try self.varname() orelse return error.ParseError;
             const item = try nonexisting(&f.refs, name, "ref %");
-            item.* = try ir.variable();
+            item.* = try ir.variable(.{ .intptr = .quadword });
             return true;
         } else if (mem.eql(u8, kw, "jmp")) {
             const target = try require(try self.labelname(), "target");

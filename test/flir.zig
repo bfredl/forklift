@@ -181,7 +181,7 @@ test "diamond cfg" {
     const start = try self.addNode();
     const arg1 = try self.arg();
     const arg2 = try self.arg();
-    const v = try self.variable();
+    const v = try self.variable(.{ .intptr = .quadword });
 
     // const const_0 = try self.const_int(0);
     const const_42 = try self.const_int(42);
