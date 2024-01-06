@@ -35,7 +35,7 @@ ir: *FLIR,
 // tmp: [10]?u16 = .{null} ** 10,
 tmp: [10]?u16 = ([1]?u16{null}) ** 10,
 curnode: u16,
-curloop_exit: u16 = 0,
+cur_loop: ?*const Loop = null,
 
 t: Tokenizer,
 
@@ -44,6 +44,13 @@ const IdInfo = struct {
     ref: u16,
     is_mut: bool, // assignable
     // is_avx: bool, // true if avxval
+};
+
+const Loop = struct {
+    entry: u16,
+    exit: u16,
+    // name: ?[]const u8,
+    next: ?*const Loop,
 };
 
 pub fn expr_0(self: *Self, type_ctx: SpecType) !?u16 {
@@ -319,24 +326,37 @@ pub fn loop(self: *Self) !void {
     const entry = try self.ir.addNodeAfter(self.curnode);
     const exit = try self.ir.addNode();
 
-    const save_curloop = self.curloop_exit;
     self.curnode = entry;
-    self.curloop_exit = exit;
+    const this_loop: Loop = .{
+        .entry = entry,
+        .exit = exit,
+        .next = self.cur_loop,
+    };
+    self.cur_loop = &this_loop;
+    defer self.cur_loop = this_loop.next;
 
     _ = try self.braced_block();
     try self.t.lbrk();
 
     try self.ir.addLink(self.curnode, 0, entry);
     self.curnode = exit;
-
-    self.curloop_exit = save_curloop;
 }
 
 pub fn break_stmt(self: *Self, branch: u1) !void {
-    if (self.curloop_exit == 0) return error.SyntaxError;
+    var step = self.t.num() orelse 1;
     try self.t.expect_char(';');
     try self.t.lbrk();
-    try self.ir.addLink(self.curnode, branch, self.curloop_exit);
+    if (step <= 0) return error.SyntaxError;
+    var loopen = self.cur_loop;
+    while (loopen) |l| {
+        step -= 1;
+        if (step == 0) {
+            try self.ir.addLink(self.curnode, branch, l.exit);
+            return;
+        }
+        loopen = l.next;
+    }
+    return error.SyntaxError;
 }
 
 pub fn if_stmt(self: *Self) !void {
