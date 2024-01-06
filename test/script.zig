@@ -60,6 +60,47 @@ test "var returner" {
     try expect(usize, 57, cfo.get_ptr(0, UFunc)());
 }
 
+test "diamond returner" {
+    var cfo = try parse_test(
+        \\func returner(y) {
+        \\  vars foo;
+        \\  if (y < 17) {
+        \\    foo := 20;
+        \\  } else {
+        \\    foo := 98;
+        \\  }
+        \\  return foo;
+        \\}
+    );
+    defer cfo.deinit();
+
+    const fun = cfo.get_ptr(0, AFunc);
+    try expect(usize, 20, fun(10));
+    try expect(usize, 20, fun(16));
+    try expect(usize, 98, fun(17));
+    try expect(usize, 98, fun(35));
+}
+
+test "equality" {
+    var cfo = try parse_test(
+        \\func returner(x, y) {
+        \\  vars res;
+        \\  if (x != y) {
+        \\    res := 0;
+        \\  } else {
+        \\    res := 1;
+        \\  }
+        \\  return res;
+        \\}
+    );
+    defer cfo.deinit();
+
+    const fun = cfo.get_ptr(0, BFunc);
+    try expect(usize, 0, fun(2, 4));
+    try expect(usize, 1, fun(3, 3));
+    try expect(usize, 0, fun(4, 2));
+    try expect(usize, 1, fun(3, 3));
+}
 test "bander" {
     var cfo = try parse_test(
         \\func returner(x, y) {

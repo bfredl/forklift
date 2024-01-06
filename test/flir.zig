@@ -47,28 +47,6 @@ pub fn expect(comptime T: type, x: T, y: T) !void {
 const AFunc = *const fn (arg1: usize) callconv(.C) usize;
 const BFunc = *const fn (arg1: usize, arg2: usize) callconv(.C) usize;
 
-test "diamond returner" {
-    var cfo = try parse_test(
-        \\func returner
-        \\  %y = arg
-        \\  var %foo
-        \\  jl %y 17 :small
-        \\:big
-        \\  %foo := 98
-        \\  jmp :enda
-        \\:small
-        \\  %foo := 20
-        \\:enda
-        \\  ret %foo
-        \\end
-    );
-    defer cfo.deinit();
-
-    const fun = cfo.get_ptr(0, AFunc);
-    try expect(usize, 20, fun(10));
-    try expect(usize, 98, fun(35));
-}
-
 test "loop adder" {
     var cfo = try parse_test(
         \\func returner
@@ -96,31 +74,6 @@ test "loop adder" {
     try expect(usize, 45, fun(10));
     try expect(usize, 1, fun(2));
     try expect(usize, 3, fun(3));
-}
-
-test "equality" {
-    var cfo = try parse_test(
-        \\func returner
-        \\  %x = arg
-        \\  %y = arg
-        \\  var %res
-        \\  jne %x %y :noteq
-        \\:eq
-        \\  %res := 1
-        \\  jmp :enda
-        \\:noteq
-        \\  %res := 0
-        \\:enda
-        \\  ret %res
-        \\end
-    );
-    defer cfo.deinit();
-
-    const fun = cfo.get_ptr(0, BFunc);
-    try expect(usize, 0, fun(2, 4));
-    try expect(usize, 1, fun(3, 3));
-    try expect(usize, 0, fun(4, 2));
-    try expect(usize, 1, fun(3, 3));
 }
 
 test "diamond cfg" {
