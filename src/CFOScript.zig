@@ -51,7 +51,10 @@ pub fn expr_0(self: *Self, type_ctx: SpecType) !?u16 {
     switch (char) {
         'a'...'z', 'A'...'Z' => {
             const name = try self.t.identifier();
-            const obj = self.vars.get(name) orelse return error.UndefinedName;
+            const obj = self.vars.get(name) orelse {
+                print("unknown var: {s}\n", .{name});
+                return error.UndefinedName;
+            };
             return obj.ref;
         },
         '0'...'9' => {
@@ -439,7 +442,10 @@ pub fn stmt(self: *Self) !?bool {
         return false;
     } else {
         // try var or array assignment
-        const v = self.vars.get(kw) orelse return error.UndefinedName;
+        const v = self.vars.get(kw) orelse {
+            print("unknown name or keyword: {s}\n", .{kw});
+            return error.UndefinedName;
+        };
 
         // TODO: rather @arrtype data[...] exprtypeA= val ??
         if (self.t.nonws() == '[') {

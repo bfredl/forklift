@@ -239,24 +239,19 @@ test "scorer" {
 // aoc 2022 3
 test "scorer 3" {
     var cfo = try parse_test(
-        \\func finder
-        \\  var %rowlen
-        \\  var %ipos
-        \\  %x = arg
-        \\  %len = arg
-        \\  %ipos := 0
-        \\  %rowlen := 0
-        \\:loopen
-        \\  %char = load byte [%x %ipos]
-        \\  je %char 10 :foundlen
-        \\:
-        \\  %ipos := add %ipos 1
-        \\  %rowlen := add %rowlen 1
-        \\  jmp :loopen
-        \\:foundlen
-        \\  %halflen = shr %rowlen 1
-        \\  ret %halflen
-        \\end
+        \\func finder(x, len) {
+        \\  vars rowlen, ipos;
+        \\  ipos := 0;
+        \\  rowlen := 0;
+        \\  loop {
+        \\    let char = @ x[ipos];
+        \\    if (char == 10) break;
+        \\    ipos := ipos + 1;
+        \\    rowlen := rowlen + 1;
+        \\  }
+        \\  let halflen = rowlen >> 1;
+        \\  return halflen;
+        \\}
     );
     defer cfo.deinit();
     const func = cfo.get_ptr(0, SFunc);
