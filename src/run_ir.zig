@@ -4,7 +4,7 @@ const CodeBuffer = @import("./CodeBuffer.zig");
 const X86Asm = @import("./X86Asm.zig");
 const print = std.debug.print;
 
-const Parser = @import("./Parser.zig");
+const parse_mod = @import("./CFOScript.zig").parse_mod;
 const common = @import("./common.zig");
 const std = @import("std");
 const mem = std.mem;
@@ -82,7 +82,7 @@ pub fn main() !void {
     var module = try @import("./CFOModule.zig").init(allocator);
 
     // try parser.fd_objs.put("count", map_count);
-    try Parser.parse(&module, allocator, buf, false, false);
+    try parse_mod(&module, allocator, buf, false, false);
 
     if (arg1) |b| {
         try module.code.finalize();

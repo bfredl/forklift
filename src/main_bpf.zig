@@ -1,5 +1,5 @@
 const CFOModule = @import("./CFOModule.zig");
-const Parser = @import("./Parser.zig");
+const parse_mod = @import("./CFOScript.zig").parse_mod;
 const std = @import("std");
 const common = @import("./common.zig");
 
@@ -13,5 +13,5 @@ pub fn main() !void {
     var mod = try CFOModule.init(gpa);
     defer mod.deinit_mem();
 
-    try Parser.parse(&mod, gpa, ir, true, false);
+    try parse_mod(&mod, gpa, ir, true, false);
 }

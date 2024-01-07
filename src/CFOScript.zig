@@ -13,8 +13,10 @@ const Tokenizer = @import("./Tokenizer.zig");
 const FMode = @import("./X86Asm.zig").FMode;
 const BPF = std.os.linux.BPF;
 const meta = std.meta;
-
-const nonexisting = @import("./Parser.zig").nonexisting;
+const options = common.debug_options;
+const common = @import("./common.zig");
+const codegen = @import("./codegen.zig");
+const codegen_bpf = @import("./codegen_bpf.zig").codegen;
 
 const Self = @This();
 const ParseError = error{ ParseError, SyntaxError, OutOfMemory, FLIRError, UndefinedName, TooManyArgs, TypeError, NotYetImplemented };
@@ -52,6 +54,23 @@ const Loop = struct {
     // name: ?[]const u8,
     next: ?*const Loop,
 };
+
+fn require(val: anytype, what: []const u8) ParseError!@TypeOf(val.?) {
+    return val orelse {
+        print("missing {s}\n", .{what});
+        return error.ParseError;
+    };
+}
+
+pub fn nonexisting(map: anytype, key: []const u8, what: []const u8) ParseError!@TypeOf(map.getPtr(key).?) {
+    const item = try map.getOrPut(key);
+    if (item.found_existing) {
+        print("duplicate {s}{s}!\n", .{ what, key });
+        return error.ParseError;
+    }
+    // NON-EXIST-ENT!
+    return item.value_ptr;
+}
 
 pub fn expr_0(self: *Self, type_ctx: SpecType) !?u16 {
     const char = self.t.nonws() orelse return null;
@@ -576,7 +595,7 @@ fn do_parse(self: *Self) !bool {
     return did_ret;
 }
 
-pub fn parse(mod: *CFOModule, ir: *FLIR, t: *Tokenizer, allocator: Allocator) !void {
+pub fn parse_func(mod: *CFOModule, ir: *FLIR, t: *Tokenizer, allocator: Allocator) !void {
     const curnode = try ir.addNode();
     var self: Self = .{ .mod = mod, .ir = ir, .t = t.*, .curnode = curnode, .vars = std.StringArrayHashMap(IdInfo).init(allocator) };
     defer self.vars.deinit();
@@ -596,5 +615,67 @@ pub fn parse(mod: *CFOModule, ir: *FLIR, t: *Tokenizer, allocator: Allocator) !v
                 ir.var_names.items[vidx] = it.key_ptr.*;
             }
         }
+    }
+}
+
+pub fn parse_mod(mod: *CFOModule, allocator: Allocator, str: []const u8, dbg: bool, one: bool) !void {
+
+    // small init size on purpose: must allow reallocations in place
+    var ir = try FLIR.init(4, allocator);
+    defer ir.deinit();
+
+    var t = Tokenizer{ .str = str };
+    errdefer t.fail_pos();
+
+    while (t.nonws()) |_| {
+        const kw = t.keyword() orelse return;
+        if (mem.eql(u8, kw, "func")) {
+            const name = try require(t.keyword(), "name");
+
+            const obj_slot = try nonexisting(&mod.objs, name, "object");
+
+            try parse_func(mod, &ir, &t, allocator);
+            if (one) return;
+
+            if (options.dbg_raw_ir or dbg) ir.debug_print();
+            try ir.test_analysis(FLIR.X86ABI, true);
+            if (options.dbg_analysed_ir) ir.debug_print();
+            if (options.dbg_vregs) ir.print_intervals();
+
+            const target = try codegen.codegen(&ir, &mod.code, false);
+            obj_slot.* = .{ .func = .{ .code_start = target } };
+            ir.reinit();
+        } else if (mem.eql(u8, kw, "bpf_func")) {
+            const name = try require(t.keyword(), "name");
+            const obj_slot = try nonexisting(&mod.objs, name, "object");
+            try parse_func(mod, &ir, &t, allocator);
+
+            try ir.test_analysis(FLIR.BPF_ABI, true);
+            if (dbg) ir.debug_print();
+            const offset = try codegen_bpf(&ir, mod);
+            const len = mod.bpf_code.items.len - offset;
+
+            obj_slot.* = .{ .bpf_prog = .{ .fd = -1, .code_start = @intCast(offset), .code_len = @intCast(len) } };
+            ir.reinit();
+        } else if (mem.eql(u8, kw, "bpf_map")) {
+            const name = try require(t.keyword(), "name");
+            const obj_slot = try nonexisting(&mod.objs, name, "object");
+            const kind = try require(try t.prefixed('.'), "kind");
+            const key_size = try require(t.num(), "key_size");
+            const val_size = try require(t.num(), "val_size");
+            const n_entries = try require(t.num(), "n_entries");
+            // print("map '{s}' of kind {s}, key={}, val={}\n", .{ name, kind, key_size, val_size });
+            const map_kind = meta.stringToEnum(BPF.MapType, kind) orelse {
+                print("unknown map kind: '{s}'\n", .{kind});
+                return error.ParseError;
+            };
+            obj_slot.* = .{ .bpf_map = .{ .fd = -1, .kind = map_kind, .key_size = @intCast(key_size), .val_size = @intCast(val_size), .n_entries = @intCast(n_entries) } };
+            try t.lbrk();
+        } else {
+            return error.ParseError;
+        }
+    }
+    if (one) {
+        return error.ParseError;
     }
 }

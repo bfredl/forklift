@@ -1,7 +1,7 @@
 const forklift = @import("forklift");
 const FLIR = forklift.FLIR;
 const print = std.debug.print;
-const Parser = forklift.Parser;
+const parse_mod = forklift.parse_mod;
 const codegen_bpf = forklift.codegen_bpf;
 const BPF = std.os.linux.BPF;
 const bpf = forklift.bpf;
@@ -26,7 +26,7 @@ test "show code" {
         \\   return 5;
         \\ }
     ;
-    try Parser.parse(&mod, test_allocator, code, false, false);
+    try parse_mod(&mod, test_allocator, code, false, false);
 
     var data = std.ArrayList(u8).init(std.testing.allocator);
     defer data.deinit();
@@ -48,7 +48,7 @@ fn parse_load(ir_text: []const u8) !CFOModule {
 pub fn parse_multi(dbg: bool, ir: []const u8) !CFOModule {
     var mod = try CFOModule.init(test_allocator);
     errdefer mod.deinit_mem();
-    try Parser.parse(&mod, test_allocator, ir, dbg, false);
+    try parse_mod(&mod, test_allocator, ir, dbg, false);
     try mod.load();
     return mod;
 }

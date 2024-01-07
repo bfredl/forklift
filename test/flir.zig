@@ -2,7 +2,7 @@ const forklift = @import("forklift");
 const FLIR = forklift.FLIR;
 const CodeBuffer = forklift.CodeBuffer;
 const CFOModule = forklift.CFOModule;
-const Parser = forklift.Parser;
+const parse_mod = forklift.parse_mod;
 const print = std.debug.print;
 
 const std = @import("std");
@@ -31,7 +31,7 @@ pub fn parse_multi_dbg(ir: []const u8) !CFOModule {
 pub fn parse_multi_impl(ir: []const u8, dbg: bool) !CFOModule {
     var mod = try CFOModule.init(test_allocator);
     errdefer mod.deinit_mem();
-    try Parser.parse(&mod, test_allocator, ir, dbg, false);
+    try parse_mod(&mod, test_allocator, ir, dbg, false);
     try mod.code.finalize();
     return mod;
 }
@@ -89,7 +89,7 @@ test "maybe_split" {
 
     var mod = try CFOModule.init(test_allocator);
     defer mod.deinit_mem();
-    try Parser.parse(
+    try parse_mod(
         \\func returner(arg) {
         \\  return arg+1;
         \\}
