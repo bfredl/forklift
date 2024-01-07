@@ -11,12 +11,7 @@ pub fn main() !void {
     const gpa = allocator.allocator();
 
     var mod = try CFOModule.init(gpa);
-    var parser = try Parser.init(ir, gpa, &mod);
-    defer parser.deinit();
     defer mod.deinit_mem();
 
-    parser.parse(true, false) catch |e| {
-        parser.t.fail_pos();
-        return e;
-    };
+    try Parser.parse(&mod, gpa, ir, true, false);
 }

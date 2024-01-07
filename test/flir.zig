@@ -30,13 +30,8 @@ pub fn parse_multi_dbg(ir: []const u8) !CFOModule {
 
 pub fn parse_multi_impl(ir: []const u8, dbg: bool) !CFOModule {
     var mod = try CFOModule.init(test_allocator);
-    var parser = try Parser.init(ir, test_allocator, &mod);
-    defer parser.deinit();
     errdefer mod.deinit_mem();
-    parser.parse(dbg, false) catch |e| {
-        parser.t.fail_pos();
-        return e;
-    };
+    try Parser.parse(&mod, test_allocator, ir, dbg, false);
     try mod.code.finalize();
     return mod;
 }
@@ -94,19 +89,14 @@ test "maybe_split" {
 
     var mod = try CFOModule.init(test_allocator);
     defer mod.deinit_mem();
-    var parser = try Parser.init(
+    try Parser.parse(
         \\func returner(arg) {
         \\  return arg+1;
         \\}
-    , test_allocator, &mod);
-    defer parser.deinit();
-    _ = parser.parse(false, true) catch |e| {
-        parser.t.fail_pos();
-        return e;
-    };
+    , test_allocator, &mod, false, true);
 
     // TODO: should be mod.ir I guess??
-    const self = &parser.ir;
+    const self: *FLIR = undefined; // &parser.ir;
 
     const pos = 1; // TODO: get("%c")
     const new_pos = try self.maybe_split(pos);

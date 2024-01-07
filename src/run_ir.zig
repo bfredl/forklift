@@ -80,14 +80,9 @@ pub fn main() !void {
     defer if (inbuf2) |b| allocator.free(b);
 
     var module = try @import("./CFOModule.zig").init(allocator);
-    var parser = try Parser.init(buf, allocator, &module);
 
     // try parser.fd_objs.put("count", map_count);
-    parser.parse(false, false) catch |e| {
-        parser.t.fail_pos();
-        print("(byte {} of {})\n", .{ parser.t.pos, buf.len });
-        return e;
-    };
+    try Parser.parse(&module, allocator, buf, false, false);
 
     if (arg1) |b| {
         try module.code.finalize();

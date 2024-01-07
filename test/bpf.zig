@@ -21,16 +21,12 @@ const test_allocator = std.testing.allocator;
 test "show code" {
     var mod = try CFOModule.init(test_allocator);
     defer mod.deinit_mem();
-    var parser = try Parser.init(
+    const code =
         \\ bpf_func returner() {
         \\   return 5;
         \\ }
-    , test_allocator, &mod);
-    defer parser.deinit();
-    _ = parser.parse(false, false) catch |e| {
-        parser.t.fail_pos();
-        return e;
-    };
+    ;
+    try Parser.parse(&mod, test_allocator, code, false, false);
 
     var data = std.ArrayList(u8).init(std.testing.allocator);
     defer data.deinit();
@@ -51,13 +47,8 @@ fn parse_load(ir_text: []const u8) !CFOModule {
 
 pub fn parse_multi(dbg: bool, ir: []const u8) !CFOModule {
     var mod = try CFOModule.init(test_allocator);
-    var parser = try Parser.init(ir, test_allocator, &mod);
-    defer parser.deinit();
     errdefer mod.deinit_mem();
-    parser.parse(dbg, false) catch |e| {
-        parser.t.fail_pos();
-        return e;
-    };
+    try Parser.parse(&mod, test_allocator, ir, dbg, false);
     try mod.load();
     return mod;
 }

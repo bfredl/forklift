@@ -571,6 +571,8 @@ fn do_parse(self: *Self) !bool {
         }
     }
     const did_ret = self.block();
+    try self.t.expect_char('}');
+    try self.t.lbrk();
     return did_ret;
 }
 
@@ -580,10 +582,7 @@ pub fn parse(mod: *CFOModule, ir: *FLIR, t: *Tokenizer, allocator: Allocator) !v
     defer self.vars.deinit();
     defer t.* = self.t;
     // TODO: use did_ret for something?
-    _ = self.do_parse() catch |e| {
-        self.t.fail_pos();
-        return e;
-    };
+    _ = try self.do_parse();
 
     // TODO: pattern for "is debug mode". Although all of CFOScript is "debug mode" in some sense
     if (!FLIR.minimal) {
