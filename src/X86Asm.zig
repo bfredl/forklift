@@ -723,10 +723,30 @@ pub fn mulr(self: *Self, src: IPReg) !void {
 
 // shift with immediate count. use shorthand version when count==1
 pub fn sh_ri(self: *Self, dst: IPReg, op: ShiftOp, count: u8) !void {
+    try self.new_inst(@returnAddress());
     try self.rex_wrxb(true, false, false, dst.ext());
     try self.wb(if (count == 1) 0xD1 else 0xC1); // Sxx \rm, 1
     try self.modRm(0b11, op.to_rm(), dst.lowId());
     try if (count != 1) self.wb(count);
+}
+
+// string instructions
+
+pub fn stos(self: *Self, rep: bool, size: ISize) !void {
+    try self.new_inst(@returnAddress());
+    if (rep) self.wb(0xf3);
+    switch (size) {
+        .byte => self.wb(0xaa),
+        .word => {
+            self.wb(0x66);
+            self.wb(0xab);
+        },
+        .dword => self.wb(0xab),
+        .quadword => {
+            self.wb(0x48);
+            self.wb(0xab);
+        },
+    }
 }
 
 // VEX instructions
