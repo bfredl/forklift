@@ -445,6 +445,14 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                             const val = self.constval(i.op1) orelse return error.FLIRError;
                             try cfo.call_rel(@intCast(val));
                         },
+                        .memory_intrinsic => {
+                            const idx = self.constval(i.op1) orelse return error.FLIRError;
+                            const size: common.ISize = @enumFromInt(i.op2);
+                            const intrinsic: FLIR.MemoryIntrinsic = @enumFromInt(idx);
+                            if (intrinsic == .memset) {
+                                try cfo.stos(true, size);
+                            }
+                        },
                         else => return error.FLIRError,
                     }
                 },

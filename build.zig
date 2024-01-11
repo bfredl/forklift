@@ -17,13 +17,15 @@ pub fn build(b: *std.Build) void {
         .root_source_file = .{ .path = "src/forklift.zig" },
     });
 
-    const exe_bpf = b.addExecutable(.{
-        .name = "run_bpf",
-        .root_source_file = .{ .path = "src/main_bpf.zig" },
-        .optimize = opt,
-        .target = t,
-    });
-    b.installArtifact(exe_bpf);
+    if (false) {
+        const exe_bpf = b.addExecutable(.{
+            .name = "run_bpf",
+            .root_source_file = .{ .path = "src/main_bpf.zig" },
+            .optimize = opt,
+            .target = t,
+        });
+        b.installArtifact(exe_bpf);
+    }
 
     const bpf_helper = b.addExecutable(.{
         .name = "bpf_helper",
@@ -31,7 +33,7 @@ pub fn build(b: *std.Build) void {
         .optimize = opt,
         .target = t,
     });
-    b.installArtifact(bpf_helper); // debug the test
+    // b.installArtifact(bpf_helper); // debug the test
 
     const test_user = b.addTest(.{
         .root_source_file = .{ .path = "test/all_user.zig" },
@@ -47,7 +49,7 @@ pub fn build(b: *std.Build) void {
     });
     test_bpf.root_module.addImport("forklift", forklift);
 
-    b.installArtifact(test_bpf);
+    // b.installArtifact(test_bpf);
     const run_test_bpf_sudo = b.addRunArtifact(test_bpf);
 
     const run_test_bpf = b.addRunArtifact(bpf_helper);

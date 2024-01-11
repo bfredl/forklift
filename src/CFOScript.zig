@@ -246,23 +246,26 @@ fn requireEnumKey(comptime T: type, key: []const u8, klagel: []const u8) !T {
 }
 
 pub fn call_expr(self: *Self, type_ctx: SpecType, kind: []const u8) !u16 {
-    const calltype: FLIR.CallKind, const callwhat = target: {
+    const calltype: FLIR.CallKind, const callwhat, const extra: u16 = target: {
         if (type_ctx != .intptr) return error.TypeError;
 
         if (mem.eql(u8, kind, "near")) {
             const name = self.t.keyword() orelse return error.ParseError;
             const off = self.mod.get_func_off(name) orelse return error.UndefinedName;
-            break :target .{ .near, try self.ir.const_uint(off) };
+            break :target .{ .near, try self.ir.const_uint(off), 0 };
         } else if (mem.eql(u8, kind, "sys")) {
             const name = self.t.keyword() orelse return error.ParseError;
             // TODO: non-native for
             const syscall = try requireEnumKey(std.os.linux.SYS, name, "unknown syscall");
             const sysnum = try self.ir.const_int(@intCast(@intFromEnum(syscall)));
-            break :target .{ .syscall, sysnum };
+            break :target .{ .syscall, sysnum, 0 };
         } else if (mem.eql(u8, kind, "bpf")) {
             const name = self.t.keyword() orelse return error.ParseError;
             const helper = try requireEnumKey(BPF.Helper, name, "unknown BPF helper");
-            break :target .{ .bpf_helper, try self.ir.const_int(@intCast(@intFromEnum(helper))) };
+            break :target .{ .bpf_helper, try self.ir.const_int(@intCast(@intFromEnum(helper))), 0 };
+        } else if (mem.eql(u8, kind, "memset")) {
+            const idx = @intFromEnum(FLIR.MemoryIntrinsic.memset);
+            break :target .{ .memory_intrinsic, try self.ir.const_int(@intCast(idx)), 0 };
         }
     };
 
@@ -286,7 +289,7 @@ pub fn call_expr(self: *Self, type_ctx: SpecType, kind: []const u8) !u16 {
     for (0.., args[0..n_arg]) |i, arg| {
         try self.ir.callarg(self.curnode, @intCast(i), arg);
     }
-    return self.ir.call(self.curnode, calltype, callwhat);
+    return self.ir.call(self.curnode, calltype, callwhat, extra);
 }
 
 pub fn cond_op(op: []const u8) ?FLIR.IntCond {
