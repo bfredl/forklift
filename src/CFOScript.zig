@@ -512,7 +512,6 @@ pub fn stmt(self: *Self) !?bool {
             _ = try self.ir.store(self.curnode, memtype, v.ref, idx, scale, val);
         } else {
             // not sure how typed assigment would look, like "foo :2d= ree"
-            try self.t.expect_char(':');
             if (!v.is_mut) {
                 return error.SyntaxError;
             }

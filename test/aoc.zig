@@ -19,11 +19,11 @@ test "parse digit" {
     var cfo = try parse_test(
         \\func parser(x) {
         \\  vars num;
-        \\  num := 127;
+        \\  num = 127;
         \\  let byte = @x[0];
         \\  let token = byte - 48;
         \\  if (token <| 9) {
-        \\    num := token;
+        \\    num = token;
         \\  }
         \\  return num;
         \\}
@@ -40,14 +40,14 @@ test "parse int" {
     var cfo = try parse_test(
         \\func parser(x, len) {
         \\  vars num, ipos;
-        \\  ipos := 0;
-        \\  num := 0;
+        \\  ipos = 0;
+        \\  num = 0;
         \\  loop {
         \\    let byte = @x[ipos];
         \\    let token = byte - 48;
         \\    if (token |> 9) break;
-        \\    num := token + (num*10);
-        \\    ipos := ipos + 1;
+        \\    num = token + (num*10);
+        \\    ipos = ipos + 1;
         \\  }
         \\  return num;
         \\}
@@ -65,20 +65,20 @@ test "summer 1" {
     var cfo = try parse_test(
         \\func returner(x, len) {
         \\  vars sum, item, ipos;
-        \\  ipos := 0;
-        \\  sum := 0;
+        \\  ipos = 0;
+        \\  sum = 0;
         \\  loop {
         \\    if (ipos > len) break;
-        \\    item := 0;
+        \\    item = 0;
         \\    loop {
         \\      let byte = @x[ipos];
         \\      let token = byte - 48;
         \\      if (token |> 9) break;
-        \\      item := token + (item*10);
-        \\      ipos := ipos + 1;
+        \\      item = token + (item*10);
+        \\      ipos = ipos + 1;
         \\    }
-        \\    sum := sum + item;
-        \\    ipos := ipos + 1;
+        \\    sum = sum + item;
+        \\    ipos = ipos + 1;
         \\  }
         \\  return sum;
         \\}
@@ -96,21 +96,21 @@ test "summer 2" {
     var cfo = try parse_test(
         \\func returner(x, len) {
         \\  vars sum, item, ipos;
-        \\  ipos := 0;
-        \\  sum := 0;
+        \\  ipos = 0;
+        \\  sum = 0;
         \\  loop {
-        \\    item := 0;
+        \\    item = 0;
         \\    if (ipos >= len) break;
         \\    let pretoken = @ x[ipos] - 48;
         \\    if (pretoken |> 9) break;
         \\    loop {
         \\      let token = @ x[ipos] - 48;
         \\      if (token |> 9) break;
-        \\      item := (item*10) + token;
-        \\      ipos := ipos + 1;
+        \\      item = (item*10) + token;
+        \\      ipos = ipos + 1;
         \\    }
-        \\    sum := sum + item;
-        \\    ipos := ipos + 1;
+        \\    sum = sum + item;
+        \\    ipos = ipos + 1;
         \\  }
         \\  return sum;
         \\}
@@ -131,29 +131,29 @@ test "summer/maxxer 3" {
     var cfo = try parse_test(
         \\func returner(x, len) {
         \\  vars sum, item, ipos, max;
-        \\  ipos := 0;
-        \\  max := 0;
+        \\  ipos = 0;
+        \\  max = 0;
         \\  loop {
-        \\    sum := 0;
+        \\    sum = 0;
         \\    if (ipos >= len) break;
         \\    loop {
-        \\      item := 0;
+        \\      item = 0;
         \\      if (ipos >= len) break;
         \\      let pretoken = @ x[ipos] - 48;
         \\      if (pretoken |> 9) break;
         \\      loop {
         \\        let token = @ x[ipos] - 48;
         \\        if (token |> 9) break;
-        \\        item := (item*10) + token;
-        \\        ipos := ipos + 1;
+        \\        item = (item*10) + token;
+        \\        ipos = ipos + 1;
         \\        if (ipos >= len) break;
         \\      }
-        \\      sum := sum + item;
-        \\      ipos := ipos + 1;
+        \\      sum = sum + item;
+        \\      ipos = ipos + 1;
         \\    }
-        \\    ipos := ipos + 1;
+        \\    ipos = ipos + 1;
         \\    if (sum > max) {
-        \\      max := sum+0;
+        \\      max = sum+0;
         \\    }
         \\  }
         \\  return max;
@@ -186,18 +186,18 @@ test "scorer" {
         \\  table[6] = 7;
         \\  table[7] = 2;
         \\  table[8] = 6;
-        \\  ipos := 0;
-        \\  summa := 0;
+        \\  ipos = 0;
+        \\  summa = 0;
         \\  loop {
         \\    if (ipos >= len) break;
         \\    let abyte = @data[ipos];
         \\    let apos = abyte - 65;
-        \\    ipos := ipos + 2;
+        \\    ipos = ipos + 2;
         \\    let xbyte = @data[ipos];
         \\    let xpos = xbyte - 88;
-        \\    ipos := ipos + 2;
+        \\    ipos = ipos + 2;
         \\    let index = (apos * 3) + xpos;
-        \\    summa := summa + @table[index];
+        \\    summa = summa + @table[index];
         \\  }
         \\  return summa;
         \\}
@@ -214,13 +214,13 @@ test "scorer 3" {
     var cfo = try parse_test(
         \\func finder(x, len) {
         \\  vars rowlen, ipos;
-        \\  ipos := 0;
-        \\  rowlen := 0;
+        \\  ipos = 0;
+        \\  rowlen = 0;
         \\  loop {
         \\    let char = @ x[ipos];
         \\    if (char == 10) break;
-        \\    ipos := ipos + 1;
-        \\    rowlen := rowlen + 1;
+        \\    ipos = ipos + 1;
+        \\    rowlen = rowlen + 1;
         \\  }
         \\  let halflen = rowlen >> 1;
         \\  return halflen;
@@ -235,32 +235,32 @@ test "score pairs" {
     var cfo = try parse_test(
         \\func finder(data, len) {
         \\  vars rowlen, ipos, xpos, ypos, retval;
-        \\  ipos := 0;
-        \\  rowlen := 0;
+        \\  ipos = 0;
+        \\  rowlen = 0;
         \\  loop {
         \\    let char = @ data[rowlen];
         \\    if (char == 10) break;
-        \\    rowlen := rowlen + 1;
+        \\    rowlen = rowlen + 1;
         \\  }
         \\  let halflen = rowlen >> 1;
-        \\  xpos := 0;
+        \\  xpos = 0;
         \\  loop {
         \\    if (xpos >= halflen) {
-        \\      retval := 5000;
+        \\      retval = 5000;
         \\      break;
         \\    }
         \\    let xchar = @ data[xpos];
-        \\    ypos := halflen;
+        \\    ypos = halflen;
         \\    loop {
         \\     let ychar = @ data[ypos];
         \\     if (ychar == xchar) {
-        \\       retval := xchar;
+        \\       retval = xchar;
         \\       break 2;
         \\     }
-        \\     ypos := ypos + 1;
+        \\     ypos = ypos + 1;
         \\     if (ypos >= rowlen) break;
         \\    }
-        \\    xpos := xpos + 1;
+        \\    xpos = xpos + 1;
         \\  }
         \\  return retval;
         \\}
@@ -275,27 +275,27 @@ test "aoc 2023 day 1 part one" {
     var cfo = try parse_test(
         \\func main(data, len) {
         \\  vars x, first, current, sum;
-        \\  x := 0;
-        \\  sum := 0;
+        \\  x = 0;
+        \\  sum = 0;
         \\  loop {
         \\    if (x >= len) break;
-        \\    first := 10;
-        \\    current := 0; // dummy init
+        \\    first = 10;
+        \\    current = 0; // dummy init
         \\    loop {
         \\      if (x >= len) break;
         \\      let byteval = @data[x];
         \\      let trydigit = byteval - '0';
         \\      if (trydigit <|= 9) {
-        \\        current := trydigit;
+        \\        current = trydigit;
         \\        if (first >= 10) {
-        \\          first := trydigit;
+        \\          first = trydigit;
         \\        }
         \\      }
-        \\      x := x + 1;
+        \\      x = x + 1;
         \\      if (byteval == 10) break;
         \\    }
         \\    let item = 10*first+current;
-        \\    sum := sum + item;
+        \\    sum = sum + item;
         \\  }
         \\  return sum;
         \\}
@@ -325,28 +325,28 @@ test "numberfinderer borked" {
         \\func main(data, len, table, tablelen) {
         \\  vars x, tpos, i, imatch;
         \\  vars scan, result;
-        \\  tpos := 0;
-        \\  i := 0;
-        \\  result := 200;
+        \\  tpos = 0;
+        \\  i = 0;
+        \\  result = 200;
         \\  loop {
-        \\    scan := 0;
-        \\    imatch := 1;
+        \\    scan = 0;
+        \\    imatch = 1;
         \\    loop {
         \\      let tval = @table[tpos];
-        \\      tpos := tpos + 1;
+        \\      tpos = tpos + 1;
         \\      if (tval == 10) break;
         \\      if (scan < len) {
         \\        if (tval != @data[scan]) {
-        \\          imatch := 0;
+        \\          imatch = 0;
         \\        }
         \\      }
-        \\      scan := scan + 1;
+        \\      scan = scan + 1;
         \\    }
         \\    if (imatch == 1) {
-        \\      result := i;
+        \\      result = i;
         \\    }
         \\    if (tpos >= tablelen) break;
-        \\    i := i + 1;
+        \\    i = i + 1;
         \\  }
         \\  return result;
         \\}
@@ -368,31 +368,31 @@ test "numberfinderer" {
         \\func main(data, len, table, tablelen) {
         \\  vars x, tpos, i, imatch;
         \\  vars scan, result;
-        \\  tpos := 0;
-        \\  i := 0;
-        \\  result := 200;
+        \\  tpos = 0;
+        \\  i = 0;
+        \\  result = 200;
         \\  loop {
-        \\    scan := 0;
-        \\    imatch := 1;
+        \\    scan = 0;
+        \\    imatch = 1;
         \\    loop {
         \\      let tval = @table[tpos];
-        \\      tpos := tpos + 1;
+        \\      tpos = tpos + 1;
         \\      if (tval == 10) break;
         \\      if (scan < len) {
         \\        if (tval != @data[scan]) {
-        \\          imatch := 0;
+        \\          imatch = 0;
         \\        }
         \\      } else {
-        \\          imatch := 0;
+        \\          imatch = 0;
         \\      }
-        \\      scan := scan + 1;
+        \\      scan = scan + 1;
         \\    }
         \\    if (imatch == 1) {
-        \\      result := i;
+        \\      result = i;
         \\      break;
         \\    }
         \\    if (tpos >= tablelen) break;
-        \\    i := i + 1;
+        \\    i = i + 1;
         \\  }
         \\  return result;
         \\}
@@ -413,49 +413,49 @@ test "aoc 2023 1a" {
         \\func main(data, len, table, tablelen) {
         \\  vars x, tpos, i, imatch, scan;
         \\  vars first, current;
-        \\  x := 0;
-        \\  first := 200;
-        \\  current := 0;
+        \\  x = 0;
+        \\  first = 200;
+        \\  current = 0;
         \\  loop {
         \\    if (x >= len) break;
         \\    let byteval = @data[x];
         \\    let trydigit = byteval - '0';
         \\    if (trydigit <|= 9) {
-        \\      current := trydigit;
+        \\      current = trydigit;
         \\      if (first >= 10) {
-        \\        first := trydigit;
+        \\        first = trydigit;
         \\      }
         \\    } else {
-        \\      tpos := 0;
-        \\      i := 0;
+        \\      tpos = 0;
+        \\      i = 0;
         \\      loop {
-        \\        scan := x;
-        \\        imatch := 1;
+        \\        scan = x;
+        \\        imatch = 1;
         \\        loop {
         \\          let tval = @table[tpos];
-        \\          tpos := tpos + 1;
+        \\          tpos = tpos + 1;
         \\          if (tval == 10) break;
         \\          if (scan < len) {
         \\            if (tval != @data[scan]) {
-        \\              imatch := 0;
+        \\              imatch = 0;
         \\            }
         \\          } else {
-        \\              imatch := 0;
+        \\              imatch = 0;
         \\          }
-        \\          scan := scan + 1;
+        \\          scan = scan + 1;
         \\        }
         \\        if (imatch == 1) {
-        \\          current := i;
+        \\          current = i;
         \\          if (first >= 10) {
-        \\            first := i;
+        \\            first = i;
         \\          }
         \\          break;
         \\        }
         \\        if (tpos >= tablelen) break;
-        \\        i := i + 1;
+        \\        i = i + 1;
         \\      }
         \\    }
-        \\    x := x + 1;
+        \\    x = x + 1;
         \\  }
         \\  let item = 10*first+current;
         \\  return item;
@@ -477,57 +477,57 @@ test "aoc 2023 4a: one row" {
         \\func main(data, len) {
         \\  vars x, setlow, sethigh;
         \\  vars char, value, count;
-        \\  x := 0;
-        \\  setlow := 0;
+        \\  x = 0;
+        \\  setlow = 0;
         \\  loop {
         \\    let kolla = @data[x];
-        \\    x := x + 1;
+        \\    x = x + 1;
         \\    if (kolla == ':') break;
         \\  }
         \\
         \\  loop {
         \\    loop {
-        \\      char := @data[x];
+        \\      char = @data[x];
         \\      if (char != ' ') break;
-        \\      x := x + 1;
+        \\      x = x + 1;
         \\    }
         \\
         \\    if (char == '|') break;
         \\    let digit = char - '0';
-        \\    value := digit;
-        \\    x := x + 1;
+        \\    value = digit;
+        \\    x = x + 1;
         \\    let maybedigit = @data[x] - '0';
         \\    if (maybedigit <|= 9) {
-        \\      value := 10*value + maybedigit;
-        \\      x := x + 1;
+        \\      value = 10*value + maybedigit;
+        \\      x = x + 1;
         \\    }
         \\
         \\    let increment = 1 << value;
-        \\    setlow := setlow | increment;
+        \\    setlow = setlow | increment;
         \\  }
         \\
-        \\  count := 0;
+        \\  count = 0;
         \\  loop {
         \\    loop {
-        \\      char := @data[x];
+        \\      char = @data[x];
         \\      if (char != ' ') break;
-        \\      x := x + 1;
+        \\      x = x + 1;
         \\    }
         \\
         \\    if (char == '
         \\') break;
         \\    let digit = char - '0';
-        \\    value := digit;
-        \\    x := x + 1;
+        \\    value = digit;
+        \\    x = x + 1;
         \\    let maybedigit = @data[x] - '0';
         \\    if (maybedigit <|= 9) {
-        \\      value := 10*value + maybedigit;
-        \\      x := x + 1;
+        \\      value = 10*value + maybedigit;
+        \\      x = x + 1;
         \\    }
         \\
         \\    let check = 1 << value;
         \\    if (setlow & check != 0) {
-        \\      count := count + 1;
+        \\      count = count + 1;
         \\    }
         \\  }
         \\
