@@ -426,6 +426,16 @@ pub fn if_stmt(self: *Self) !void {
     }
 }
 
+fn maybe_colon_type(self: *Self) !?SpecType {
+    if (self.t.nonws() == ':') {
+        self.t.pos += 1;
+        // once there is a :, the type is mandatory
+        const typ = try self.maybe_type() orelse return error.ParseError;
+        return typ;
+    }
+    return null;
+}
+
 fn maybe_type(self: *Self) !?SpecType {
     const first = self.t.nonws() orelse return null;
     if (!(first >= '0' and first <= '9') or self.t.pos + 2 >= self.t.str.len) return null;
@@ -467,7 +477,7 @@ pub fn stmt(self: *Self) !?bool {
     } else if (mem.eql(u8, kw, "let")) {
         const name = self.t.keyword() orelse return error.SyntaxError;
         const item = try nonexisting(&self.vars, name, "variable");
-        const type_ctx = try self.maybe_type() orelse int_ctx;
+        const type_ctx = try self.maybe_colon_type() orelse int_ctx;
         try self.t.expect_char('=');
         const val = try self.expr_toplevel(type_ctx);
         item.* = .{ .ref = val, .is_mut = false };
@@ -511,12 +521,12 @@ pub fn stmt(self: *Self) !?bool {
 
             _ = try self.ir.store(self.curnode, memtype, v.ref, idx, scale, val);
         } else {
-            // not sure how typed assigment would look, like "foo :2d= ree"
             if (!v.is_mut) {
                 return error.SyntaxError;
             }
+            const typ = try self.maybe_colon_type();
             try self.t.expect_char('=');
-            const res = try self.expr_toplevel(int_ctx);
+            const res = try self.expr_toplevel(typ orelse int_ctx);
             try self.ir.putvar(self.curnode, v.ref, res);
         }
     }
@@ -570,11 +580,7 @@ fn do_parse(self: *Self) !bool {
             _ = self.t.keyword();
             while (self.t.keyword()) |name| {
                 const item = try nonexisting(&self.vars, name, "variable");
-                var typ: ?SpecType = null;
-                if (self.t.nonws() == ':') {
-                    self.t.pos += 1;
-                    typ = try self.maybe_type();
-                }
+                const typ = try self.maybe_colon_type();
 
                 const val = try self.ir.variable(typ orelse int_ctx);
                 item.* = .{ .ref = val, .is_mut = true };

@@ -476,8 +476,8 @@ test "vopper" {
     // z arg lite fånigt but what is tested
     var cfo = try parse_test(
         \\func returner(x, y, z) {
-        \\  let xa 1d= @x[z];
-        \\  let ya 1d= @y[z];
+        \\  let xa:1d = @x[z];
+        \\  let ya:1d = @y[z];
         \\  x[z] 1d= xa + ya;
         \\  return 0;
         \\}
@@ -501,8 +501,8 @@ test "float square array" {
         \\  i = 0;
         \\  loop {
         \\    if (i >= len) break;
-        \\    let val 1d= @data[i ,8]; // TODO addr[idx*8] is a good candidate of a first opt pass...
-        \\    let square 1d= val * val;
+        \\    let val: 1d = @data[i ,8]; // TODO addr[idx*8] is a good candidate of a first opt pass...
+        \\    let square :1d = val * val;
         \\    data[i, 8] 1d= square;
         \\    i = i + 1;
         \\  }
@@ -520,7 +520,7 @@ test "float square array" {
 test "int2float" {
     var cfo = try parse_test(
         \\func returner(x, y, z) {
-        \\  let val 1d= ~x / ~y;
+        \\  let val :1d = ~x / ~y;
         \\  z[0] 1d= val;
         \\  return 0;
         \\}
@@ -540,8 +540,8 @@ test "int2float" {
 test "float2int" {
     var cfo = try parse_test(
         \\func returner(x) {
-        \\  let xa 1d= @x[0];
-        \\  let res 1d= xa*xa;
+        \\  let xa:1d = @x[0];
+        \\  let res:1d = xa*xa;
         \\  return #res;
         \\}
     );
@@ -558,8 +558,8 @@ test "float variable" {
         \\func scripter(lim) {
         \\  vars i, sum: 1d;
         \\  i = 0;
-        \\  sum :1d= 0;
-        \\  let flim 1d= $lim;
+        \\  sum :1d = 0;
+        \\  let flim: 1d = $lim;
         \\  loop {
         \\    i = i + 1;
         \\    let incr 1d= 1 / ~i;
