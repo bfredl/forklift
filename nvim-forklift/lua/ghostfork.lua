@@ -57,9 +57,9 @@ function h.check_block_at_cursor()
 
   data = table.concat(data, '\n') .. '\n'
 
-  local res = h.try_compile(data)
-
   vim.api.nvim_buf_clear_namespace(0, h.ns, 0, -1)
+
+  local res = h.try_compile(data)
 
   if res.code == 0 then
     print("OK")
@@ -81,4 +81,21 @@ function h.check_block_at_cursor()
   end
 
   return row, col, dtext
+end
+
+function h.reg_autocmd()
+  -- only clear for current buffer
+  local id = vim.api.nvim_create_augroup("ghostfork", {clear=false})
+  vim.api.nvim_clear_autocmds({buffer=0, group=id})
+  vim.api.nvim_create_autocmd({"TextChanged", "TextChangedI"}, {
+    buffer = 0,
+    group = id,
+    callback = function()
+      local status, res = pcall(h.check_block_at_cursor)
+      if not status then
+        print("ERROR: _ghostfork.lasterror")
+        h.lasterror = res
+      end
+    end
+  })
 end
