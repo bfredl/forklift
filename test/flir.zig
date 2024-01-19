@@ -553,16 +553,15 @@ test "float2int" {
 }
 
 test "float variable" {
-    if (true) return error.SkipZigTest;
     var cfo = try parse_test(
         \\func scripter(lim) {
         \\  vars i, sum: 1d;
         \\  i = 0;
         \\  sum :1d = 0;
-        \\  let flim: 1d = $lim;
+        \\  let flim: 1d = ~lim;
         \\  loop {
         \\    i = i + 1;
-        \\    let incr 1d= 1 / ~i;
+        \\    let incr:1d = 1 / ~i;
         \\    sum :1d= sum + incr;
         \\    if 1d(sum > flim) break;
         \\  }

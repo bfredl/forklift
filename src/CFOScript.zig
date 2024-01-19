@@ -322,13 +322,16 @@ pub fn cond_op(op: []const u8) ?FLIR.IntCond {
 }
 
 // currently not integrated with expr ( "let a = b < c" no good)
-pub fn cond_expr(self: *Self) !u16 {
-    const left = try self.arg_expr(int_ctx);
+pub fn cond_expr(self: *Self, typ: SpecType) !u16 {
+    const left = try self.arg_expr(typ);
     const op_str = self.t.operator() orelse return error.SyntaxError;
     const op = cond_op(op_str) orelse return error.SyntaxError;
-    const right = try self.arg_expr(int_ctx);
+    const right = try self.arg_expr(typ);
 
-    return self.ir.icmp(self.curnode, op, left, right);
+    switch (typ) {
+        .avxval => |fmode| return self.ir.fcmp(self.curnode, op, fmode, left, right),
+        .intptr => return self.ir.icmp(self.curnode, op, left, right),
+    }
 }
 
 pub fn braced_block(self: *Self) !?bool {
@@ -382,8 +385,9 @@ pub fn break_stmt(self: *Self, branch: u1) !void {
 }
 
 pub fn if_stmt(self: *Self) !void {
+    const typ = try self.maybe_type() orelse int_ctx;
     try self.t.expect_char('(');
-    _ = try self.cond_expr();
+    _ = try self.cond_expr(typ);
     try self.t.expect_char(')');
     const prev_node = self.curnode;
     const other = try self.ir.addNodeAfter(prev_node);

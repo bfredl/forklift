@@ -339,6 +339,7 @@ pub const Inst = struct {
             .icmp => null, // technically the FLAG register but anyway
             .vmath => .avxval,
             .vcmpf => .avxval,
+            .fcmp => null, // matching icmp
             .int2vf => .avxval, // convert int to float, or move int from gp to vector reg
             .vconst => .avxval,
             .vf2int => .intptr,
@@ -374,6 +375,7 @@ pub const Inst = struct {
             .icmp => 2,
             .vmath => 2,
             .vcmpf => 2,
+            .fcmp => 2,
             .int2vf => 1,
             .vconst => 1, // but note: always a constval
             .vf2int => 1,
@@ -486,6 +488,7 @@ pub const Tag = enum(u8) {
     vconst, // op1 is a constref, opspec for type
     vmath, // binops specifically
     vcmpf,
+    fcmp,
     int2vf,
     vf2int,
     ret,
@@ -922,6 +925,12 @@ pub fn vmath(self: *Self, node: u16, vop: VMathOp, fmode: FMode, op1: u16, op2: 
 
 pub fn vcmpf(self: *Self, node: u16, vop: VCmpOp, fmode: FMode, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .vcmpf, .spec = vcmpfspec(vop, fmode), .op1 = op1, .op2 = op2 });
+}
+
+// TODO: a bit contradictory naming with IntCond
+pub fn fcmp(self: *Self, node: u16, cond: IntCond, fmode: FMode, op1: u16, op2: u16) !u16 {
+    if (!fmode.scalar()) return error.FLIRError;
+    return self.addInst(node, .{ .tag = .fcmp, .spec = cond.off(), .op1 = op1, .op2 = op2 });
 }
 
 pub fn int2float(self: *Self, node: u16, fmode: FMode, op1: u16) !u16 {

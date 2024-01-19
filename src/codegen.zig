@@ -416,6 +416,11 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     const dst = i.avxreg() orelse return error.FLIRError;
                     try cfo.vcmpf(i.vcmpop(), i.fmode_op(), dst, x, y);
                 },
+                .fcmp => {
+                    const x = self.avxreg(i.op1) orelse return error.FLIRError;
+                    const y = self.avxreg(i.op2) orelse return error.FLIRError;
+                    try cfo.fcmp(i.vcmpop(), i.fmode_op(), x, y);
+                },
                 .int2vf => {
                     const val = self.ipval(i.op1) orelse return error.FLIRError;
                     const dst = i.avxreg() orelse return error.FLIRError;
