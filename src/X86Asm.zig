@@ -261,6 +261,17 @@ pub const VMathOp = enum(u3) {
     }
 };
 
+pub const VBitOp = enum(u3) {
+    @"and" = 0,
+    andn = 1,
+    @"or" = 2,
+    xor = 3,
+
+    pub fn off(self: @This()) u8 {
+        return @intFromEnum(self);
+    }
+};
+
 pub fn set_align(self: *Self, alignment: u32) !void {
     const residue = self.code.get_target() & (alignment - 1);
     const padding = alignment - residue;
@@ -817,6 +828,12 @@ pub fn vmathfrm(self: *Self, op: VMathOp, fmode: FMode, dst: u4, src1: u4, src2:
     try self.vop_rm(0x58 + op.off(), fmode, dst, src1, src2);
 }
 
+// bitop of float value. logically the same as a plain bitop, but pipelines better with
+// surrounding instructions using the same register as a float (or something like that).
+pub fn vbitopf(self: *Self, op: VBitOp, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
+    try self.vop_rr(0x54 + op.off(), fmode, dst, src1, src2);
+}
+
 pub fn vcmpf(self: *Self, op: VCmpOp, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
     try self.vop_rr(0xC2, fmode, dst, src1, src2);
     try self.wb(op.val());
@@ -825,6 +842,10 @@ pub fn vcmpf(self: *Self, op: VCmpOp, fmode: FMode, dst: u4, src1: u4, src2: u4)
 pub fn vcmpfrm(self: *Self, op: VCmpOp, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
     try self.vop_rr(0xC2, fmode, dst, src1, src2);
     try self.wb(op.val());
+}
+
+pub fn fcmp(self: *Self, fmode: FMode, src1: u4, src2: u4) !void {
+    try self.vop_rr(0x2e, fmode, 0, src1, src2);
 }
 
 //conversion instructions

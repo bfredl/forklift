@@ -57,7 +57,7 @@ pub fn get_jmp_or_last(self: *FLIR, n: *FLIR.Node) !?Tag {
     var last_inst: ?Tag = null;
     var iter = self.ins_iterator(n.firstblk);
     while (iter.next()) |it| {
-        if (last_inst) |l| if (l == .icmp or l == .ret) return error.InvalidCFG;
+        if (last_inst) |l| if (l == .icmp or l == .fcmp or l == .ret) return error.InvalidCFG;
         last_inst = it.i.tag;
     }
     return last_inst;
@@ -119,7 +119,7 @@ pub fn check_ir_valid(self: *FLIR) !void {
     }
     for (self.n.items, 0..) |*n, ni| {
         const last = try get_jmp_or_last(self, n);
-        if ((last == Tag.icmp) != (n.s[1] != 0)) return error.InvalidCFG;
+        if ((last == .icmp or last == .fcmp) != (n.s[1] != 0)) return error.InvalidCFG;
         if (last == Tag.ret and n.s[0] != 0) return error.InvalidCFG;
         if (n.s[0] == 0 and (last != Tag.ret and reached[ni])) return error.InvalidCFG;
         // TODO: also !reached and n.s[0] != 0 (not verified by remove_empty)

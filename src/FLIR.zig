@@ -317,6 +317,10 @@ pub const Inst = struct {
         return @enumFromInt(self.low_spec());
     }
 
+    pub fn fcmpop(self: Inst) IntCond {
+        return @enumFromInt(self.low_spec());
+    }
+
     // only valid for op instructions. otherwise use mem_type
     pub fn fmode_op(self: Inst) FMode {
         return @enumFromInt(self.high_spec());
@@ -341,7 +345,7 @@ pub const Inst = struct {
             .vcmpf => .avxval,
             .fcmp => null, // matching icmp
             .int2vf => .avxval, // convert int to float, or move int from gp to vector reg
-            .vconst => .avxval,
+            .fconst => .avxval,
             .vf2int => .intptr,
             .ret => null,
             .call => .intptr,
@@ -377,7 +381,7 @@ pub const Inst = struct {
             .vcmpf => 2,
             .fcmp => 2,
             .int2vf => 1,
-            .vconst => 1, // but note: always a constval
+            .fconst => 1, // but note: always a constval
             .vf2int => 1,
             .ret => 1,
             .callarg => 1,
@@ -483,9 +487,9 @@ pub const Tag = enum(u8) {
     store,
     ibinop,
     icmp,
-    // in theory same as "intval to float bitcast", but separate vconst
+    // in theory same as "intval to float bitcast", but separate fconst
     // make life easier. add a int2vf mode for bitcasts
-    vconst, // op1 is a constref, opspec for type
+    fconst, // op1 is a constref, opspec for type
     vmath, // binops specifically
     vcmpf,
     fcmp,
@@ -551,7 +555,7 @@ pub const IntBinOp = enum(u6) {
     }
 };
 
-pub const IntCond = enum(u6) {
+pub const IntCond = enum(u4) {
     eq,
     neq,
     gt,
@@ -590,7 +594,7 @@ pub const IntCond = enum(u6) {
         };
     }
 
-    pub fn off(self: IntCond) u6 {
+    pub fn off(self: IntCond) u4 {
         return @intFromEnum(self);
     }
 
@@ -738,6 +742,10 @@ pub fn vmathspec(vop: VMathOp, fmode: FMode) u8 {
 
 pub fn vcmpfspec(vcmp: VCmpOp, fmode: FMode) u8 {
     return sphigh(@intFromEnum(fmode), vcmp.val());
+}
+
+pub fn fcmpspec(cond: IntCond, fmode: FMode) u8 {
+    return sphigh(@intFromEnum(fmode), cond.off());
 }
 
 // TODO: will generalize
@@ -896,7 +904,7 @@ pub fn const_int(self: *Self, val: i32) !u16 {
 // TODO: tricky with vectors, we might both simple broadcast and vector constants.
 pub fn const_float(self: *Self, node: u16, val: f64) !u16 {
     const constref = try self.const_uint(@bitCast(val));
-    return self.addInst(node, .{ .tag = .vconst, .op1 = constref, .op2 = NoRef, .spec = sphigh(@intFromEnum(FMode.sd), 0) });
+    return self.addInst(node, .{ .tag = .fconst, .op1 = constref, .op2 = NoRef, .spec = sphigh(@intFromEnum(FMode.sd), 0) });
 }
 
 pub fn binop(self: *Self, node: u16, tag: Tag, op1: u16, op2: u16) !u16 {
@@ -930,7 +938,7 @@ pub fn vcmpf(self: *Self, node: u16, vop: VCmpOp, fmode: FMode, op1: u16, op2: u
 // TODO: a bit contradictory naming with IntCond
 pub fn fcmp(self: *Self, node: u16, cond: IntCond, fmode: FMode, op1: u16, op2: u16) !u16 {
     if (!fmode.scalar()) return error.FLIRError;
-    return self.addInst(node, .{ .tag = .fcmp, .spec = cond.off(), .op1 = op1, .op2 = op2 });
+    return self.addInst(node, .{ .tag = .fcmp, .spec = fcmpspec(cond, fmode), .op1 = op1, .op2 = op2 });
 }
 
 pub fn int2float(self: *Self, node: u16, fmode: FMode, op1: u16) !u16 {

@@ -401,8 +401,22 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                         },
                     }
                 },
-                .vconst => {
-                    return error.WIPError;
+                .fconst => {
+                    const dst = i.avxreg() orelse return error.FLIRError;
+                    const fval: f64 = @bitCast(self.constval(i.op1) orelse return error.FLIRError);
+                    if (fval == 0.0) {
+                        // scalar xor doesn't exist, this seems to be the standard messaround
+                        const fmode_adj: X86Asm.FMode = switch (i.fmode_op()) {
+                            .sd => .pd2,
+                            .ss => .ps4,
+                            else => |m| m,
+                        };
+                        try cfo.vbitopf(.xor, fmode_adj, dst, dst, dst);
+                    } else {
+                        // TODO: pd/ps should mean "broadcast"
+                        if (i.fmode_op() != .sd) return error.WIPError;
+                        return error.WIPError;
+                    }
                 },
                 .vmath => {
                     const x = self.avxreg(i.op1) orelse return error.FLIRError;
@@ -415,11 +429,13 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     const y = self.avxreg(i.op2) orelse return error.FLIRError;
                     const dst = i.avxreg() orelse return error.FLIRError;
                     try cfo.vcmpf(i.vcmpop(), i.fmode_op(), dst, x, y);
+                    cond = @as(FLIR.IntCond, @enumFromInt(i.spec)).asX86Cond();
                 },
                 .fcmp => {
                     const x = self.avxreg(i.op1) orelse return error.FLIRError;
                     const y = self.avxreg(i.op2) orelse return error.FLIRError;
-                    try cfo.fcmp(i.vcmpop(), i.fmode_op(), x, y);
+                    try cfo.fcmp(i.fmode_op(), x, y);
+                    cond = i.fcmpop().asX86Cond();
                 },
                 .int2vf => {
                     const val = self.ipval(i.op1) orelse return error.FLIRError;
