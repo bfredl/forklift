@@ -8,6 +8,7 @@ const Inst = FLIR.Inst;
 const IPMCVal = FLIR.IPMCVal;
 const uv = FLIR.uv;
 const ValType = FLIR.ValType;
+const FMode = X86Asm.FMode;
 const VMathOp = X86Asm.VMathOp;
 const EAddr = X86Asm.EAddr;
 const AOp = X86Asm.AOp;
@@ -42,11 +43,19 @@ fn regmovmc(cfo: *X86Asm, dst: IPReg, src: IPMCVal) !void {
         .ipreg => |reg| if (dst != reg) try cfo.mov(r(dst), r(reg)),
         .constval => |c| try movri_zero(cfo, dst, @intCast(c)),
         .constref, .constptr => |idx| {
-            try cfo.movrm(r(dst), X86Asm.rel_placeholder());
-            const is_ptr = (src == .constptr);
-            try cfo.code.relocations.append(.{ .pos = cfo.code.get_target() - 4, .idx = idx, .is_ptr = is_ptr });
+            if (src == .constptr) {
+                return error.WIPError;
+            } else {
+                try cfo.movrm(r(dst), X86Asm.rel_placeholder());
+            }
+            try cfo.code.relocations.append(.{ .pos = cfo.code.get_target() - 4, .idx = idx });
         },
     }
+}
+
+fn avxmovconst(cfo: *X86Asm, fmode: FMode, dst: u4, const_idx: u16) !void {
+    try cfo.vmovurm(fmode, dst, X86Asm.rel_placeholder());
+    try cfo.code.relocations.append(.{ .pos = cfo.code.get_target() - 4, .idx = const_idx });
 }
 
 fn regaritmc(cfo: *X86Asm, op: AOp, dst: IPReg, src: IPMCVal) !void {
@@ -406,7 +415,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     const fval: f64 = @bitCast(self.constval(i.op1) orelse return error.FLIRError);
                     if (fval == 0.0) {
                         // scalar xor doesn't exist, this seems to be the standard messaround
-                        const fmode_adj: X86Asm.FMode = switch (i.fmode_op()) {
+                        const fmode_adj: FMode = switch (i.fmode_op()) {
                             .sd => .pd2,
                             .ss => .ps4,
                             else => |m| m,
@@ -414,8 +423,8 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                         try cfo.vbitopf(.xor, fmode_adj, dst, dst, dst);
                     } else {
                         // TODO: pd/ps should mean "broadcast"
-                        if (i.fmode_op() != .sd) return error.WIPError;
-                        return error.WIPError;
+                        if (!i.fmode_op().scalar()) return error.WIPError;
+                        try avxmovconst(&cfo, i.fmode_op(), dst, FLIR.constidx(i.op1).?);
                     }
                 },
                 .vmath => {
@@ -524,7 +533,6 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
     }
     try cfo.leave();
     try cfo.ret();
-    if (options.dbg_disasm) try cfo.dbg_nasm(self.a);
 
     if (cfo.code.relocations.items.len > 0) {
         // TODO: have this as scratch space already in FLIR.constvals
@@ -550,5 +558,6 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
             cfo.set_target_32(reloc.pos, target);
         }
     }
+    if (options.dbg_disasm) try cfo.dbg_nasm(self.a);
     return entry;
 }

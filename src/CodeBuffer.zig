@@ -26,7 +26,6 @@ value_map: ArrayList(ValueDebugInfo),
 pub const Relocation = struct {
     pos: u32,
     idx: u16,
-    is_ptr: bool,
 };
 
 // at address &buf.items[pos] register "reg" will store value with "name"
