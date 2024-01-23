@@ -563,7 +563,7 @@ test "float variable" {
         \\    i = i + 1;
         \\    let incr:1d = 1 / ~i;
         \\    sum :1d= sum + incr;
-        \\    if 1d(sum > flim) break;
+        \\    if 1d(sum |> flim) break; // TODO: fubbigt, signed > should work
         \\  }
         \\  return i;
         \\}

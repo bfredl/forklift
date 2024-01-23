@@ -214,6 +214,10 @@ pub const FMode = enum(u3) {
         return @enumFromInt(@as(u2, @truncate(@intFromEnum(self))));
     }
 
+    fn pp_1bit(self: @This()) PP {
+        return @enumFromInt(@as(u1, @truncate(@intFromEnum(self))));
+    }
+
     fn l(self: @This()) bool {
         return @intFromEnum(self) >= 4;
     }
@@ -845,7 +849,10 @@ pub fn vcmpfrm(self: *Self, op: VCmpOp, fmode: FMode, dst: u4, src1: u4, src2: u
 }
 
 pub fn fcmp(self: *Self, fmode: FMode, src1: u4, src2: u4) !void {
-    try self.vop_rr(0x2e, fmode, 0, src1, src2);
+    // tricky, p field must be 0/1 even though it is normally 2/3 for a scalar
+    try self.vex0fwig(src1 > 7, false, src2 > 7, 0, false, fmode.pp_1bit());
+    try self.wb(0x2e);
+    try self.modRm(0b11, @truncate(src1), @truncate(src2));
 }
 
 //conversion instructions
@@ -855,14 +862,14 @@ pub fn vcvtsi2s_rr(self: *Self, fmode: FMode, dst: u4, w: bool, src2: IPReg) !vo
     // TODO: we get one free mix as part of the instruction, currently ignored
     // i e, we only do vcvtsi2sd xmmX, xmmX, rYY for the same X
     const src1 = dst;
-    try self.vex0f(false, dst > 7, w, src2.ext(), src1, false, fmode.pp());
+    try self.vex0f(w, dst > 7, false, src2.ext(), src1, false, fmode.pp());
     try self.wb(0x2A);
     try self.modRm(0b11, @truncate(dst), src2.lowId());
 }
 
 pub fn vcvtsx2si_rr(self: *Self, fmode: FMode, w: bool, dst: IPReg, src: u4) !void {
     if (!fmode.scalar()) return error.InvalidFMode;
-    try self.vex0f(false, dst.ext(), w, src > 8, 0, false, fmode.pp());
+    try self.vex0f(w, dst.ext(), false, src > 8, 0, false, fmode.pp());
     try self.wb(0x2D);
     try self.modRm(0b11, dst.lowId(), @truncate(src));
 }
