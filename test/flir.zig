@@ -79,7 +79,7 @@ test "diamond cfg" {
     const adde = try self.ibinop(end, .add, v, const_77);
     try self.putvar(end, v, adde);
 
-    try self.ret(end, v);
+    try self.ret(end, FLIR.intspec(.quadword), v);
 
     try self.test_analysis(FLIR.X86ABI, true);
 }
@@ -572,6 +572,32 @@ test "float variable" {
 
     const func = cfo.get_ptr(0, *const fn (arg: usize) callconv(.C) usize);
     try expect(usize, 4, func(2));
+}
+
+test "float sum of array" {
+    var cfo = try parse_test(
+        \\func scripter(arr, len) {
+        \\  vars i, sum: 1d;
+        \\  i = 0;
+        \\  sum :1d = 0;
+        \\  loop {
+        \\    if (i >= len) break;
+        \\    sum :1d= sum + @arr[i,8];
+        \\    i = i + 1;
+        \\  }
+        \\  return :1d sum;
+        \\}
+    );
+    defer cfo.deinit();
+
+    const yarr: [4]f64 = .{ 0.5, 3.0, 0.0, 5.75 };
+
+    const func = cfo.get_ptr(0, *const fn (arr: [*]const f64, len: usize) callconv(.C) f64);
+    try expect(f64, 9.25, func(&yarr, yarr.len));
+    try expect(f64, 3.5, func(&yarr, 3));
+    try expect(f64, 3.5, func(&yarr, 2));
+    try expect(f64, 0.5, func(&yarr, 1));
+    try expect(f64, 0.0, func(&yarr, 0));
 }
 
 test "syscall" {

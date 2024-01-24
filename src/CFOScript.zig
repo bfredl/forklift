@@ -475,8 +475,9 @@ pub fn stmt(self: *Self) !?bool {
     };
     var did_ret = false;
     if (mem.eql(u8, kw, "return")) {
-        const res = try self.arg_expr(int_ctx); // BUULLLLLLL
-        try self.ir.ret(self.curnode, res);
+        const type_ctx = try self.maybe_colon_type() orelse int_ctx;
+        const res = try self.arg_expr(type_ctx); // BUULLLLLLL
+        try self.ir.ret(self.curnode, type_ctx, res);
         did_ret = true;
     } else if (mem.eql(u8, kw, "let")) {
         const name = self.t.keyword() orelse return error.SyntaxError;

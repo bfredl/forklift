@@ -980,8 +980,8 @@ pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
     n.putphi_list = try self.addRawInst(.{ .tag = .putvar, .op1 = refval, .op2 = v.op1, .next = n.putphi_list, .node_delete_this = node });
 }
 
-pub fn ret(self: *Self, node: u16, val: u16) !void {
-    _ = try self.addInst(node, .{ .tag = .ret, .op1 = val, .op2 = 0 });
+pub fn ret(self: *Self, node: u16, kind: SpecType, val: u16) !void {
+    _ = try self.addInst(node, .{ .tag = .ret, .op1 = val, .op2 = 0, .spec = sphigh(0, kind.into()) });
 }
 
 pub fn callarg(self: *Self, node: u16, num: u8, ref: u16) !void {

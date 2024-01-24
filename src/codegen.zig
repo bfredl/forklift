@@ -255,17 +255,20 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                 // lea relative RBP when used
                 .alloc => {},
                 .ret => {
-                    // TODO: extend i.res_type() to a useful union(ValType) from self.val(REF) ??
-                    if (self.ipval(i.op1)) |ipval| {
-                        try regmovmc(&cfo, X86Asm.IPReg.rax.into(), ipval);
-                    } else if (self.iref(i.op1)) |val| {
-                        if (val.avxreg()) |reg| {
+                    // TODO: extend i.res_type() to a useful SpecType from self.val(REF) ??
+                    // then we won't need to encode the type on .ret separately...
+                    switch (i.mem_type()) {
+                        .intptr => |_| {
+                            const ipval = self.ipval(i.op1) orelse return error.FLIRError;
+                            try regmovmc(&cfo, X86Asm.IPReg.rax.into(), ipval);
+                        },
+                        .avxval => |fmode| {
+                            const avxval = self.iref(i.op1) orelse return error.FLIRError;
+                            const reg = avxval.avxreg() orelse return error.FLIRError;
                             if (reg != 0) {
-                                return error.WIPError;
+                                try cfo.vmovf(fmode, 0, reg);
                             }
-                        } else {
-                            return error.FLIRError;
-                        }
+                        },
                     }
                 },
                 .ibinop => {
