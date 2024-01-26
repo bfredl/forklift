@@ -26,8 +26,7 @@ pub fn resolve_ssa(self: *FLIR) !void {
         if (!did_phi) break;
     }
 
-    try self.delete_vars();
-    try self.cleanup_trivial_phi();
+    try self.cleanup_trivial_phi_and_vars();
 }
 
 pub fn read_ref(self: *FLIR, node: u16, ref: u16) !u16 {
@@ -147,9 +146,9 @@ pub fn resolve_phi(self: *FLIR, n: u16, i: *FLIR.Inst, iref: u16, pred_buf: []Pr
                     p.tag = .putphi;
                     p.op1 = pred_buf[vi].ref;
                     p.op2 = iref;
-                    try self.addInstRef(v, pred_buf[vi].direct_putvar);
                 } else {
-                    _ = try self.binop(v, .putphi, pred_buf[vi].ref, iref);
+                    const vn = &self.n.items[v];
+                    vn.putphi_list = try self.addRawInst(.{ .tag = .putphi, .op1 = pred_buf[vi].ref, .op2 = iref, .next = vn.putphi_list, .node_delete_this = v });
                 }
             }
             const i_ref = self.iref(iref).?;
@@ -160,7 +159,7 @@ pub fn resolve_phi(self: *FLIR, n: u16, i: *FLIR.Inst, iref: u16, pred_buf: []Pr
         const onlyref: ?u16 = theref: {
             var seen_ref: ?u16 = null;
             for (self.preds(n)) |v| {
-                const phiref = self.read_putphi(v, iref) orelse return error.FLIRError;
+                const phiref = try self.read_putphi(v, iref) orelse return error.FLIRError;
                 const ref = self.check_trivial(phiref);
                 if (ref != iref) {
                     if (seen_ref) |seen| {
@@ -181,57 +180,74 @@ pub fn resolve_phi(self: *FLIR, n: u16, i: *FLIR.Inst, iref: u16, pred_buf: []Pr
     return changed;
 }
 
-pub fn delete_vars(self: *FLIR) !void {
-    while (self.var_list != NoRef) {
-        const ref = self.var_list;
-        self.var_list = self.i.items[ref].next;
-        self.delete_raw(ref);
-    }
-}
-
-pub fn read_putphi(self: *FLIR, ni: u16, phiref: u16) ?u16 {
+pub fn read_putphi(self: *FLIR, ni: u16, phiref: u16) !?u16 {
     const n = &self.n.items[ni];
-    var it = self.ins_iterator_rev(n.lastblk);
-    while (it.next_rev()) |item| {
-        if (item.i.tag != .putphi) break;
-        if (item.i.op2 == phiref) return item.i.op1;
+    var item = n.putphi_list;
+    while (item != NoRef) {
+        const i = self.iref(item) orelse return error.FLIRError;
+        if (i.tag == .putphi and i.op2 == phiref) return i.op1;
+        item = i.next;
     }
     return null;
 }
 
-// TODO: this can be merged with a general copy-propagation pass (IF WE HAD ONE!!)
-pub fn cleanup_trivial_phi(self: *FLIR) !void {
-    var ni = self.n.items.len - 1;
+pub fn cleanup_trivial_phi_and_vars(self: *FLIR) !void {
+    // Pass 1: eleminate usages of trivial phi:s (including dead puts)
+    // TODO: this can be merged with a general copy-propagation pass (IF WE HAD ONE!!)
+    for (self.n.items) |*n| {
+        var it = self.ins_iterator(n.firstblk);
+        while (it.next()) |item| {
+            const i = item.i;
+            const nop = i.n_op(false);
+            if (nop > 0) {
+                i.op1 = self.check_trivial(i.op1);
+                if (nop > 1) {
+                    i.op2 = self.check_trivial(i.op2);
+                }
+            }
+        }
+        var next_ptr: *u16 = &n.putphi_list;
+        while (next_ptr.* != NoRef) {
+            var keep = false; // delet all putvars, as a bonus
+            const i = self.iref(next_ptr.*) orelse return error.FLIRError;
+            if (i.tag == .putphi) {
+                const ref = self.iref(i.op2) orelse return error.FLIRError;
+                // target not marked for deletion
+                if (ref.op2 == NoRef) {
+                    keep = true;
+                    // but check if we read any trivial phis..
+                    i.op1 = self.check_trivial(i.op1);
+                }
+            }
+            if (keep) {
+                next_ptr = &i.next;
+            } else {
+                const delenda = next_ptr.*;
+                next_ptr.* = i.next;
+                self.delete_raw(delenda);
+            }
+        }
+    }
 
-    while (true) : (ni -= 1) {
-        const n = &self.n.items[ni];
+    // Pass 2: delete trivial phi:s, now that no one refers to them
+    for (self.n.items) |*n| {
+        // TODO: this is suss af but we are going to unschedule phi:s soon..
         var it = self.ins_iterator_rev(n.lastblk);
         while (it.next_rev()) |item| {
             const i = item.i;
             if (i.tag == .phi) {
                 // phi reading phi was already handled in resolve_phi()
                 if (i.op2 != NoRef) {
-                    // by effect by reverse traversal, have already fixed any uses
                     self.delete_itersafe(item);
-                }
-            } else if (i.tag == .putphi) {
-                const ref = self.iref(i.op2) orelse return error.FLIRError;
-                // TODO: accessing "freelist" NOT ok, but soon we are gonna change over all this anyway
-                if (ref.tag == .freelist or ref.op2 != NoRef) {
-                    self.delete_itersafe(item);
-                } else {
-                    i.op1 = self.check_trivial(i.op1);
-                }
-            } else {
-                const nop = i.n_op(false);
-                if (nop > 0) {
-                    i.op1 = self.check_trivial(i.op1);
-                    if (nop > 1) {
-                        i.op2 = self.check_trivial(i.op2);
-                    }
                 }
             }
         }
-        if (ni == 0) break;
+    }
+
+    // variables? haha no such thing as variables
+    while (self.var_list != NoRef) {
+        const ref = self.var_list;
+        self.var_list = self.i.items[ref].next;
+        self.delete_raw(ref);
     }
 }

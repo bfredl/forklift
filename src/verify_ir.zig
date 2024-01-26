@@ -15,19 +15,18 @@ const options = common.debug_options;
 
 pub fn check_phi(self: *FLIR, worklist: *ArrayList(u16), pred: u16, succ: u16) !void {
     const pn = self.n.items[pred];
-    var iter = self.ins_iterator(pn.firstblk);
-    var saw_putphi = false;
 
-    while (iter.next()) |it| {
-        if (it.i.tag == .putphi) {
-            saw_putphi = true;
+    var item = pn.putphi_list;
+    while (item != NoRef) {
+        const i = self.iref(item) orelse return error.FLIRError;
+        if (i.tag == .putphi) {
             // it.op1 == NoRef is techy allowed ( %thephi := undefined )
-            if (it.i.op2 == NoRef) return error.InvalidCFG;
-            try worklist.append(it.i.op2); // TODO: check duplicate
-        } else {
-            // error: regular instruction after putphi
-            if (saw_putphi) return error.InvalidCFG;
+            if (i.op2 == NoRef) return error.InvalidCFG;
+            try worklist.append(i.op2); // TODO: check duplicate
+        } else if (i.tag != .putvar) { // only putvar and putphi allowed here
+            return error.InvalidCFG;
         }
+        item = i.next;
     }
 
     var left: u16 = uv(worklist.items.len);
@@ -233,95 +232,97 @@ pub fn debug_print(self: *FLIR) void {
     }
 }
 
+pub fn print_inst(self: *FLIR, ref: u16, i: *FLIR.Inst) !void {
+    if (i.tag == .putphi) {
+        const targ = if (self.iref(i.op2)) |iref| iref.* else empty_inst;
+        const src = if (self.iref(i.op1)) |iref| iref.* else empty_inst;
+        if (options.dbg_exclude_trivial_put) {
+            if (src.tag == .phi and src.op1 == targ.op1 and targ.op1 != NoRef and src.mckind == targ.mckind and src.mcidx == targ.mcidx) {
+                return;
+            }
+        }
+    }
+
+    const chr: u8 = if (i.has_res()) '=' else ' ';
+    var name = @tagName(i.tag);
+    if (i.tag == .ibinop) name = "i";
+    print("  %{} {c} {s}", .{ fake_ref(self, ref), chr, name });
+
+    if (i.tag == .variable) {
+        print(" {s}", .{@tagName(i.mem_type())});
+    }
+
+    if (i.tag == .vmath) {
+        print(".{s}", .{@tagName(i.vmathop())});
+    } else if (i.tag == .vcmpf) {
+        print(".{s}", .{@tagName(i.vcmpop())});
+    } else if (i.tag == .ibinop) {
+        print(".{s}", .{@tagName(@as(FLIR.IntBinOp, @enumFromInt(i.spec)))});
+    } else if (i.tag == .icmp) {
+        print(".{s}", .{@tagName(@as(FLIR.IntCond, @enumFromInt(i.spec)))});
+    } else if (i.tag == .phi) {
+        if (self.get_varname(i.op1)) |nam| {
+            print(" {s}", .{nam});
+        } else if (self.unsealed) {
+            print(" ${}", .{i.op1});
+        }
+    } else if (i.tag == .putphi) {
+        print(" %{} <-", .{fake_ref(self, i.op2)});
+    }
+    const nop = i.n_op(false);
+    if (nop > 0) {
+        print_op(self, " ", i.f.kill_op1, i.op1);
+        if (nop > 1) {
+            print_op(self, ", ", i.f.kill_op2, i.op2);
+        }
+    }
+    print_mcval(i);
+    var v_conflict = false;
+    if (i.vreg()) |v| {
+        if (self.vregs.items[v].conflicts != 0) {
+            v_conflict = true;
+        }
+        print(" *", .{});
+    }
+    if (i.f.conflicts or v_conflict) {
+        print(" !", .{});
+    }
+    if (i.tag == .putphi) {
+        const targ = if (self.iref(i.op2)) |iref| iref.* else empty_inst;
+        const src = if (self.iref(i.op1)) |iref| iref.* else empty_inst;
+        const targvar = if (targ.tag == .phi) targ.op1 else NoRef;
+        const srcvar = if (src.tag == .phi) src.op1 else NoRef;
+        const targnam = self.get_varname(targvar);
+        if (srcvar == targvar) {
+            if (targnam) |nam| {
+                print(" ({s})", .{nam});
+            }
+        } else {
+            const srcnam = self.get_varname(srcvar);
+            if (srcnam != null or targnam != null) {
+                print(" ({s} <- {s})", .{ targnam orelse "*", srcnam orelse "*" });
+            }
+        }
+
+        if (self.ipreg(i.op2)) |reg| {
+            const regsrc = self.ipreg(i.op1);
+            const tag = @tagName(X86Asm.IPReg.from(reg));
+            if (regsrc == null or regsrc == reg) {
+                print(" [{s}]", .{tag});
+            } else {
+                print(" [{s} <- {s}]", .{ tag, @tagName(X86Asm.IPReg.from(regsrc.?)) });
+            }
+        }
+    }
+    print("\n", .{});
+}
+
 // TODO: bull, but here we just use it as "anything unallocated"
 const empty_inst = FLIR.Inst{ .tag = .freelist, .op1 = 0, .op2 = 0 };
 pub fn print_node(self: *FLIR, n: *FLIR.Node) void {
     var it = self.ins_iterator(n.firstblk);
     while (it.next()) |item| {
-        const i = item.i.*;
-
-        if (i.tag == .putphi) {
-            const targ = if (self.iref(i.op2)) |iref| iref.* else empty_inst;
-            const src = if (self.iref(i.op1)) |iref| iref.* else empty_inst;
-            if (options.dbg_exclude_trivial_put) {
-                if (src.tag == .phi and src.op1 == targ.op1 and targ.op1 != NoRef and src.mckind == targ.mckind and src.mcidx == targ.mcidx) {
-                    continue;
-                }
-            }
-        }
-
-        const chr: u8 = if (i.has_res()) '=' else ' ';
-        var name = @tagName(i.tag);
-        if (i.tag == .ibinop) name = "i";
-        print("  %{} {c} {s}", .{ fake_ref(self, item.ref), chr, name });
-
-        if (i.tag == .variable) {
-            print(" {s}", .{@tagName(i.mem_type())});
-        }
-
-        if (i.tag == .vmath) {
-            print(".{s}", .{@tagName(i.vmathop())});
-        } else if (i.tag == .vcmpf) {
-            print(".{s}", .{@tagName(i.vcmpop())});
-        } else if (i.tag == .ibinop) {
-            print(".{s}", .{@tagName(@as(FLIR.IntBinOp, @enumFromInt(i.spec)))});
-        } else if (i.tag == .icmp) {
-            print(".{s}", .{@tagName(@as(FLIR.IntCond, @enumFromInt(i.spec)))});
-        } else if (i.tag == .phi) {
-            if (self.get_varname(i.op1)) |nam| {
-                print(" {s}", .{nam});
-            } else if (self.unsealed) {
-                print(" ${}", .{i.op1});
-            }
-        } else if (i.tag == .putphi) {
-            print(" %{} <-", .{fake_ref(self, i.op2)});
-        }
-        const nop = i.n_op(false);
-        if (nop > 0) {
-            print_op(self, " ", i.f.kill_op1, i.op1);
-            if (nop > 1) {
-                print_op(self, ", ", i.f.kill_op2, i.op2);
-            }
-        }
-        print_mcval(i);
-        var v_conflict = false;
-        if (i.vreg()) |v| {
-            if (self.vregs.items[v].conflicts != 0) {
-                v_conflict = true;
-            }
-            print(" *", .{});
-        }
-        if (i.f.conflicts or v_conflict) {
-            print(" !", .{});
-        }
-        if (i.tag == .putphi) {
-            const targ = if (self.iref(i.op2)) |iref| iref.* else empty_inst;
-            const src = if (self.iref(i.op1)) |iref| iref.* else empty_inst;
-            const targvar = if (targ.tag == .phi) targ.op1 else NoRef;
-            const srcvar = if (src.tag == .phi) src.op1 else NoRef;
-            const targnam = self.get_varname(targvar);
-            if (srcvar == targvar) {
-                if (targnam) |nam| {
-                    print(" ({s})", .{nam});
-                }
-            } else {
-                const srcnam = self.get_varname(srcvar);
-                if (srcnam != null or targnam != null) {
-                    print(" ({s} <- {s})", .{ targnam orelse "*", srcnam orelse "*" });
-                }
-            }
-
-            if (self.ipreg(i.op2)) |reg| {
-                const regsrc = self.ipreg(i.op1);
-                const tag = @tagName(X86Asm.IPReg.from(reg));
-                if (regsrc == null or regsrc == reg) {
-                    print(" [{s}]", .{tag});
-                } else {
-                    print(" [{s} <- {s}]", .{ tag, @tagName(X86Asm.IPReg.from(regsrc.?)) });
-                }
-            }
-        }
-        print("\n", .{});
+        try self.print_inst(item.ref, item.i);
     }
 
     var put_iter = n.putphi_list;
@@ -329,16 +330,18 @@ pub fn print_node(self: *FLIR, n: *FLIR.Node) void {
         const i = &self.i.items[put_iter];
         if (i.tag == .putvar) {
             print("  VAR ", .{});
-            const vref = self.iref(i.op2);
-            if (vref) |v| {
-                if (self.get_varname(v.op1)) |nam| {
-                    print("{s}", .{nam});
-                } else {
-                    print("${}", .{v.op1});
-                }
+            if (self.get_varname(i.op2)) |nam| {
+                print("{s}", .{nam});
+            } else {
+                print("${}", .{i.op2});
             }
             print_op(self, " := ", i.f.kill_op1, i.op1);
             print("\n", .{});
+        } else if (i.tag == .putphi) {
+            if (!i.f.killed) try self.print_inst(put_iter, i);
+        } else {
+            print("MÖG: ", .{});
+            try self.print_inst(put_iter, i);
         }
         put_iter = i.next;
     }
@@ -356,7 +359,7 @@ fn print_op(self: *FLIR, pre: []const u8, kill: bool, ref: u16) void {
     }
 }
 
-fn print_mcval(i: FLIR.Inst) void {
+fn print_mcval(i: *FLIR.Inst) void {
     if (i.tag != .phi and i.tag != .arg and !i.mckind.unallocated() and i.mckind != .fused) {
         print(" =>", .{});
     }

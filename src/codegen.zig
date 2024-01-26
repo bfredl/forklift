@@ -231,6 +231,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
 
         var cond: ?X86Asm.Cond = null;
         var it = self.ins_iterator(n.firstblk);
+        var swap_source: ?FLIR.IPMCVal = null;
         while (it.next()) |item| {
             const i = item.i;
 
@@ -339,9 +340,16 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     if (try self.movins_read2(i)) |src| {
                         const dest = (try self.movins_dest(i)).ipval() orelse return error.FLIRError;
                         if (i.f.do_swap) {
-                            try swapmcs(&cfo, dest, src);
+                            if (swap_source) |swap_src| {
+                                try swapmcs(&cfo, dest, swap_src); // PLOCKA INTE UPP DEN
+                            } else {
+                                try swapmcs(&cfo, dest, src);
+                                swap_source = src;
+                            }
                         } else if (i.f.swap_done) {
                             // do nothing, for N cyclic values we do N-1 swaps
+                            // but clear the state for another group
+                            swap_source = null;
                         } else {
                             // TODO: phi of avxval
                             try movmcs(&cfo, dest, src);

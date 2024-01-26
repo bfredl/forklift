@@ -259,6 +259,7 @@ pub const Inst = struct {
         // note: if the reference is a vreg, it might
         // be alive in an other branch processed later
         // in phi node: "kill_op1" is overloaded as resolved (it doesn't use any op:s in the normal sense)
+        // NOTE: putphis doesn't set kill_op1 because they don't need to (what is dead may never die)
         kill_op1: bool = false,
         kill_op2: bool = false,
         killed: bool = false, // if false after calc_use, a non-vreg is never used
@@ -1241,8 +1242,10 @@ pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
     }
 }
 
-// TODO: not idempotent! does not reset n_use=0 first.
-// NB: requires reorder_nodes()
+// TODO: this is really LIVENESS for the sake of regalloc.
+// want simpler use-def/def-use for optimizations
+//
+// not idempotent! does not reset n_use=0 first.
 pub fn calc_use(self: *Self) !void {
     // TODO: NOT LIKE THIS
     try self.vregs.ensureTotalCapacity(64);
@@ -1255,6 +1258,13 @@ pub fn calc_use(self: *Self) !void {
             for (i.ops(false)) |*op| {
                 self.adduse(uv(ni), item.ref, op.*);
             }
+        }
+
+        var item = n.putphi_list;
+        while (item != NoRef) {
+            const i = self.iref(item) orelse return error.FLIRError;
+            self.adduse(uv(ni), item, i.op1);
+            item = i.next;
         }
     }
 
@@ -1282,11 +1292,26 @@ pub fn calc_use(self: *Self) !void {
 
             var node_has_clobber: bool = false;
 
+            var listit = n.putphi_list;
+            while (listit != NoRef) {
+                // putphi:s arent ordered, so they all have neg_counter == 0
+                const i = self.iref(listit) orelse return error.FLIRError;
+                if (self.iref(i.op1)) |ref| {
+                    if (ref.vreg()) |vreg| {
+                        live |= vreg_flag(@intCast(vreg));
+                    } else {
+                        ref.vreg_scratch = neg_counter;
+                    }
+                }
+                listit = i.next;
+            }
+
             var it = self.ins_iterator_rev(n.lastblk);
             while (it.next_rev()) |item| {
                 neg_counter += 1;
                 const i = item.i;
 
+                // TODO: need to consider phi:s even when they are unscheduled
                 if (i.vreg()) |vreg| {
                     live &= ~vreg_flag(@intCast(vreg));
                 } else {
@@ -1381,6 +1406,28 @@ pub fn calc_use(self: *Self) !void {
         }
         var killed = n.live_in & ~live_out;
 
+        var listit = n.putphi_list;
+        while (listit != NoRef) {
+            // TODO: a bit of duplicate code. reconsider the entire vref system after unscheduling putphis and phis
+            const i = self.iref(listit) orelse return error.FLIRError;
+            if (self.iref(i.op1)) |ref| {
+                if (ref.vreg()) |vreg| {
+                    const bit = vreg_flag(@intCast(vreg));
+                    if ((killed & bit) != 0) {
+                        killed = killed & ~bit;
+                        i.f.kill_op1 = true;
+                    }
+                } else {
+                    if (!ref.f.killed) {
+                        ref.f.killed = true;
+                        i.f.kill_op1 = true;
+                    }
+                }
+            }
+
+            listit = i.next;
+        }
+
         var it = self.ins_iterator_rev(n.lastblk);
         while (it.next_rev()) |item| {
             const i = item.i;
@@ -1421,7 +1468,6 @@ pub fn get_clobbers(self: *Self, i: *Inst) !u16 {
     // arguments are handled in callarg and are also not conflicting
     const kind: CallKind = @enumFromInt(i.spec);
     if (kind == .memory_intrinsic and self.x86_mem_instrinsics) {
-        print("BUTTA\n", .{});
         const Reg = X86Asm.IPReg;
         const idx = self.constval(i.op1) orelse return error.FLIRError;
         const intrinsic: MemoryIntrinsic = @enumFromInt(idx);
@@ -1804,8 +1850,6 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
     self.x86_mem_instrinsics = ABI.x86_mem_instrinsics;
 }
 
-pub var noisy: bool = false;
-
 fn mcshow(inst: *Inst) struct { MCKind, u16 } {
     return .{ inst.mckind, inst.mcidx };
 }
@@ -1814,17 +1858,14 @@ fn mcshow(inst: *Inst) struct { MCKind, u16 } {
 // callarg instruction: source in i.op1, destination i itself
 // putphi instruction: source in i.op1, destination in i.op2 (the phi instruction)
 // pos is advanced to first ins (or null) after the move group
-pub fn resolve_movegroup(self: *Self, pos: *InsIterator, tag: Tag) !void {
-    if (noisy) print("teg: {}\n", .{tag});
+pub fn resolve_callargs_temp(self: *Self, pos: *InsIterator, tag: Tag) !void {
     while (true) {
         var phi_1 = pos.*;
         var any_ready = false;
         while (phi_1.next()) |p1| {
-            if (noisy) print("nesta: {}\n", .{p1.i.tag});
             if (p1.i.tag != tag) break;
             const ready = is_ready: {
                 if (try self.trivial(p1.i)) {
-                    if (noisy) print("trivial..\n", .{});
                     break :is_ready true;
                 }
                 var phi_2 = pos.*; // unordered, we cannot start after phi_1!
@@ -1833,7 +1874,6 @@ pub fn resolve_movegroup(self: *Self, pos: *InsIterator, tag: Tag) !void {
                     if (p1.i == p2.i) continue;
                     const after = p2.i;
                     if (after.tag != tag) break;
-                    if (noisy) print("considering: {} {}\n", .{ p1.ref, p2.ref });
                     if (try self.conflict(p1.i, after)) {
                         break :is_ready false;
                     }
@@ -1841,7 +1881,6 @@ pub fn resolve_movegroup(self: *Self, pos: *InsIterator, tag: Tag) !void {
                 break :is_ready true;
             };
             if (ready) {
-                if (noisy) print("redo: {}\n", .{p1.i.tag});
                 // we cannot run out of pos as it is a slower (or always equal) iterator
                 mem.swap(Inst, p1.i, pos.next().?.i);
                 any_ready = true; // we advanced
@@ -1860,27 +1899,20 @@ pub fn resolve_movegroup(self: *Self, pos: *InsIterator, tag: Tag) !void {
         // we found the end of a swap group when we find a write to this location
         const group_last_write = try self.movins_read(px.i) orelse @panic("trivial move in cycle group?");
         var next_read = try self.movins_dest(px.i);
-        if (noisy) print("what will end group: {}\n", .{mcshow(group_last_write)});
-        if (noisy) print("next: {}\n", .{mcshow(next_read)});
         var phi_1 = pos.*;
         px.i.f.do_swap = true;
         while (phi_1.next()) |p1| {
-            if (noisy) print("cecycle nesta: {}\n", .{p1.i.tag});
             if (p1.i.tag != tag) @panic("naieeee");
             const p1_read = (try self.movins_read(p1.i)) orelse @panic("trivial mode in cycle group?");
-            if (noisy) print("what is read here: {}\n", .{mcshow(p1_read)});
             if (mc_equal(p1_read, next_read)) {
-                if (noisy) print("hitta: {}\n", .{p1.i.tag});
                 // we cannot run out of pos as it is a slower (or always equal) iterator
                 const p1_dest = try self.movins_dest(p1.i);
                 const p1iloc = pos.next().?.i;
                 mem.swap(Inst, p1.i, p1iloc);
                 if (mc_equal(p1_dest, group_last_write)) {
-                    if (noisy) print("DONE\n", .{});
                     p1iloc.f.swap_done = true;
                     break;
                 } else {
-                    if (noisy) print("HITTA IGEN: {}\n", .{mcshow(p1_dest)});
                     p1iloc.f.do_swap = true;
                     next_read = p1_dest;
                     phi_1 = pos.*;
@@ -1890,12 +1922,102 @@ pub fn resolve_movegroup(self: *Self, pos: *InsIterator, tag: Tag) !void {
     }
 }
 
+// currently only putphi, args should also become a list before scheduled..
+pub fn resolve_movelist(self: *Self, node: u16, list: u16) !void {
+    // phase one, kill trivial puts, emit non-conflicting puts
+    while (true) {
+        var phi_1 = list;
+        var any_ready = false;
+        while (phi_1 != NoRef) {
+            var p1 = self.iref(phi_1) orelse return error.FLIRError;
+            if (!p1.f.killed) {
+                // fast path: a lot of putphis are going to be trivial "RAX := RAX" stuff
+                if (try self.trivial(p1)) {
+                    p1.f.killed = true;
+                }
+            }
+            if (p1.f.killed) {
+                phi_1 = p1.next;
+                continue;
+            }
+            const ready = is_ready: {
+                var phi_2 = list; // unordered, we cannot start after phi_1!
+                while (phi_2 != NoRef) {
+                    const p2 = self.iref(phi_2) orelse return error.FLIRError;
+                    // pointer comparison: skip diagonal element
+                    if (!(p2.f.killed or p1 == p2)) {
+                        if (try self.conflict(p1, p2)) {
+                            break :is_ready false;
+                        }
+                    }
+                    phi_2 = p2.next;
+                }
+                break :is_ready true;
+            };
+            if (ready) {
+                p1.f.killed = true;
+                try self.addInstRef(node, phi_1);
+
+                any_ready = true; // we advanced
+            }
+            phi_1 = p1.next;
+        }
+        if (!any_ready) {
+            break;
+        }
+    }
+
+    var phi = list;
+    while (phi != NoRef) {
+        const p = self.iref(phi) orelse return error.FLIRError;
+        if (p.f.killed) {
+            phi = p.next;
+            continue;
+        }
+
+        const group_last_write = try self.movins_read(p) orelse @panic("trivial move in cycle group?");
+        var next_read = try self.movins_dest(p);
+        p.f.killed = true;
+        p.f.do_swap = true;
+        try self.addInstRef(node, phi);
+        var phi_1 = list;
+        while (phi_1 != NoRef) {
+            const p1 = self.iref(phi_1) orelse return error.FLIRError;
+            if (p1.f.killed) {
+                phi_1 = p1.next;
+                continue;
+            }
+            const p1_read = (try self.movins_read(p1)) orelse @panic("trivial mode in cycle group?");
+            if (mc_equal(p1_read, next_read)) {
+                // we cannot run out of pos as it is a slower (or always equal) iterator
+                const p1_dest = try self.movins_dest(p1);
+                try self.addInstRef(node, phi_1);
+                p1.f.killed = true;
+                if (mc_equal(p1_dest, group_last_write)) {
+                    p1.f.swap_done = true;
+                    break;
+                } else {
+                    p1.f.do_swap = true;
+                    next_read = p1_dest;
+                    phi_1 = list;
+                }
+            } else {
+                phi_1 = p1.next;
+            }
+        }
+
+        phi = p.next;
+    }
+}
+
 pub fn resolve_moves(self: *Self) !void {
-    for (self.n.items) |*n| {
+    for (self.n.items, 0..) |*n, ni| {
+        try self.resolve_movelist(uv(ni), n.putphi_list);
+
         var iter = self.ins_iterator(n.firstblk);
         while (iter.peek()) |it| {
-            if (it.i.tag == .putphi or it.i.tag == .callarg) {
-                try self.resolve_movegroup(&iter, it.i.tag);
+            if (it.i.tag == .callarg) {
+                try self.resolve_callargs_temp(&iter, it.i.tag);
             } else {
                 _ = iter.next();
             }
