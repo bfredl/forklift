@@ -1243,7 +1243,8 @@ pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
 }
 
 // TODO: this is really LIVENESS for the sake of regalloc.
-// want simpler use-def/def-use for optimizations
+// want simpler use-def/def-use for optimizations, especially if we
+// go sea-of-nodeish with unscheduled opts
 //
 // not idempotent! does not reset n_use=0 first.
 pub fn calc_use(self: *Self) !void {
@@ -1296,13 +1297,7 @@ pub fn calc_use(self: *Self) !void {
             while (listit != NoRef) {
                 // putphi:s arent ordered, so they all have neg_counter == 0
                 const i = self.iref(listit) orelse return error.FLIRError;
-                if (self.iref(i.op1)) |ref| {
-                    if (ref.vreg()) |vreg| {
-                        live |= vreg_flag(@intCast(vreg));
-                    } else {
-                        ref.vreg_scratch = neg_counter;
-                    }
-                }
+                self.mark_ops_as_used(i, &live, neg_counter);
                 listit = i.next;
             }
 
@@ -1311,40 +1306,9 @@ pub fn calc_use(self: *Self) !void {
                 neg_counter += 1;
                 const i = item.i;
 
-                // TODO: need to consider phi:s even when they are unscheduled
-                if (i.vreg()) |vreg| {
-                    live &= ~vreg_flag(@intCast(vreg));
-                } else {
-                    if (i.vreg_scratch != NoRef) {
-                        if (node_has_clobber) { // quick skipahead when no clobbers
-                            var conflicts: u16 = 0;
-                            for (0..n_ipreg) |r| {
-                                // negative counter: is the last_clobber _before_ the kill position
-                                if (i.vreg_scratch < last_clobber[r]) {
-                                    conflicts |= ipreg_flag(@intCast(r));
-                                }
-                            }
-                            if (conflicts != 0) {
-                                i.f.conflicts = true;
-                            }
-                            i.vreg_scratch = conflicts;
-                        } else {
-                            i.vreg_scratch = 0;
-                        }
-                    }
-                }
+                self.check_live_or_conflicts(i, &live, node_has_clobber, &last_clobber);
 
-                for (i.ops(false)) |op| {
-                    if (self.iref(op)) |ref| {
-                        if (ref.vreg()) |vreg| {
-                            live |= vreg_flag(@intCast(vreg));
-                        } else {
-                            if (ref.vreg_scratch == NoRef) {
-                                ref.vreg_scratch = neg_counter;
-                            }
-                        }
-                    }
-                }
+                self.mark_ops_as_used(i, &live, neg_counter);
 
                 // registers clobbered by this instruction
                 // TOOO: or having it as a fixed input, which is not ALWAYS a clobber
@@ -1392,6 +1356,7 @@ pub fn calc_use(self: *Self) !void {
         }
     }
 
+    // step 3: mark the instructions which kill a live range, which will be used by regalloc
     for (self.n.items, 0..) |*n, ni| {
         // transpose the node.live_in[vreg] bitfield into vreg.live_in[node] bitfield
         for (self.vregs.items, 0..) |*v, vi| {
@@ -1408,52 +1373,81 @@ pub fn calc_use(self: *Self) !void {
 
         var listit = n.putphi_list;
         while (listit != NoRef) {
-            // TODO: a bit of duplicate code. reconsider the entire vref system after unscheduling putphis and phis
             const i = self.iref(listit) orelse return error.FLIRError;
-            if (self.iref(i.op1)) |ref| {
-                if (ref.vreg()) |vreg| {
-                    const bit = vreg_flag(@intCast(vreg));
-                    if ((killed & bit) != 0) {
-                        killed = killed & ~bit;
-                        i.f.kill_op1 = true;
-                    }
-                } else {
-                    if (!ref.f.killed) {
-                        ref.f.killed = true;
-                        i.f.kill_op1 = true;
-                    }
-                }
-            }
-
+            self.mark_ops_who_kill(i, &killed);
             listit = i.next;
         }
 
         var it = self.ins_iterator_rev(n.lastblk);
         while (it.next_rev()) |item| {
-            const i = item.i;
-            for (i.ops(false), 0..) |op, i_op| {
-                var kill: bool = false;
-                if (self.iref(op)) |ref| {
-                    if (ref.vreg()) |vreg| {
-                        const bit = vreg_flag(@intCast(vreg));
-                        if ((killed & bit) != 0) {
-                            killed = killed & ~bit;
-                            kill = true;
-                        }
-                    } else {
-                        if (!ref.f.killed) {
-                            ref.f.killed = true;
-                            kill = true;
-                        }
+            self.mark_ops_who_kill(item.i, &killed);
+        }
+    }
+}
+
+fn check_live_or_conflicts(self: *Self, i: *Inst, live: *u64, node_has_clobber: bool, last_clobber: *const [n_ipreg]u16) void {
+    _ = self;
+
+    // TODO: need to consider phi:s even when they are unscheduled
+    if (i.vreg()) |vreg| {
+        live.* &= ~vreg_flag(@intCast(vreg));
+    } else {
+        if (i.vreg_scratch != NoRef) {
+            if (node_has_clobber) { // quick skipahead when no clobbers
+                var conflicts: u16 = 0;
+                for (0..n_ipreg) |r| {
+                    // negative counter: is the last_clobber _before_ the kill position
+                    if (i.vreg_scratch < last_clobber[r]) {
+                        conflicts |= ipreg_flag(@intCast(r));
                     }
                 }
-                if (kill) {
-                    if (i_op == 1) {
-                        i.f.kill_op2 = true;
-                    } else {
-                        i.f.kill_op1 = true;
-                    }
+                if (conflicts != 0) {
+                    i.f.conflicts = true;
                 }
+                i.vreg_scratch = conflicts;
+            } else {
+                i.vreg_scratch = 0;
+            }
+        }
+    }
+}
+
+fn mark_ops_as_used(self: *Self, i: *Inst, live: *u64, neg_counter: u16) void {
+    for (i.ops(false)) |op| {
+        if (self.iref(op)) |ref| {
+            if (ref.vreg()) |vreg| {
+                live.* |= vreg_flag(@intCast(vreg));
+            } else {
+                if (ref.vreg_scratch == NoRef) {
+                    ref.vreg_scratch = neg_counter;
+                }
+            }
+        }
+    }
+}
+
+fn mark_ops_who_kill(self: *Self, i: *Inst, killed: *u64) void {
+    for (i.ops(false), 0..) |op, i_op| {
+        var kill: bool = false;
+        if (self.iref(op)) |ref| {
+            if (ref.vreg()) |vreg| {
+                const bit = vreg_flag(@intCast(vreg));
+                if ((killed.* & bit) != 0) {
+                    killed.* &= ~bit;
+                    kill = true;
+                }
+            } else {
+                if (!ref.f.killed) {
+                    ref.f.killed = true;
+                    kill = true;
+                }
+            }
+        }
+        if (kill) {
+            if (i_op == 1) {
+                i.f.kill_op2 = true;
+            } else {
+                i.f.kill_op1 = true;
             }
         }
     }
