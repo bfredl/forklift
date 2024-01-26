@@ -2237,28 +2237,13 @@ pub fn mark_empty(self: *Self) !void {
     }
 }
 
-// TODO: another thing which becomes delenda with phi reform
-pub fn trivial_ins(self: *Self, i: *Inst) bool {
-    switch (i.tag) {
-        .putphi => {
-            // TODO: src being Undef is trivial, strictly speaking
-            const src = self.iref(i.op1) orelse return false;
-            const dst = self.iref(i.op2).?;
-            return (src.mckind == dst.mckind and src.mcidx == dst.mcidx);
-        },
-        else => return false,
-    }
-}
-
 pub fn empty(self: *Self, ni: u16, allow_succ: bool) bool {
     // entry point is implicitly non-empty (might contain prologue code)
     if (ni == 0) return false;
     const node = &self.n.items[ni];
     if (!allow_succ and node.s[0] != 0) return false;
     var it = self.ins_iterator(node.firstblk);
-    while (it.next()) |item| {
-        if (!self.trivial_ins(item.i)) return false;
-    }
+    if (it.next() != null) return false;
     assert(node.s[1] == 0);
     return true;
 }
