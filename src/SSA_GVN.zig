@@ -72,7 +72,7 @@ pub fn read_var(self: *FLIR, node: u16, vidx: u16, vspec: u8, direct_putvar: ?*u
             // as an optimization, we could check if all predecessors
             // are filled (pred[i].dfnum < n.dfnum), and in that case
             // fill the phi node already;
-            break :thedef try FLIR.prePhi(self, node, vidx, vspec);
+            break :thedef try FLIR.addPhi(self, node, vidx, vspec);
         } else if (n.npred == 1) {
             const pred = self.refs.items[n.predref];
             // assert recursion eventually terminates
@@ -231,15 +231,15 @@ pub fn cleanup_trivial_phi_and_vars(self: *FLIR) !void {
 
     // Pass 2: delete trivial phi:s, now that no one refers to them
     for (self.n.items) |*n| {
-        // TODO: this is suss af but we are going to unschedule phi:s soon..
-        var it = self.ins_iterator_rev(n.lastblk);
-        while (it.next_rev()) |item| {
-            const i = item.i;
-            if (i.tag == .phi) {
-                // phi reading phi was already handled in resolve_phi()
-                if (i.op2 != NoRef) {
-                    self.delete_itersafe(item);
-                }
+        var next_ptr: *u16 = &n.phi_list;
+        while (next_ptr.* != NoRef) {
+            const i = self.iref(next_ptr.*) orelse return error.FLIRError;
+            if (i.op2 != NoRef) {
+                const delenda = next_ptr.*;
+                next_ptr.* = i.next;
+                self.delete_raw(delenda);
+            } else {
+                next_ptr = &i.next;
             }
         }
     }

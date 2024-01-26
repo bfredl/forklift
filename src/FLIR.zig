@@ -841,39 +841,6 @@ pub fn addInstRef(self: *Self, node: u16, inst: u16) !void {
     self.b.items[blkid].i[lastfree] = inst;
 }
 
-pub fn preInst(self: *Self, node: u16, inst: Inst) !u16 {
-    const n = &self.n.items[node];
-    var blkid = n.firstblk;
-
-    var modInst = inst;
-    modInst.node_delete_this = node;
-
-    const ref = try self.addRawInst(modInst);
-
-    var firstfree: i8 = -1;
-    for (0..BLK_SIZE) |i| {
-        if (self.b.items[blkid].i[i] == NoRef) {
-            firstfree = @intCast(i);
-        } else {
-            break;
-        }
-    }
-
-    if (firstfree == -1) {
-        const nextblk = blkid;
-        blkid = try self.new_blk();
-        self.b.items[nextblk].pred = blkid;
-        self.b.items[blkid] = .{ .node = node, .succ = nextblk };
-        n.firstblk = blkid;
-        firstfree = BLK_SIZE - 1;
-    }
-
-    const free: u8 = @intCast(firstfree);
-
-    self.b.items[blkid].i[free] = ref;
-    return ref;
-}
-
 pub fn new_blk(self: *Self) !u16 {
     if (self.b_free != NoRef) {
         const blkid = self.b_free;
@@ -1006,9 +973,9 @@ pub fn call(self: *Self, node: u16, kind: CallKind, num: u16, extra: u16) !u16 {
     return self.addInst(node, .{ .tag = .copy, .spec = intspec(.dword).into(), .op1 = c, .op2 = NoRef });
 }
 
-pub fn prePhi(self: *Self, node: u16, vidx: u16, vspec: u8) !u16 {
+pub fn addPhi(self: *Self, node: u16, vidx: u16, vspec: u8) !u16 {
     const n = &self.n.items[node];
-    const ref = try self.preInst(node, .{ .tag = .phi, .op1 = vidx, .op2 = NoRef, .spec = vspec, .f = .{ .kill_op1 = true }, .next = n.phi_list });
+    const ref = try self.addRawInst(.{ .tag = .phi, .op1 = vidx, .op2 = NoRef, .spec = vspec, .f = .{ .kill_op1 = true }, .next = n.phi_list, .node_delete_this = node });
     n.phi_list = ref;
     return ref;
 }
@@ -1223,6 +1190,13 @@ pub fn reorder_nodes(self: *Self) !void {
         while (it.next()) |item| {
             item.i.node_delete_this = uv(ni); // This Says itself, DELET THIS eventually
         }
+
+        var phi = n.phi_list;
+        while (phi != NoRef) {
+            const i = self.iref(phi) orelse return error.FLIRError;
+            i.node_delete_this = uv(ni);
+            phi = i.next;
+        }
     }
 }
 
@@ -1328,6 +1302,13 @@ pub fn calc_use(self: *Self) !void {
                         }
                     }
                 }
+            }
+
+            var phi = n.phi_list;
+            while (phi != NoRef) {
+                const i = self.iref(phi) orelse return error.FLIRError;
+                self.check_live_or_conflicts(i, &live, node_has_clobber, &last_clobber);
+                phi = i.next;
             }
 
             n.live_in = live;
@@ -1622,7 +1603,6 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
     var highest_used: u8 = 0;
 
     for (self.n.items) |*n| {
-        var it = self.ins_iterator(n.firstblk);
         // registers currently free.
         var free_regs_ip: [n_ipreg]bool = .{true} ** n_ipreg;
         var free_regs_avx: [16]bool = .{true} ** 16;
@@ -1639,21 +1619,16 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
             }
         }
 
+        var phi = n.phi_list;
+        while (phi != NoRef) {
+            const i = &self.i.items[phi];
+            try self.alloc_inst(ABI, i, &free_regs_ip, &free_regs_avx, &highest_used);
+            phi = i.next;
+        }
+        var it = self.ins_iterator(n.firstblk);
         while (it.next()) |item| {
             const i = item.i;
             // const ref = item.ref;
-
-            if (i.tag == .putphi) {
-                // TODO: self.iref_reg() or something
-                const from = if (self.iref(i.op1)) |f| f.ipreg() else null;
-                if (from) |reg| {
-                    const to = self.iref(i.op2).?;
-                    if (to.mckind == .unallocated_raw) {
-                        to.mckind = .unallocated_ipreghint;
-                        to.mcidx = reg.id();
-                    }
-                }
-            }
 
             const is_avx = (i.res_type() == ValType.avxval);
 
@@ -1676,90 +1651,24 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
                 }
             }
 
-            if (!(i.has_res() and i.mckind.unallocated())) {
-                // TODO: handle vregs with a pre-allocated register
-                continue;
-            }
+            try self.alloc_inst(ABI, i, &free_regs_ip, &free_regs_avx, &highest_used);
+        }
 
-            var usable_regs: [16]bool = undefined;
-            var free_regs = if (is_avx) &free_regs_avx else &free_regs_ip;
-            const reg_kind: MCKind = if (is_avx) .vfreg else .ipreg;
-
-            @memcpy(&usable_regs, free_regs);
-            var conflicts: u16 = 0;
-            if (i.f.conflicts) {
-                conflicts |= i.vreg_scratch;
-            }
-
-            if (i.vreg()) |vreg| {
-                const v = self.vregs.items[vreg];
-                const imask = v.live_in;
-                conflicts |= v.conflicts; // fixed reg conflicts
-                for (self.vregs.items) |vref| {
-                    const vr = self.iref(vref.ref).?;
-                    if (vr.mckind != reg_kind) continue;
-                    if ((imask & vref.live_in) != 0) {
-                        // mckind checked above
-                        usable_regs[vr.mcidx] = false;
-                        break;
+        var put_iter = n.putphi_list;
+        while (put_iter != NoRef) {
+            const i = &self.i.items[put_iter];
+            if (i.tag == .putphi) {
+                // NB: we don't need to worry about kill i.op1 as we are at the end of the node
+                const from = if (self.iref(i.op1)) |f| f.ipreg() else null;
+                if (from) |reg| {
+                    const to = self.iref(i.op2).?;
+                    if (to.mckind == .unallocated_raw) {
+                        to.mckind = .unallocated_ipreghint;
+                        to.mcidx = reg.id();
                     }
                 }
             }
-
-            if (conflicts != 0) {
-                for (0..n_ipreg) |r| {
-                    if ((conflicts & ipreg_flag(@intCast(r))) != 0) {
-                        usable_regs[r] = false;
-                    }
-                }
-            }
-
-            // TODO: this would be handled by materializing the constant 1 in "VAL2 = 1 << VAL1"
-            // as a register, in a proper target dependent isel-pass, IF WE HAD ONE
-            if (i.tag == .ibinop and @as(IntBinOp, @enumFromInt(i.spec)).asShift() != null and constidx(i.op1) != null) {
-                if (self.iref(i.op2)) |amt| {
-                    if (amt.mckind == .ipreg) {
-                        usable_regs[amt.mcidx] = false;
-                    }
-                }
-            }
-
-            var chosen_reg: ?u8 = null;
-            if (i.mckind == .unallocated_ipreghint) {
-                if (i.res_type() != ValType.intptr) unreachable;
-                if (usable_regs[i.mcidx]) {
-                    chosen_reg = i.mcidx;
-                }
-            }
-
-            if (chosen_reg == null) {
-                // TODO: in the og wimmer paper they do sorting of the "longest" free interval. how do we
-                // do this if without reorder_inst?
-                if (is_avx) {
-                    for (usable_regs, 0..) |usable, reg| {
-                        if (usable) {
-                            chosen_reg = @as(u8, @intCast(reg)); // TODO remove @as
-                            break;
-                        }
-                    }
-                } else {
-                    for (ABI.reg_order, 0..) |reg_try, reg_i| {
-                        if (usable_regs[reg_try.id()]) {
-                            chosen_reg = reg_try.id();
-                            if (reg_i > highest_used) {
-                                highest_used = @intCast(reg_i);
-                            }
-                            break;
-                        }
-                    }
-                }
-            }
-
-            const chosen = chosen_reg orelse @panic("implement interval splitting");
-
-            free_regs[chosen] = false;
-            i.mckind = reg_kind;
-            i.mcidx = chosen;
+            put_iter = i.next;
         }
     }
 
@@ -1770,6 +1679,94 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
     if (highest_used >= reg_first_save) {
         self.nsave = highest_used - reg_first_save + 1;
     }
+}
+
+pub fn alloc_inst(self: *Self, comptime ABI: type, i: *Inst, free_regs_ip: *[n_ipreg]bool, free_regs_avx: *[16]bool, highest_used: *u8) !void {
+    if (!(i.has_res() and i.mckind.unallocated())) {
+        // TODO: handle vregs with a pre-allocated register
+        return;
+    }
+
+    const is_avx = (i.res_type() == ValType.avxval);
+    var usable_regs: [16]bool = undefined;
+    var free_regs = if (is_avx) free_regs_avx else free_regs_ip;
+    const reg_kind: MCKind = if (is_avx) .vfreg else .ipreg;
+
+    @memcpy(&usable_regs, free_regs);
+    var conflicts: u16 = 0;
+    if (i.f.conflicts) {
+        conflicts |= i.vreg_scratch;
+    }
+
+    if (i.vreg()) |vreg| {
+        const v = self.vregs.items[vreg];
+        const imask = v.live_in;
+        conflicts |= v.conflicts; // fixed reg conflicts
+        for (self.vregs.items) |vref| {
+            const vr = self.iref(vref.ref).?;
+            if (vr.mckind != reg_kind) continue;
+            if ((imask & vref.live_in) != 0) {
+                // mckind checked above
+                usable_regs[vr.mcidx] = false;
+                break;
+            }
+        }
+    }
+
+    if (conflicts != 0) {
+        for (0..n_ipreg) |r| {
+            if ((conflicts & ipreg_flag(@intCast(r))) != 0) {
+                usable_regs[r] = false;
+            }
+        }
+    }
+
+    // TODO: this would be handled by materializing the constant 1 in "VAL2 = 1 << VAL1"
+    // as a register, in a proper target dependent isel-pass, IF WE HAD ONE
+    if (i.tag == .ibinop and @as(IntBinOp, @enumFromInt(i.spec)).asShift() != null and constidx(i.op1) != null) {
+        if (self.iref(i.op2)) |amt| {
+            if (amt.mckind == .ipreg) {
+                usable_regs[amt.mcidx] = false;
+            }
+        }
+    }
+
+    var chosen_reg: ?u8 = null;
+    if (i.mckind == .unallocated_ipreghint) {
+        if (i.res_type() != ValType.intptr) unreachable;
+        if (usable_regs[i.mcidx]) {
+            chosen_reg = i.mcidx;
+        }
+    }
+
+    if (chosen_reg == null) {
+        // TODO: in the og wimmer paper they do sorting of the "longest" free interval. how do we
+        // do this if without reorder_inst?
+        if (is_avx) {
+            for (usable_regs, 0..) |usable, reg| {
+                if (usable) {
+                    chosen_reg = @as(u8, @intCast(reg)); // TODO remove @as
+                    break;
+                }
+            }
+        } else {
+            for (ABI.reg_order, 0..) |reg_try, reg_i| {
+                if (usable_regs[reg_try.id()]) {
+                    chosen_reg = reg_try.id();
+                    if (reg_i > highest_used.*) {
+                        highest_used.* = @intCast(reg_i);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    const chosen = chosen_reg orelse @panic("implement interval splitting");
+
+    free_regs[chosen] = false;
+    i.mckind = reg_kind;
+    i.mcidx = chosen;
 }
 
 // TODO: clobbers should be in here :P

@@ -31,21 +31,19 @@ pub fn check_phi(self: *FLIR, worklist: *ArrayList(u16), pred: u16, succ: u16) !
 
     var left: u16 = uv(worklist.items.len);
 
-    var siter = self.ins_iterator(self.n.items[succ].firstblk);
-    while (siter.next()) |it| {
-        if (it.i.tag == .phi) {
-            if (mem.indexOfScalar(u16, worklist.items, it.ref)) |idx| {
-                left -= 1;
-                worklist.items[idx] = NoRef;
-            } else {
-                if (!self.unsealed) {
-                    return error.InvalidCFG;
-                }
-            }
+    var phi = self.n.items[succ].phi_list;
+    while (phi != NoRef) {
+        const i = self.iref(phi) orelse return error.FLIRError;
+        if (i.tag != .phi) return error.FLIRError;
+        if (mem.indexOfScalar(u16, worklist.items, phi)) |idx| {
+            left -= 1;
+            worklist.items[idx] = NoRef;
         } else {
-            // TODO: check for phi in the wild if we memoize this before going thu preds
-            break;
+            if (!self.unsealed) {
+                return error.InvalidCFG;
+            }
         }
+        phi = i.next;
     }
     if (left > 0) return error.InvalidCFG;
     worklist.items.len = 0; // ALL RESET
@@ -144,12 +142,12 @@ pub fn check_vregs(self: *FLIR) !void {
                     const i = self.vregs.items[ireg].ref;
                     // print(" %{}", .{i});
                     if (self.iref(i).?.node_delete_this != ni) {
-                        // print("!!", .{});
+                        // print("!! {} vs {}\n", .{ self.iref(i).?.node_delete_this, ni });
                         err = true;
                     }
                 }
             }
-            // print("\n", .{});
+            print("\n", .{});
         }
     }
     if (err) return error.DoYouEvenLoopAnalysis;
@@ -232,7 +230,7 @@ pub fn debug_print(self: *FLIR) void {
     }
 }
 
-pub fn print_inst(self: *FLIR, ref: u16, i: *FLIR.Inst) !void {
+pub fn print_inst(self: *FLIR, ref: u16, i: *FLIR.Inst) void {
     if (i.tag == .putphi) {
         const targ = if (self.iref(i.op2)) |iref| iref.* else empty_inst;
         const src = if (self.iref(i.op1)) |iref| iref.* else empty_inst;
@@ -320,9 +318,15 @@ pub fn print_inst(self: *FLIR, ref: u16, i: *FLIR.Inst) !void {
 // TODO: bull, but here we just use it as "anything unallocated"
 const empty_inst = FLIR.Inst{ .tag = .freelist, .op1 = 0, .op2 = 0 };
 pub fn print_node(self: *FLIR, n: *FLIR.Node) void {
+    var phi = n.phi_list;
+    while (phi != NoRef) {
+        const i = self.iref(phi) orelse @panic("näää");
+        self.print_inst(phi, i);
+        phi = i.next;
+    }
     var it = self.ins_iterator(n.firstblk);
     while (it.next()) |item| {
-        try self.print_inst(item.ref, item.i);
+        self.print_inst(item.ref, item.i);
     }
 
     var put_iter = n.putphi_list;
@@ -338,10 +342,10 @@ pub fn print_node(self: *FLIR, n: *FLIR.Node) void {
             print_op(self, " := ", i.f.kill_op1, i.op1);
             print("\n", .{});
         } else if (i.tag == .putphi) {
-            if (!i.f.killed) try self.print_inst(put_iter, i);
+            if (!i.f.killed) self.print_inst(put_iter, i);
         } else {
             print("MÖG: ", .{});
-            try self.print_inst(put_iter, i);
+            self.print_inst(put_iter, i);
         }
         put_iter = i.next;
     }
