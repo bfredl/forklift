@@ -6,7 +6,7 @@ const parse_mod = forklift.parse_mod;
 const print = std.debug.print;
 
 const std = @import("std");
-const os = std.os;
+const posix = std.posix;
 
 const test_allocator = std.testing.allocator;
 
@@ -610,9 +610,9 @@ test "syscall" {
 
     defer cfo.deinit();
     const fun = cfo.get_ptr(0, AFunc);
-    const pid = try os.fork();
+    const pid = try posix.fork();
     if (pid > 0) {
-        const status = os.waitpid(pid, 0);
+        const status = posix.waitpid(pid, 0);
         try expect(usize, 11 * 256, status.status);
     } else {
         _ = fun(11);

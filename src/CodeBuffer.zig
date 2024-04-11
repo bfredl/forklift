@@ -1,6 +1,6 @@
 const std = @import("std");
 const mem = std.mem;
-const os = std.os;
+const posix = std.posix;
 const debug = std.debug;
 const ArrayListAligned = std.ArrayListAligned;
 const page_size = std.mem.page_size;
@@ -58,7 +58,7 @@ pub fn init(allocator: mem.Allocator) !Self {
 
 pub fn deinit(self: *Self) void {
     // TODO: only in debug mode (as clobbers the array, needs r/w)
-    os.mprotect(self.buf.items.ptr[0..self.buf.capacity], os.PROT.READ | os.PROT.WRITE) catch unreachable;
+    posix.mprotect(self.buf.items.ptr[0..self.buf.capacity], posix.PROT.READ | posix.PROT.WRITE) catch unreachable;
     self.buf.deinit();
     self.inst_off.deinit();
     self.inst_dbg.deinit();
@@ -95,7 +95,7 @@ pub fn dbg_test(self: *Self) !void {
 }
 
 pub fn finalize(self: *Self) !void {
-    try os.mprotect(self.buf.items.ptr[0..self.buf.capacity], os.PROT.READ | os.PROT.EXEC);
+    try posix.mprotect(self.buf.items.ptr[0..self.buf.capacity], posix.PROT.READ | posix.PROT.EXEC);
 }
 
 pub fn get_ptr(self: *Self, target: u32, comptime T: type) T {

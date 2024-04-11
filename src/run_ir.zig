@@ -9,6 +9,7 @@ const common = @import("./common.zig");
 const std = @import("std");
 const mem = std.mem;
 const os = std.os;
+const posix = std.posix;
 
 pub fn usage() void {
     print("no.\n", .{});
@@ -16,7 +17,7 @@ pub fn usage() void {
 
 pub fn readall(allocator: mem.Allocator, filename: []u8) ![]u8 {
     const fil = try std.fs.cwd().openFile(filename, .{});
-    const stat = try os.fstat(fil.handle);
+    const stat = try posix.fstat(fil.handle);
     const size = std.math.cast(usize, stat.size) orelse return error.FileTooBig;
     const buf = try allocator.alloc(u8, size);
     if (try fil.readAll(buf) < size) {
