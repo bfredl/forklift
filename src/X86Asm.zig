@@ -940,7 +940,7 @@ pub fn sx(self: *Self, op: ShiftOp, dst: IPReg, src1: IPReg, src2: IPReg) !void 
 // output functions
 
 pub fn dbg_nasm(self: *Self, allocator: Allocator) !void {
-    var nasm = std.ChildProcess.init(&[_][]const u8{ "ndisasm", "-b", "64", "-" }, allocator);
+    var nasm = std.process.Child.init(&[_][]const u8{ "ndisasm", "-b", "64", "-" }, allocator);
     // defer nasm.deinit();
     nasm.stdin_behavior = .Pipe;
     _ = try std.io.getStdOut().write("\n");

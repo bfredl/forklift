@@ -162,7 +162,7 @@ pub fn prog_test_run(
     }
 
     const rc = linux.bpf(.prog_test_run, &attr, @sizeOf(BPF.TestRunAttr));
-    const err = linux.getErrno(rc);
+    const err = linux.E.init(rc);
     if (err != .SUCCESS) {
         std.debug.print("\nprog_test_run: E{s}\n", .{@tagName(err)});
     }
@@ -172,6 +172,6 @@ pub fn prog_test_run(
         .FAULT => error.BPFProgramFault,
         .INVAL => error.InvalidArgument,
         .PERM => error.AccessDenied,
-        else => std.os.unexpectedErrno(err),
+        else => std.posix.unexpectedErrno(err),
     };
 }
