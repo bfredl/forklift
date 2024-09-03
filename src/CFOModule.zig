@@ -47,10 +47,10 @@ relocations: Relocations,
 
 pub fn init(allocator: std.mem.Allocator) !CFOModule {
     return .{
-        .code = try CodeBuffer.init(allocator),
-        .bpf_code = BPFCode.init(allocator),
-        .objs = ObjsMap.init(allocator),
-        .relocations = Relocations.init(allocator),
+        .code = try .init(allocator),
+        .bpf_code = .init(allocator),
+        .objs = .init(allocator),
+        .relocations = .init(allocator),
     };
 }
 

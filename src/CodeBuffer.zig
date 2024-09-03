@@ -48,11 +48,11 @@ pub fn new_inst(self: *Self, addr: usize) !void {
 pub fn init(allocator: mem.Allocator) !Self {
     // TODO: allocate consequtive mprotectable pages
     return Self{
-        .buf = try ArrayListAligned(u8, page_size).initCapacity(std.heap.page_allocator, page_size),
-        .inst_off = ArrayList(u32).init(allocator),
-        .inst_dbg = ArrayList(usize).init(allocator),
-        .relocations = ArrayList(Relocation).init(allocator),
-        .value_map = ArrayList(ValueDebugInfo).init(allocator),
+        .buf = try .initCapacity(std.heap.page_allocator, page_size),
+        .inst_off = .init(allocator),
+        .inst_dbg = .init(allocator),
+        .relocations = .init(allocator),
+        .value_map = .init(allocator),
     };
 }
 

@@ -80,7 +80,7 @@ pub fn main() !void {
     const inbuf2 = if (argv.len > nextarg) try readall(allocator, mem.span(argv[nextarg])) else null;
     defer if (inbuf2) |b| allocator.free(b);
 
-    var module = try @import("./CFOModule.zig").init(allocator);
+    var module: @import("./CFOModule.zig") = try .init(allocator);
 
     // try parser.fd_objs.put("count", map_count);
     try parse_mod(&module, allocator, buf, false, false);

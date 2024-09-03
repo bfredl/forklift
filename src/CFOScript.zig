@@ -610,7 +610,7 @@ fn do_parse(self: *Self) !bool {
 
 pub fn parse_func(mod: *CFOModule, ir: *FLIR, t: *Tokenizer, allocator: Allocator) !void {
     const curnode = try ir.addNode();
-    var self: Self = .{ .mod = mod, .ir = ir, .t = t.*, .curnode = curnode, .vars = std.StringArrayHashMap(IdInfo).init(allocator) };
+    var self: Self = .{ .mod = mod, .ir = ir, .t = t.*, .curnode = curnode, .vars = .init(allocator) };
     defer self.vars.deinit();
     defer t.* = self.t;
     // TODO: use did_ret for something?

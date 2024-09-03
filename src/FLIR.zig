@@ -676,15 +676,15 @@ fn initConsts(self: *Self) void {
 pub fn init(n: u16, allocator: Allocator) !Self {
     var self = Self{
         .a = allocator,
-        .n = try ArrayList(Node).initCapacity(allocator, n),
-        .b = try ArrayList(Block).initCapacity(allocator, n),
-        .i = try ArrayList(Inst).initCapacity(allocator, 4 * n),
-        .vregs = @TypeOf(@as(Self, undefined).vregs).init(allocator),
-        .blkorder = ArrayList(u16).init(allocator),
-        .preorder = ArrayList(u16).init(allocator),
-        .var_names = ArrayList(?[]const u8).init(allocator),
-        .refs = try ArrayList(u16).initCapacity(allocator, 4 * n),
-        .constvals = try ArrayList(u64).initCapacity(allocator, 8),
+        .n = try .initCapacity(allocator, n),
+        .b = try .initCapacity(allocator, n),
+        .i = try .initCapacity(allocator, 4 * n),
+        .vregs = .init(allocator),
+        .blkorder = .init(allocator),
+        .preorder = .init(allocator),
+        .var_names = .init(allocator),
+        .refs = try .initCapacity(allocator, 4 * n),
+        .constvals = try .initCapacity(allocator, 8),
     };
     self.initConsts();
     return self;
