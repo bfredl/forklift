@@ -691,7 +691,7 @@ pub fn init(n: u16, allocator: Allocator) !Self {
 }
 
 pub fn reinit(self: *Self) void {
-    const info = @typeInfo(Self).Struct;
+    const info = @typeInfo(Self).@"struct";
 
     // 1. reset fields with initializers to their initial value (most int members)
     // 2. set ArrayList members to empty (but keep existing allocations)
@@ -699,7 +699,7 @@ pub fn reinit(self: *Self) void {
         if (field.default_value) |default_value_ptr| {
             const default_value = @as(*align(1) const field.type, @ptrCast(default_value_ptr)).*;
             @field(self, field.name) = default_value;
-        } else if (@typeInfo(field.type) == .Struct) {
+        } else if (@typeInfo(field.type) == .@"struct") {
             if (@hasField(field.type, "items")) {
                 @field(self, field.name).items.len = 0;
             }

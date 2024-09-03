@@ -90,11 +90,11 @@ pub fn install(cfo: *CodeBuffer) !void {
         .flags = (posix.SA.SIGINFO | posix.SA.RESTART),
     };
 
-    try posix.sigaction(posix.SIG.TRAP, &act, null);
+    posix.sigaction(posix.SIG.TRAP, &act, null);
     act.flags |= posix.SA.RESETHAND;
-    try posix.sigaction(posix.SIG.SEGV, &act, null);
-    try posix.sigaction(posix.SIG.ILL, &act, null);
-    try posix.sigaction(posix.SIG.BUS, &act, null);
+    posix.sigaction(posix.SIG.SEGV, &act, null);
+    posix.sigaction(posix.SIG.ILL, &act, null);
+    posix.sigaction(posix.SIG.BUS, &act, null);
 }
 
 pub fn clear() void {
