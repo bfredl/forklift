@@ -696,8 +696,7 @@ pub fn reinit(self: *Self) void {
     // 1. reset fields with initializers to their initial value (most int members)
     // 2. set ArrayList members to empty (but keep existing allocations)
     inline for (info.fields) |field| {
-        if (field.default_value) |default_value_ptr| {
-            const default_value = @as(*align(1) const field.type, @ptrCast(default_value_ptr)).*;
+        if (field.defaultValue()) |default_value| {
             @field(self, field.name) = default_value;
         } else if (@typeInfo(field.type) == .@"struct") {
             if (@hasField(field.type, "items")) {

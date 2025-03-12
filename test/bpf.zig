@@ -33,8 +33,8 @@ test "show code" {
     try forklift.dump_bpf(data.writer(), mod.bpf_code.items);
     // std.debug.print("\n{s}\n", .{data.items});
     try std.testing.expectEqualSlices(u8,
-        \\  0: b7 0 0  +0   +5 MOV64 r0, 5
-        \\  1: 95 0 0  +0   +0 EXIT
+        \\000: b7 0 0  +0   +5 MOV64 r0, 5
+        \\001: 95 0 0  +0   +0 EXIT
         \\
     , data.items);
 }

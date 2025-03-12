@@ -266,6 +266,8 @@ pub fn call_expr(self: *Self, type_ctx: SpecType, kind: []const u8) !u16 {
         } else if (mem.eql(u8, kind, "memset")) {
             const idx = @intFromEnum(FLIR.MemoryIntrinsic.memset);
             break :target .{ .memory_intrinsic, try self.ir.const_int(@intCast(idx)), 0 };
+        } else {
+            return error.ParseError;
         }
     };
 

@@ -1,25 +1,22 @@
 const std = @import("std");
-const mem = std.mem;
 const posix = std.posix;
 const debug = std.debug;
-const ArrayListAligned = std.ArrayListAligned;
-const page_size = std.mem.page_size;
-const ArrayList = std.ArrayList;
+const page_size_min = std.heap.page_size_min;
 
 const print = std.debug.print;
 const Self = @This();
 const common = @import("./common.zig");
 
-buf: ArrayListAligned(u8, page_size),
+buf: std.ArrayListAligned(u8, page_size_min),
 
 /// offset of each encoded instruction. Might not be needed
 /// but useful for debugging.
-inst_off: ArrayList(u32),
-inst_dbg: ArrayList(usize),
+inst_off: std.ArrayList(u32),
+inst_dbg: std.ArrayList(usize),
 
-relocations: ArrayList(Relocation),
+relocations: std.ArrayList(Relocation),
 
-value_map: ArrayList(ValueDebugInfo),
+value_map: std.ArrayList(ValueDebugInfo),
 
 // currently only for constant data past "ret", should also be
 // for calls to unemitted functions etc
@@ -45,10 +42,10 @@ pub fn new_inst(self: *Self, addr: usize) !void {
     try self.inst_dbg.append(addr);
 }
 
-pub fn init(allocator: mem.Allocator) !Self {
+pub fn init(allocator: std.mem.Allocator) !Self {
     // TODO: allocate consequtive mprotectable pages
     return Self{
-        .buf = try .initCapacity(std.heap.page_allocator, page_size),
+        .buf = try .initCapacity(std.heap.page_allocator, page_size_min),
         .inst_off = .init(allocator),
         .inst_dbg = .init(allocator),
         .relocations = .init(allocator),
