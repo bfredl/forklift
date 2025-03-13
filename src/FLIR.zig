@@ -13,9 +13,12 @@ const options = if (!builtin.is_test) &@import("root").options else null;
 // remove verifying printing code regardless
 pub const minimal = false;
 
-// this currently causes a curious bug as of zig nightly 26dec2022.
-// recursive method calls like self.rpo_visit() within itself do not work!
-pub usingnamespace @import("./verify_ir.zig");
+const verify_ir = @import("./verify_ir.zig");
+pub const check_ir_valid = verify_ir.check_ir_valid;
+pub const check_vregs = verify_ir.check_vregs;
+pub const debug_print = verify_ir.debug_print;
+pub const print_debug_map = verify_ir.print_debug_map;
+pub const print_intervals = verify_ir.print_intervals;
 
 const SSA_GVN = @import("./SSA_GVN.zig");
 pub const resolve_ssa = SSA_GVN.resolve_ssa;

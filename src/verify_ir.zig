@@ -13,7 +13,7 @@ const print = std.debug.print;
 const common = @import("./common.zig");
 const options = common.debug_options;
 
-pub fn check_phi(self: *FLIR, worklist: *ArrayList(u16), pred: u16, succ: u16) !void {
+fn check_phi(self: *FLIR, worklist: *ArrayList(u16), pred: u16, succ: u16) !void {
     const pn = self.n.items[pred];
 
     var item = pn.putphi_list;
@@ -50,7 +50,7 @@ pub fn check_phi(self: *FLIR, worklist: *ArrayList(u16), pred: u16, succ: u16) !
     // RETURN
 }
 
-pub fn get_jmp_or_last(self: *FLIR, n: *FLIR.Node) !?Tag {
+fn get_jmp_or_last(self: *FLIR, n: *FLIR.Node) !?Tag {
     var last_inst: ?Tag = null;
     var iter = self.ins_iterator(n.firstblk);
     while (iter.next()) |it| {
@@ -60,7 +60,7 @@ pub fn get_jmp_or_last(self: *FLIR, n: *FLIR.Node) !?Tag {
     return last_inst;
 }
 
-pub fn check_inst(self: *FLIR, i: *FLIR.Inst) !void {
+fn check_inst(self: *FLIR, i: *FLIR.Inst) !void {
     for (i.ops(false)) |op| {
         if (self.iref(op)) |ref| {
             if (ref.tag == .freelist) {
@@ -93,7 +93,7 @@ pub fn check_ir_valid(self: *FLIR) !void {
                 if (pn.s[0] != ni and pn.s[1] != ni) {
                     return error.InvalidCFG;
                 }
-                try self.check_phi(&worklist, pred, uv(ni));
+                try check_phi(self, &worklist, pred, uv(ni));
             }
         }
 
@@ -106,7 +106,7 @@ pub fn check_ir_valid(self: *FLIR) !void {
             for (b.i) |i| {
                 if (i != NoRef) {
                     if (i >= self.i.items.len) return error.FLIRError;
-                    try self.check_inst(self.iref(i).?);
+                    try check_inst(self, self.iref(i).?);
                 }
             }
             prev_blk = blk;
@@ -198,7 +198,7 @@ pub fn debug_print(self: *FLIR) void {
 
         print("\n", .{});
 
-        self.print_node(n);
+        print_node(self, n);
 
         // only print liveout if we have more than one sucessor, otherwise it is BOOORING
         if (n.s[1] != 0) {
@@ -317,16 +317,16 @@ pub fn print_inst(self: *FLIR, ref: u16, i: *FLIR.Inst) void {
 
 // TODO: bull, but here we just use it as "anything unallocated"
 const empty_inst = FLIR.Inst{ .tag = .freelist, .op1 = 0, .op2 = 0 };
-pub fn print_node(self: *FLIR, n: *FLIR.Node) void {
+fn print_node(self: *FLIR, n: *FLIR.Node) void {
     var phi = n.phi_list;
     while (phi != NoRef) {
         const i = self.iref(phi) orelse @panic("näää");
-        self.print_inst(phi, i);
+        print_inst(self, phi, i);
         phi = i.next;
     }
     var it = self.ins_iterator(n.firstblk);
     while (it.next()) |item| {
-        self.print_inst(item.ref, item.i);
+        print_inst(self, item.ref, item.i);
     }
 
     var put_iter = n.putphi_list;
@@ -342,10 +342,10 @@ pub fn print_node(self: *FLIR, n: *FLIR.Node) void {
             print_op(self, " := ", i.f.kill_op1, i.op1);
             print("\n", .{});
         } else if (i.tag == .putphi) {
-            if (!i.f.killed) self.print_inst(put_iter, i);
+            if (!i.f.killed) print_inst(self, put_iter, i);
         } else {
             print("MÖG: ", .{});
-            self.print_inst(put_iter, i);
+            print_inst(self, put_iter, i);
         }
         put_iter = i.next;
     }
@@ -381,14 +381,14 @@ fn print_mcval(i: *FLIR.Inst) void {
     }
 }
 
-pub fn uses(i: *FLIR.Inst, r: u16) bool {
+fn uses(i: *FLIR.Inst, r: u16) bool {
     const n_op = i.n_op(false);
     if (n_op >= 1 and i.op1 == r) return true;
     if (n_op >= 2 and i.op2 == r) return true;
     return false;
 }
 
-pub fn print_interval(self: *FLIR, ref: u16) void {
+fn print_interval(self: *FLIR, ref: u16) void {
     if (comptime FLIR.minimal) {
         return;
     }
@@ -471,7 +471,7 @@ pub fn print_intervals(self: *FLIR) void {
             if (vreg or show_temp) {
                 if (!vreg and !is_phi) print("\x1b[38;5;244m", .{});
                 print("{s}: %{:3} ", .{ if (vreg) "VREG" else "TEMP", fake_ref(self, item.ref) });
-                self.print_interval(item.ref);
+                print_interval(self, item.ref);
             }
         }
     }
