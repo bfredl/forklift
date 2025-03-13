@@ -21,25 +21,25 @@ pub fn resolve_ssa(self: *FLIR) !void {
     while (true) {
         var did_phi: bool = false;
         for (self.n.items, 0..) |*n, ni| {
-            did_phi = did_phi or try self.resolve_node(@intCast(ni), n, pred_buf);
+            did_phi = did_phi or try resolve_node(self, @intCast(ni), n, pred_buf);
         }
         if (!did_phi) break;
     }
 
-    try self.cleanup_trivial_phi_and_vars();
+    try cleanup_trivial_phi_and_vars(self);
 }
 
 pub fn read_ref(self: *FLIR, node: u16, ref: u16) !u16 {
     const i = self.iref(ref) orelse return ref;
     if (i.tag == .variable) {
-        return try self.read_var(node, i.op1, i.spec, null);
+        return try read_var(self, node, i.op1, i.spec, null);
     } else {
         // already on SSA-form, nothing to do
         return ref;
     }
 }
 
-pub fn read_var(self: *FLIR, node: u16, vidx: u16, vspec: u8, direct_putvar: ?*u16) !u16 {
+fn read_var(self: *FLIR, node: u16, vidx: u16, vspec: u8, direct_putvar: ?*u16) !u16 {
     // It matters where you are
     const n = self.n.items[node];
 
@@ -53,7 +53,7 @@ pub fn read_var(self: *FLIR, node: u16, vidx: u16, vspec: u8, direct_putvar: ?*u
             if (direct_putvar) |put| {
                 put.* = put_iter;
             }
-            return self.check_trivial(p.op1);
+            return check_trivial(self, p.op1);
         }
         put_iter = p.next;
     }
@@ -77,7 +77,6 @@ pub fn read_var(self: *FLIR, node: u16, vidx: u16, vspec: u8, direct_putvar: ?*u
             const pred = self.refs.items[n.predref];
             // assert recursion eventually terminates
             assert(self.n.items[pred].dfnum < n.dfnum);
-            // self.read_var() doesn't work (no recursive mixin methods :P)
             // no longer direct, discard direct_putvar
             break :thedef try read_var(self, pred, vidx, vspec, null);
         } else { // n.npred == 0
@@ -90,7 +89,7 @@ pub fn read_var(self: *FLIR, node: u16, vidx: u16, vspec: u8, direct_putvar: ?*u
     return def;
 }
 
-pub fn check_trivial(self: *FLIR, ref: u16) u16 {
+fn check_trivial(self: *FLIR, ref: u16) u16 {
     if (self.iref(ref)) |i| {
         if (i.tag == .phi and i.op2 != NoRef) {
             return check_trivial(self, i.op2);
@@ -99,21 +98,21 @@ pub fn check_trivial(self: *FLIR, ref: u16) u16 {
     return ref;
 }
 
-pub fn resolve_node(self: *FLIR, ni: u16, n: *FLIR.Node, pred_buf: []PredItem) !bool {
+fn resolve_node(self: *FLIR, ni: u16, n: *FLIR.Node, pred_buf: []PredItem) !bool {
     var any = false;
     var it = n.phi_list;
     while (it != NoRef) {
         const i = &self.i.items[it];
         const next = i.next;
         if (i.tag != .phi) @panic("GRAAAK");
-        any = any or try self.resolve_phi(ni, i, it, pred_buf);
+        any = any or try resolve_phi(self, ni, i, it, pred_buf);
         it = next;
     }
     return any;
 }
 
 const PredItem = struct { ref: u16, direct_putvar: u16 };
-pub fn resolve_phi(self: *FLIR, n: u16, i: *FLIR.Inst, iref: u16, pred_buf: []PredItem) !bool {
+fn resolve_phi(self: *FLIR, n: u16, i: *FLIR.Inst, iref: u16, pred_buf: []PredItem) !bool {
     var changed: bool = false;
     if (i.f.kill_op1) {
         // not resolved
@@ -124,7 +123,7 @@ pub fn resolve_phi(self: *FLIR, n: u16, i: *FLIR.Inst, iref: u16, pred_buf: []Pr
         const vspec = i.spec;
         for (self.preds(n), 0..) |v, vi| {
             var direct_putvar: u16 = NoRef;
-            const ref = try self.read_var(v, vidx, vspec, &direct_putvar);
+            const ref = try read_var(self, v, vidx, vspec, &direct_putvar);
             // XX: In principle we could already handle "Undefined" being represented
             // as NoRef, but we don't support undefined yets and we likely want
             // another sentinel value than Noref, to catch mistakes easier.
@@ -159,8 +158,8 @@ pub fn resolve_phi(self: *FLIR, n: u16, i: *FLIR.Inst, iref: u16, pred_buf: []Pr
         const onlyref: ?u16 = theref: {
             var seen_ref: ?u16 = null;
             for (self.preds(n)) |v| {
-                const phiref = try self.read_putphi(v, iref) orelse return error.FLIRError;
-                const ref = self.check_trivial(phiref);
+                const phiref = try read_putphi(self, v, iref) orelse return error.FLIRError;
+                const ref = check_trivial(self, phiref);
                 if (ref != iref) {
                     if (seen_ref) |seen| {
                         if (seen != ref) break :theref null;
@@ -180,7 +179,7 @@ pub fn resolve_phi(self: *FLIR, n: u16, i: *FLIR.Inst, iref: u16, pred_buf: []Pr
     return changed;
 }
 
-pub fn read_putphi(self: *FLIR, ni: u16, phiref: u16) !?u16 {
+fn read_putphi(self: *FLIR, ni: u16, phiref: u16) !?u16 {
     const n = &self.n.items[ni];
     var item = n.putphi_list;
     while (item != NoRef) {
@@ -191,7 +190,7 @@ pub fn read_putphi(self: *FLIR, ni: u16, phiref: u16) !?u16 {
     return null;
 }
 
-pub fn cleanup_trivial_phi_and_vars(self: *FLIR) !void {
+fn cleanup_trivial_phi_and_vars(self: *FLIR) !void {
     // Pass 1: eleminate usages of trivial phi:s (including dead puts)
     // TODO: this can be merged with a general copy-propagation pass (IF WE HAD ONE!!)
     for (self.n.items) |*n| {
@@ -200,9 +199,9 @@ pub fn cleanup_trivial_phi_and_vars(self: *FLIR) !void {
             const i = item.i;
             const nop = i.n_op(false);
             if (nop > 0) {
-                i.op1 = self.check_trivial(i.op1);
+                i.op1 = check_trivial(self, i.op1);
                 if (nop > 1) {
-                    i.op2 = self.check_trivial(i.op2);
+                    i.op2 = check_trivial(self, i.op2);
                 }
             }
         }
@@ -216,7 +215,7 @@ pub fn cleanup_trivial_phi_and_vars(self: *FLIR) !void {
                 if (ref.op2 == NoRef) {
                     keep = true;
                     // but check if we read any trivial phis..
-                    i.op1 = self.check_trivial(i.op1);
+                    i.op1 = check_trivial(self, i.op1);
                 }
             }
             if (keep) {

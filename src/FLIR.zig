@@ -17,7 +17,9 @@ pub const minimal = false;
 // recursive method calls like self.rpo_visit() within itself do not work!
 pub usingnamespace @import("./verify_ir.zig");
 
-pub usingnamespace @import("./SSA_GVN.zig");
+const SSA_GVN = @import("./SSA_GVN.zig");
+pub const resolve_ssa = SSA_GVN.resolve_ssa;
+pub const read_ref = SSA_GVN.read_ref;
 
 const ArrayList = std.ArrayList;
 const assert = std.debug.assert;
