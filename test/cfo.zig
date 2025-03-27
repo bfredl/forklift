@@ -8,6 +8,8 @@ const expectEqual = std.testing.expectEqual;
 const a = X86Asm.a;
 const bo = X86Asm.bo;
 
+const w = true;
+
 pub fn test_call2(self: *CodeBuffer, arg1: usize, arg2: usize) !usize {
     try self.finalize();
     const FunPtr = *const fn (arg1: usize, arg2: usize) callconv(.C) usize;
@@ -31,7 +33,7 @@ test "return first argument" {
     var cfo = X86Asm{ .code = &code };
     defer code.deinit();
 
-    try cfo.mov(.rax, .rdi);
+    try cfo.mov(w, .rax, .rdi);
     try cfo.ret();
     try expectEqual(@as(usize, 4), try test_call2(&code, 4, 10));
 }
@@ -41,7 +43,7 @@ test "return second argument" {
     var cfo = X86Asm{ .code = &code };
     defer code.deinit();
 
-    try cfo.mov(.rax, .rsi);
+    try cfo.mov(w, .rax, .rsi);
     try cfo.ret();
     try expectEqual(@as(usize, 10), try test_call2(&code, 4, 10));
 }
@@ -51,8 +53,8 @@ test "read/write first arg as 64-bit pointer" {
     var cfo = X86Asm{ .code = &code };
     defer code.deinit();
 
-    try cfo.movrm(.rax, a(.rdi));
-    try cfo.movmr(a(.rdi), .rsi);
+    try cfo.movrm(w, .rax, a(.rdi));
+    try cfo.movmr(w, a(.rdi), .rsi);
     try cfo.ret();
 
     var someint: u64 = 33;
@@ -66,8 +68,8 @@ test "read/write first arg as 64-bit pointer with offsett" {
     var cfo = X86Asm{ .code = &code };
     defer code.deinit();
 
-    try cfo.movrm(.rax, bo(.rdi, 0x08));
-    try cfo.movmr(bo(.rdi, 0x10), .rsi);
+    try cfo.movrm(w, .rax, bo(.rdi, 0x08));
+    try cfo.movmr(w, bo(.rdi, 0x10), .rsi);
     try cfo.ret();
 
     var someint: [2]u64 = .{ 33, 45 };
@@ -88,7 +90,7 @@ test "RIP-relative read" {
     // try cfo.wb(0x00);
     const entry = code.get_target();
     try cfo.enter();
-    try cfo.movrm(.rax, X86Asm.rel(theconst));
+    try cfo.movrm(w, .rax, X86Asm.rel(theconst));
     try cfo.leave();
     try cfo.ret();
 
@@ -109,9 +111,9 @@ test "lealink" {
     const entry = code.get_target();
     try cfo.enter();
     const link = try cfo.lealink(.rdx);
-    try cfo.movrm(.rax, a(.rdx));
-    try cfo.movrm(.rcx, a(.rdx).o(8));
-    try cfo.movmr(a(.rdi), .rcx);
+    try cfo.movrm(w, .rax, a(.rdx));
+    try cfo.movrm(w, .rcx, a(.rdx).o(8));
+    try cfo.movmr(w, a(.rdi), .rcx);
     try cfo.leave();
     try cfo.ret();
 
@@ -132,9 +134,9 @@ test "return intermediate value" {
     var cfo = X86Asm{ .code = &code };
     defer code.deinit();
 
-    // try cfo.movri(.rbx, 20);
-    // try cfo.movri(.r15, 7);
-    try cfo.movri(.rax, 1337);
+    // try cfo.movri(w, .rbx, 20);
+    // try cfo.movri(w, .r15, 7);
+    try cfo.movri(w, .rax, 1337);
     try cfo.ret();
 
     const retval = try test_call2(&code, 7, 8);
@@ -146,7 +148,7 @@ test "write intermediate value to 64-bit pointer" {
     var cfo = X86Asm{ .code = &code };
     defer code.deinit();
 
-    try cfo.movmi(a(.rdi), 586);
+    try cfo.movmi(w, a(.rdi), 586);
     try cfo.ret();
 
     var someint: u64 = 33;
@@ -161,12 +163,12 @@ test "use r12 for base address" {
     defer code.deinit();
 
     // r12 is callee-saved. so save it
-    try cfo.mov(.rcx, .r12);
-    try cfo.mov(.r12, .rdi);
+    try cfo.mov(w, .rcx, .r12);
+    try cfo.mov(w, .r12, .rdi);
 
-    try cfo.movmi(a(.r12), 389);
+    try cfo.movmi(w, a(.r12), 389);
 
-    try cfo.mov(.r12, .rcx);
+    try cfo.mov(w, .r12, .rcx);
     try cfo.ret();
 
     var someint: u64 = 33;
@@ -180,8 +182,8 @@ test "add arguments" {
     var cfo = X86Asm{ .code = &code };
     defer code.deinit();
 
-    try cfo.mov(.rax, .rdi);
-    try cfo.arit(.add, .rax, .rsi);
+    try cfo.mov(w, .rax, .rdi);
+    try cfo.arit(.add, w, .rax, .rsi);
     try cfo.ret();
 
     const retval = try test_call2(&code, 1002, 560);
@@ -217,8 +219,8 @@ test "subtract arguments" {
     var cfo = X86Asm{ .code = &code };
     defer code.deinit();
 
-    try cfo.mov(.rax, .rdi);
-    try cfo.arit(.sub, .rax, .rsi);
+    try cfo.mov(w, .rax, .rdi);
+    try cfo.arit(.sub, w, .rax, .rsi);
     try cfo.ret();
 
     const retval = try test_call2(&code, 1002, 560);
@@ -230,8 +232,8 @@ test "add imm8 to argument" {
     var cfo = X86Asm{ .code = &code };
     defer code.deinit();
 
-    try cfo.mov(.rax, .rdi);
-    try cfo.aritri(.add, .rax, 64);
+    try cfo.mov(w, .rax, .rdi);
+    try cfo.aritri(.add, w, .rax, 64);
     try cfo.ret();
 
     const retval = try test_call2(&code, 120, 9204);
@@ -243,8 +245,8 @@ test "add immediate to argument" {
     var cfo = X86Asm{ .code = &code };
     defer code.deinit();
 
-    try cfo.mov(.rax, .rdi);
-    try cfo.aritri(.add, .rax, 137);
+    try cfo.mov(w, .rax, .rdi);
+    try cfo.aritri(.add, w, .rax, 137);
     try cfo.ret();
 
     const retval = try test_call2(&code, 100, 560);
@@ -256,10 +258,10 @@ test "get the maximum of two args" {
     var cfo = X86Asm{ .code = &code };
     defer code.deinit();
 
-    try cfo.mov(.rax, .rdi);
-    try cfo.arit(.cmp, .rdi, .rsi);
+    try cfo.mov(w, .rax, .rdi);
+    try cfo.arit(.cmp, w, .rdi, .rsi);
     const jump = try cfo.jfwd(.g);
-    try cfo.mov(.rax, .rsi);
+    try cfo.mov(w, .rax, .rsi);
     try cfo.set_target_jmp(jump);
     try cfo.ret();
 
@@ -275,10 +277,10 @@ test "jump backwards in a loop" {
     var cfo = X86Asm{ .code = &code };
     defer code.deinit();
 
-    try cfo.arit(.xor, .rax, .rax);
+    try cfo.arit(.xor, w, .rax, .rax);
     const loop = code.get_target();
-    try cfo.arit(.add, .rax, .rdi);
-    try cfo.aritri(.sub, .rdi, 1);
+    try cfo.arit(.add, w, .rax, .rdi);
+    try cfo.aritri(.sub, w, .rdi, 1);
     // equal -> zero after the subtraction
     try cfo.jbck(.ne, loop);
     try cfo.ret();
@@ -297,7 +299,7 @@ test "push/pop" {
 
     try cfo.push(.rdi);
     try cfo.pop(.r13);
-    try cfo.mov(.rax, .r13);
+    try cfo.mov(w, .rax, .r13);
 
     try cfo.ret();
     const retval = try test_call2(&code, 9009, 560);
@@ -415,8 +417,8 @@ test "indirect call" {
     var cfo = X86Asm{ .code = &code };
     defer code.deinit();
 
-    try cfo.mov(.r10, .rdi);
-    try cfo.mov(.rdi, .rsi); // 2nd arg is now first
+    try cfo.mov(w, .r10, .rdi);
+    try cfo.mov(w, .rdi, .rsi); // 2nd arg is now first
     try cfo.call_ptr(.r10);
     try cfo.ret();
 
@@ -454,14 +456,14 @@ test "local call" {
     // std.debug.print("\nyes: {}\nbut: {*}\n", .{ &multiplier, cfo.code.items.ptr });
 
     const entry_nested = code.get_target();
-    try cfo.mov(.rax, .rdi);
+    try cfo.mov(w, .rax, .rdi);
     try cfo.sh_ri(.rax, .hl, 10);
-    try cfo.arit(.add, .rax, .rsi);
+    try cfo.arit(.add, w, .rax, .rsi);
     try cfo.ret();
 
     const entry = code.get_target();
-    try cfo.movri(.rdi, 1000);
-    try cfo.movri(.rsi, 237);
+    try cfo.movri(w, .rdi, 1000);
+    try cfo.movri(w, .rsi, 237);
     try cfo.call_rel(entry_nested);
     try cfo.sh_ri(.rax, .hl, 1);
     try cfo.ret();

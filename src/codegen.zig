@@ -14,6 +14,8 @@ const EAddr = X86Asm.EAddr;
 const AOp = X86Asm.AOp;
 const CodeBuffer = @import("./CodeBuffer.zig");
 
+const w = true; // TODO: not so fast
+
 const common = @import("./common.zig");
 const options = common.debug_options;
 fn r(reg: IPReg) X86Asm.IPReg {
@@ -30,7 +32,7 @@ fn slotea(slotid: anytype) EAddr {
 
 fn movri_zero(cfo: *X86Asm, dst: IPReg, src: i32) !void {
     if (src != 0) { // TODO: proper constval
-        try cfo.movri(r(dst), src);
+        try cfo.movri(true, r(dst), src);
     } else {
         // THANKS INTEL
         try cfo.zero(r(dst));
@@ -39,14 +41,14 @@ fn movri_zero(cfo: *X86Asm, dst: IPReg, src: i32) !void {
 
 fn regmovmc(cfo: *X86Asm, dst: IPReg, src: IPMCVal) !void {
     switch (src) {
-        .frameslot => |f| try cfo.movrm(r(dst), slotea(f)),
-        .ipreg => |reg| if (dst != reg) try cfo.mov(r(dst), r(reg)),
+        .frameslot => |f| try cfo.movrm(w, r(dst), slotea(f)),
+        .ipreg => |reg| if (dst != reg) try cfo.mov(w, r(dst), r(reg)),
         .constval => |c| try movri_zero(cfo, dst, @intCast(c)),
         .constref, .constptr => |idx| {
             if (src == .constptr) {
                 return error.WIPError;
             } else {
-                try cfo.movrm(r(dst), X86Asm.rel_placeholder());
+                try cfo.movrm(w, r(dst), X86Asm.rel_placeholder());
             }
             try cfo.code.relocations.append(.{ .pos = cfo.code.get_target() - 4, .idx = idx });
         },
@@ -60,9 +62,9 @@ fn avxmovconst(cfo: *X86Asm, fmode: FMode, dst: u4, const_idx: u16) !void {
 
 fn regaritmc(cfo: *X86Asm, op: AOp, dst: IPReg, src: IPMCVal) !void {
     switch (src) {
-        .frameslot => |f| try cfo.aritrm(op, r(dst), X86Asm.a(.rbp).o(slotoff(f))),
-        .ipreg => |reg| try cfo.arit(op, r(dst), r(reg)),
-        .constval => |c| try cfo.aritri(op, r(dst), @intCast(c)),
+        .frameslot => |f| try cfo.aritrm(op, w, r(dst), X86Asm.a(.rbp).o(slotoff(f))),
+        .ipreg => |reg| try cfo.arit(op, w, r(dst), r(reg)),
+        .constval => |c| try cfo.aritri(op, w, r(dst), @intCast(c)),
         .constref, .constptr => {
             @panic("le wip");
         },
@@ -71,8 +73,8 @@ fn regaritmc(cfo: *X86Asm, op: AOp, dst: IPReg, src: IPMCVal) !void {
 
 fn mcmovreg(cfo: *X86Asm, dst: IPMCVal, src: IPReg) !void {
     switch (dst) {
-        .frameslot => |f| try cfo.movmr(slotea(f), r(src)),
-        .ipreg => |reg| if (reg != src) try cfo.mov(r(reg), r(src)),
+        .frameslot => |f| try cfo.movmr(w, slotea(f), r(src)),
+        .ipreg => |reg| if (reg != src) try cfo.mov(w, r(reg), r(src)),
         .constval, .constref, .constptr => return error.AURORA_BOREALIS,
     }
 }
@@ -94,8 +96,8 @@ fn movmcs(cfo: *X86Asm, dst: IPMCVal, src: IPMCVal) !void {
 
 fn regswapmc(cfo: *X86Asm, lhs: IPReg, rhs: IPMCVal) !void {
     switch (rhs) {
-        .ipreg => |reg| try cfo.xchg(r(lhs), r(reg)),
-        .frameslot => |f| try cfo.xchg_rm(r(lhs), slotea(f)),
+        .ipreg => |reg| try cfo.xchg(w, r(lhs), r(reg)),
+        .frameslot => |f| try cfo.xchg_rm(w, r(lhs), slotea(f)),
         else => return error.FLIRError,
     }
 }
@@ -204,7 +206,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
     if (stacksize > 0) {
         const padding = (-stacksize) & 0xF;
         // print("size: {}, extrasize: {}\n", .{ stacksize, padding });
-        try cfo.aritri(.sub, .rsp, stacksize + padding);
+        try cfo.aritri(.sub, true, .rsp, stacksize + padding);
     }
 
     for (self.n.items, 0..) |*n, ni| {
@@ -365,9 +367,9 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                             const dst = i.ipreg() orelse return error.SpillError;
                             switch (size) {
                                 .byte => {
-                                    try cfo.movrm_byte(r(dst), eaddr);
+                                    try cfo.movrm_byte(w, r(dst), eaddr);
                                 },
-                                .quadword => try cfo.movrm(r(dst), eaddr),
+                                .quadword => try cfo.movrm(w, r(dst), eaddr),
                                 else => return error.NotImplemented,
                             }
                         },
@@ -399,7 +401,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                                         .byte => {
                                             try cfo.movmr_byte(eaddr, r(reg));
                                         },
-                                        .quadword => try cfo.movmr(eaddr, r(reg)),
+                                        .quadword => try cfo.movmr(w, eaddr, r(reg)),
                                         else => return error.NotImplemented,
                                     }
                                 },
@@ -408,7 +410,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                                         .byte => {
                                             try cfo.movmi_byte(eaddr, @truncate(@as(u32, @bitCast(c))));
                                         },
-                                        .quadword => try cfo.movmi(eaddr, @intCast(c)),
+                                        .quadword => try cfo.movmi(w, eaddr, @intCast(c)),
                                         else => return error.NotImplemented,
                                     }
                                 },
@@ -463,7 +465,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     // TODO: more ops than sitosd/sitoss
                     switch (val) {
                         // TODO:
-                        // .frameslot => |f| try cfo.movrm(r(dst), X86Asm.a(.rbp).o(slotoff(f))),
+                        // .frameslot => |f| try cfo.movrm(w, r(dst), X86Asm.a(.rbp).o(slotoff(f))),
                         .frameslot => return error.NotImplemented,
                         .ipreg => |reg| try cfo.vcvtsi2s_rr(i.fmode_op(), dst, true, r(reg)),
                         .constval, .constref, .constptr => return error.FLIRError, // mandatory cfold for things like this?

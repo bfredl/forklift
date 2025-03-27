@@ -240,18 +240,6 @@ const MM = enum(u5) {
     }
 };
 
-// TODO: this is just ISize
-pub const IMode = enum(u2) {
-    b,
-    w,
-    d,
-    q,
-
-    fn off(self: @This()) u8 {
-        return @intFromEnum(self);
-    }
-};
-
 pub const VMathOp = enum(u3) {
     add = 0,
     mul = 1,
@@ -440,12 +428,12 @@ pub fn retnasm(self: *Self) !void {
 pub fn enter(self: *Self) !void {
     try self.new_inst(@returnAddress());
     try self.wb(0x55); // PUSH rbp
-    try self.mov(.rbp, .rsp);
+    try self.mov(true, .rbp, .rsp);
 }
 
 pub fn leave(self: *Self) !void {
     try self.new_inst(@returnAddress());
-    try self.mov(.rsp, .rbp);
+    try self.mov(true, .rsp, .rbp);
     try self.wb(0x5D); // POP rbp
 }
 
@@ -578,15 +566,15 @@ pub fn pop(self: *Self, dst: IPReg) !void {
 
 // mov and arithmetic
 
-inline fn op_rr(self: *Self, opcode: u8, dst: IPReg, src: IPReg) !void {
+inline fn op_rr(self: *Self, opcode: u8, w: bool, dst: IPReg, src: IPReg) !void {
     try self.new_inst(@returnAddress());
-    try self.rex_wrxb(true, dst.ext(), false, src.ext());
+    try self.rex_wrxb(w, dst.ext(), false, src.ext());
     try self.wb(opcode); // OP reg, \rm
     try self.modRm(0b11, dst.lowId(), src.lowId());
 }
 
-pub fn mov(self: *Self, dst: IPReg, src: IPReg) !void {
-    try self.op_rr(0x8b, dst, src);
+pub fn mov(self: *Self, w: bool, dst: IPReg, src: IPReg) !void {
+    try self.op_rr(0x8b, w, dst, src);
 }
 
 pub fn zero(self: *Self, dst: IPReg) !void {
@@ -596,34 +584,35 @@ pub fn zero(self: *Self, dst: IPReg) !void {
     try self.modRm(0b11, dst.lowId(), dst.lowId());
 }
 
-pub fn arit(self: *Self, op: AOp, dst: IPReg, src: IPReg) !void {
-    try self.op_rr(op.off() + 0b11, dst, src);
+pub fn arit(self: *Self, op: AOp, w: bool, dst: IPReg, src: IPReg) !void {
+    try self.op_rr(op.off() + 0b11, w, dst, src);
 }
 
-pub inline fn op_rm(self: *Self, opcode: u8, reg: IPReg, ea: EAddr) !void {
+pub inline fn op_rm(self: *Self, opcode: u8, w: bool, reg: IPReg, ea: EAddr) !void {
     try self.new_inst(@returnAddress());
-    try self.rex_wrxb(true, reg.ext(), ea.x(), ea.b());
+    try self.rex_wrxb(w, reg.ext(), ea.x(), ea.b());
     try self.wb(opcode);
     try self.modRmEA(reg.lowId(), ea);
 }
 
-pub fn movrm(self: *Self, dst: IPReg, src: EAddr) !void {
-    try self.op_rm(0x8b, dst, src); // MOV reg, \rm
+// TODO: not sure how best combine wide with memsize. like sign-extend into 8-bytes always "works" but might be superfluous
+pub fn movrm(self: *Self, w: bool, dst: IPReg, src: EAddr) !void {
+    try self.op_rm(0x8b, w, dst, src); // MOV reg, \rm
 }
 
 // FIXME: all IPReg ops should take size!
-pub fn movrm_byte(self: *Self, dst: IPReg, src: EAddr) !void {
+pub fn movrm_byte(self: *Self, w: bool, dst: IPReg, src: EAddr) !void {
     const reg = dst;
     const ea = src;
-    try self.rex_wrxb(true, reg.ext(), ea.x(), ea.b());
+    try self.rex_wrxb(w, reg.ext(), ea.x(), ea.b());
     // MOVZX. TODO: indicate zero vs sign explicitly!
     try self.wb(0x0F);
     try self.wb(0xB6);
     try self.modRmEA(reg.lowId(), ea);
 }
 
-pub fn movmr(self: *Self, dst: EAddr, src: IPReg) !void {
-    try self.op_rm(0x89, src, dst); // MOV \rm, reg
+pub fn movmr(self: *Self, w: bool, dst: EAddr, src: IPReg) !void {
+    try self.op_rm(0x89, w, src, dst); // MOV \rm, reg
 }
 
 // FIXME: all IPReg ops should take size!
@@ -637,20 +626,20 @@ pub fn movmr_byte(self: *Self, dst: EAddr, src: IPReg) !void {
     try self.modRmEA(reg.lowId(), ea);
 }
 
-pub fn xchg(self: *Self, lhs: IPReg, rhs: IPReg) !void {
-    try self.op_rr(0x87, lhs, rhs); // XCHG reg, \rm
+pub fn xchg(self: *Self, w: bool, lhs: IPReg, rhs: IPReg) !void {
+    try self.op_rr(0x87, w, lhs, rhs); // XCHG reg, \rm
 }
 
-pub fn xchg_rm(self: *Self, lhs: IPReg, rhs: EAddr) !void {
-    try self.op_rm(0x87, lhs, rhs); // XCHG reg, \rm
+pub fn xchg_rm(self: *Self, w: bool, lhs: IPReg, rhs: EAddr) !void {
+    try self.op_rm(0x87, w, lhs, rhs); // XCHG reg, \rm
 }
 
-pub fn aritrm(self: *Self, op: AOp, dst: IPReg, src: EAddr) !void {
-    try self.op_rm(op.off() + 0b11, dst, src);
+pub fn aritrm(self: *Self, op: AOp, w: bool, dst: IPReg, src: EAddr) !void {
+    try self.op_rm(op.off() + 0b11, w, dst, src);
 }
 
 pub fn lea(self: *Self, dst: IPReg, src: EAddr) !void {
-    try self.op_rm(0x8d, dst, src); // LEA reg, \rm
+    try self.op_rm(0x8d, true, dst, src); // LEA reg, \rm
 }
 
 // load adress of a latter target into a register
@@ -660,34 +649,34 @@ pub fn lealink(self: *Self, dst: IPReg) !u32 {
     try self.new_inst(@returnAddress());
     try self.rex_wrxb(true, dst.ext(), false, false);
     try self.wb(0x8d);
-    try self.modRm(0x00, dst.lowId(), 0x05);
+    try self.modRm(0x00, dst.lowId(), 0x05); // lea reg, [rip+??]
     const pos = self.code.get_target();
     try self.wd(0); // placeholder
     return pos;
 }
 
-pub fn movri(self: *Self, dst: IPReg, src: i32) !void {
+pub fn movri(self: *Self, w: bool, dst: IPReg, src: i32) !void {
     try self.new_inst(@returnAddress());
-    // TODO: w bit should be avoidable in a lot of cases
-    // like "mov rax, 1337" is equivalent to "mov eax, 1337"
-    try self.rex_wrxb(true, false, false, dst.ext());
+    // "mov rax, 1337" can be reduced to "mov eax, 1337"
+    const wide = w and (src < 0 or dst.ext());
+    try self.rex_wrxb(wide, false, false, dst.ext());
     try self.wb(0xc7); // MOV \rm, imm32
     try self.modRm(0b11, 0b000, dst.lowId());
     try self.wd(src);
 }
 
-pub fn aritri(self: *Self, op: AOp, dst: IPReg, imm: i32) !void {
+pub fn aritri(self: *Self, op: AOp, w: bool, dst: IPReg, imm: i32) !void {
     const imm8 = maybe_imm8(imm);
     try self.new_inst(@returnAddress());
-    try self.rex_wrxb(true, false, false, dst.ext());
+    try self.rex_wrxb(w, false, false, dst.ext());
     try self.wb(if (imm8 != null) 0x83 else 0x81);
     try self.modRm(0b11, op.opx(), dst.lowId());
     try if (imm8) |i| self.wbi(i) else self.wd(imm);
 }
 
-pub fn movmi(self: *Self, dst: EAddr, src: i32) !void {
+pub fn movmi(self: *Self, w: bool, dst: EAddr, src: i32) !void {
     try self.new_inst(@returnAddress());
-    try self.rex_wrxb(true, false, dst.x(), dst.b());
+    try self.rex_wrxb(w, false, dst.x(), dst.b());
     try self.wb(0xc7); // MOV \rm, imm32
     try self.modRmEA(0b000, dst);
     try self.wd(src);
