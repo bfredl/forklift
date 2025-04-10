@@ -674,6 +674,15 @@ pub fn aritri(self: *Self, op: AOp, w: bool, dst: IPReg, imm: i32) !void {
     try if (imm8) |i| self.wbi(i) else self.wd(imm);
 }
 
+pub fn aritmi(self: *Self, op: AOp, w: bool, ea: EAddr, imm: i32) !void {
+    const imm8 = maybe_imm8(imm);
+    try self.new_inst(@returnAddress());
+    try self.rex_wrxb(w, false, ea.x(), ea.b());
+    try self.wb(if (imm8 != null) 0x83 else 0x81);
+    try self.modRmEA(op.opx(), ea);
+    try if (imm8) |i| self.wbi(i) else self.wd(imm);
+}
+
 pub fn movmi(self: *Self, w: bool, dst: EAddr, src: i32) !void {
     try self.new_inst(@returnAddress());
     try self.rex_wrxb(w, false, dst.x(), dst.b());
