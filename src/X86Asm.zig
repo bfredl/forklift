@@ -701,18 +701,27 @@ pub fn movmi_byte(self: *Self, dst: EAddr, src: u8) !void {
 // MUL/DIV instructions
 
 // DST = DST * SRC
-pub fn imulrr(self: *Self, dst: IPReg, src: IPReg) !void {
+pub fn imulrr(self: *Self, w: bool, dst: IPReg, src: IPReg) !void {
     try self.new_inst(@returnAddress());
-    try self.rex_wrxb(true, dst.ext(), false, src.ext());
+    try self.rex_wrxb(w, dst.ext(), false, src.ext());
     try self.wb(0x0f); // IMUL reg, \rm
     try self.wb(0xaf);
     try self.modRm(0b11, dst.lowId(), src.lowId());
 }
 
-// DST = SRC * imm
-pub fn imulrri(self: *Self, dst: IPReg, src: IPReg, factor: i32) !void {
+// DST = DST * SRC
+pub fn imulrm(self: *Self, w: bool, dst: IPReg, src: EAddr) !void {
     try self.new_inst(@returnAddress());
-    try self.rex_wrxb(true, dst.ext(), false, src.ext());
+    try self.rex_wrxb(w, dst.ext(), src.x(), src.b());
+    try self.wb(0x0f); // IMUL reg, \rm
+    try self.wb(0xaf);
+    try self.modRmEA(dst.lowId(), src);
+}
+
+// DST = SRC * imm
+pub fn imulrri(self: *Self, w: bool, dst: IPReg, src: IPReg, factor: i32) !void {
+    try self.new_inst(@returnAddress());
+    try self.rex_wrxb(w, dst.ext(), false, src.ext());
     const small_factor: ?i8 = maybe_imm8(factor);
 
     try self.wb(if (small_factor) |_| 0x6b else 0x69); // IMUL reg, \rm, ib/id

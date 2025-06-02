@@ -299,11 +299,11 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                                     try regmovmc(&cfo, dst, lhs);
                                     break :dstsrc dst;
                                 };
-                                try cfo.imulrri(r(dst), r(src), @intCast(c));
+                                try cfo.imulrri(true, r(dst), r(src), @intCast(c));
                             },
                             .ipreg => if (rhs.as_ipreg()) |rhsreg| {
                                 try regmovmc(&cfo, dst, lhs);
-                                try cfo.imulrr(r(dst), r(rhsreg));
+                                try cfo.imulrr(true, r(dst), r(rhsreg));
                             },
                             else => return error.SpillError, // TODO: can be mem if lhs reg
                         }
