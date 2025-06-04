@@ -65,11 +65,19 @@ fn require(val: anytype, what: []const u8) ParseError!@TypeOf(val.?) {
 pub fn nonexisting(map: anytype, key: []const u8, what: []const u8) ParseError!@TypeOf(map.getPtr(key).?) {
     const item = try map.getOrPut(key);
     if (item.found_existing) {
-        print("duplicate {s}{s}!\n", .{ what, key });
+        print("duplicate {s} {s}!\n", .{ what, key });
         return error.ParseError;
     }
     // NON-EXIST-ENT!
     return item.value_ptr;
+}
+
+fn nonexisting_obj(mod: *CFOModule, key: []const u8) ParseError!*CFOModule.RTObject {
+    const item = try mod.put_nonexisting(key);
+    return item orelse {
+        print("duplicate {s} {s}!\n", .{ "object", key });
+        return error.ParseError;
+    };
 }
 
 pub fn expr_0(self: *Self, type_ctx: SpecType) !?u16 {
@@ -213,7 +221,7 @@ pub fn arg_expr(self: *Self, type_ctx: SpecType) ParseError!u16 {
 
 pub fn expr_bpf_map(self: *Self, is_value: bool) !u16 {
     const name = self.t.keyword() orelse return error.ParseError;
-    const id = self.mod.objs.getIndex(name) orelse return error.UndefinedName;
+    const id = self.mod.objs_map.get(name) orelse return error.UndefinedName;
     return self.ir.bpf_load_map(self.curnode, @intCast(id), is_value);
 }
 
@@ -251,7 +259,8 @@ pub fn call_expr(self: *Self, type_ctx: SpecType, kind: []const u8) !u16 {
 
         if (mem.eql(u8, kind, "near")) {
             const name = self.t.keyword() orelse return error.ParseError;
-            const off = self.mod.get_func_off(name) orelse return error.UndefinedName;
+            const idx = self.mod.lookup_obj(name) orelse return error.UndefinedName;
+            const off = self.mod.get_func_off(idx) orelse return error.TypeError;
             break :target .{ .near, try self.ir.const_uint(off), 0 };
         } else if (mem.eql(u8, kind, "sys")) {
             const name = self.t.keyword() orelse return error.ParseError;
@@ -647,7 +656,7 @@ pub fn parse_mod(mod: *CFOModule, allocator: Allocator, str: []const u8, dbg: bo
         if (mem.eql(u8, kw, "func")) {
             const name = try require(t.keyword(), "name");
 
-            const obj_slot = try nonexisting(&mod.objs, name, "object");
+            const obj_slot = try nonexisting_obj(mod, name);
 
             try parse_func(mod, &ir, &t, allocator);
             if (one) return;
@@ -662,7 +671,7 @@ pub fn parse_mod(mod: *CFOModule, allocator: Allocator, str: []const u8, dbg: bo
             ir.reinit();
         } else if (mem.eql(u8, kw, "bpf_func")) {
             const name = try require(t.keyword(), "name");
-            const obj_slot = try nonexisting(&mod.objs, name, "object");
+            const obj_slot = try nonexisting_obj(mod, name);
             try parse_func(mod, &ir, &t, allocator);
 
             try ir.test_analysis(FLIR.BPF_ABI, true);
@@ -674,7 +683,7 @@ pub fn parse_mod(mod: *CFOModule, allocator: Allocator, str: []const u8, dbg: bo
             ir.reinit();
         } else if (mem.eql(u8, kw, "bpf_map")) {
             const name = try require(t.keyword(), "name");
-            const obj_slot = try nonexisting(&mod.objs, name, "object");
+            const obj_slot = try nonexisting_obj(mod, name);
             const kind = try require(try t.prefixed('.'), "kind");
             const key_size = try require(t.num(), "key_size");
             const val_size = try require(t.num(), "val_size");

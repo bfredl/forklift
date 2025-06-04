@@ -36,20 +36,20 @@ pub const RTObject = union(enum) {
 
 const CFOModule = @This();
 
-const ObjsMap = std.StringArrayHashMap(RTObject);
-const Relocations = std.ArrayList(struct { pos: u32, obj_idx: u32 });
-
 bpf_code: BPFCode,
 code: CodeBuffer,
-objs: ObjsMap,
+objs: std.ArrayList(struct { name: ?[]const u8, obj: RTObject }),
+// quick stub, replace with something which reuses objs[index].name as key
+objs_map: std.StringHashMap(usize),
 // bpf_code.items[id] needs to point at fd of object specified by obj_idx
-relocations: Relocations,
+relocations: std.ArrayList(struct { pos: u32, obj_idx: u32 }),
 
 pub fn init(allocator: std.mem.Allocator) !CFOModule {
     return .{
         .code = try .init(allocator),
         .bpf_code = .init(allocator),
         .objs = .init(allocator),
+        .objs_map = .init(allocator),
         .relocations = .init(allocator),
     };
 }
@@ -59,12 +59,13 @@ pub fn deinit_mem(self: *CFOModule) void {
     self.bpf_code.deinit();
     self.code.deinit();
     self.objs.deinit();
+    self.objs_map.deinit();
     self.relocations.deinit();
 }
 
 pub fn load(self: *CFOModule) !void {
-    for (0.., self.objs.values()) |i, *v| {
-        switch (v.*) {
+    for (0.., self.objs.items) |i, *v| {
+        switch (v.obj) {
             .bpf_prog => |*p| {
                 const code = self.bpf_code.items[p.code_start..][0..p.code_len];
                 if (false) {
@@ -87,22 +88,40 @@ pub fn load(self: *CFOModule) !void {
     }
 }
 
-pub fn get_func_off(self: *CFOModule, name: []const u8) ?u32 {
-    const val = self.objs.get(name) orelse return null;
-    return switch (val) {
+pub fn lookup_obj(self: *CFOModule, name: []const u8) ?usize {
+    return self.objs_map.get(name);
+}
+
+pub fn put_nonexisting(self: *CFOModule, name: []const u8) !?*RTObject {
+    const item = try self.objs_map.getOrPut(name);
+    if (item.found_existing) {
+        return null;
+    }
+    const ptr = try self.objs.addOne();
+    item.value_ptr.* = self.objs.items.len - 1;
+    ptr.name = name;
+    return &ptr.obj;
+}
+
+pub fn get_func_off(self: *CFOModule, idx: usize) ?u32 {
+    const val = self.objs.items[idx];
+    return switch (val.obj) {
         .func => |f| f.code_start,
         else => null,
     };
 }
 
+// this is weirdly inconsistent but whatever
 pub fn get_func_ptr(self: *CFOModule, name: []const u8, comptime T: type) !T {
-    const off = self.get_func_off(name) orelse return error.FAILURE;
+    const idx = self.lookup_obj(name) orelse return error.FAILURE;
+    const off = self.get_func_off(idx) orelse return error.FAILURE;
     return self.code.get_ptr(off, T);
 }
 
 pub fn bpf_get_fd(self: *CFOModule, name: []const u8) ?fd_t {
-    const val = self.objs.get(name) orelse return null;
-    return switch (val) {
+    const idx = self.lookup_obj(name) orelse return null;
+    const val = self.objs.items[idx];
+    return switch (val.obj) {
         .bpf_prog => |p| p.fd,
         .bpf_map => |m| m.fd,
         else => null,
@@ -114,8 +133,9 @@ pub fn bpf_test_run(
     name: []const u8,
     ctx_in: ?[]const u8,
 ) !u32 {
-    const val = self.objs.get(name) orelse return error.NotAProgram;
-    const fd = switch (val) {
+    const idx = self.lookup_obj(name) orelse return error.FAILURE;
+    const val = self.objs.items[idx];
+    const fd = switch (val.obj) {
         .bpf_prog => |p| p.fd,
         else => return error.NotAProgram,
     };

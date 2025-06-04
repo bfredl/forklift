@@ -12,11 +12,12 @@ const test_allocator = std.testing.allocator;
 
 pub fn parse_test(ir: []const u8) !CodeBuffer {
     var res = try parse_multi(ir);
-    if (res.objs.count() != 1) {
+    if (res.objs.items.len != 1) {
         return error.ExpectedOneFunction;
     }
     // TODO: this is a bit funky..
     res.objs.deinit();
+    res.objs_map.deinit();
     return res.code;
 }
 
