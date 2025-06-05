@@ -13,3 +13,4 @@ pub const CFOModule = @import("./CFOModule.zig");
 
 const common = @import("./common.zig");
 pub const debug_options = common.debug_options;
+pub const DebugOptions = common.DebugOptions;
