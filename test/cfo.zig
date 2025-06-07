@@ -401,7 +401,7 @@ test "shlx (shift left)" {
     var cfo = X86Asm{ .code = &code };
     defer code.deinit();
 
-    try cfo.sx(.hl, .rax, .rdi, .rsi);
+    try cfo.sx(true, .hl, .rax, .rdi, .rsi);
     try cfo.ret();
 
     const retval = try test_call2(&code, 17, 3);
@@ -457,7 +457,7 @@ test "local call" {
 
     const entry_nested = code.get_target();
     try cfo.mov(w, .rax, .rdi);
-    try cfo.sh_ri(.rax, .hl, 10);
+    try cfo.sh_ri(w, .rax, .hl, 10);
     try cfo.arit(.add, w, .rax, .rsi);
     try cfo.ret();
 
@@ -465,7 +465,7 @@ test "local call" {
     try cfo.movri(w, .rdi, 1000);
     try cfo.movri(w, .rsi, 237);
     try cfo.call_rel(entry_nested);
-    try cfo.sh_ri(.rax, .hl, 1);
+    try cfo.sh_ri(w, .rax, .hl, 1);
     try cfo.ret();
 
     try code.finalize();

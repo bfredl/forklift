@@ -14,8 +14,6 @@ const EAddr = X86Asm.EAddr;
 const AOp = X86Asm.AOp;
 const CodeBuffer = @import("./CodeBuffer.zig");
 
-const w = true; // TODO: not so fast
-
 const common = @import("./common.zig");
 const options = common.debug_options;
 fn r(reg: IPReg) X86Asm.IPReg {
@@ -30,20 +28,20 @@ fn slotea(slotid: anytype) EAddr {
     return X86Asm.a(.rbp).o(slotoff(slotid));
 }
 
-fn movri_zero(cfo: *X86Asm, dst: IPReg, src: i32) !void {
+fn movri_zero(cfo: *X86Asm, w: bool, dst: IPReg, src: i32) !void {
     if (src != 0) { // TODO: proper constval
-        try cfo.movri(true, r(dst), src);
+        try cfo.movri((w and src < 0), r(dst), src);
     } else {
         // THANKS INTEL
         try cfo.zero(r(dst));
     }
 }
 
-fn regmovmc(cfo: *X86Asm, dst: IPReg, src: IPMCVal) !void {
+fn regmovmc(cfo: *X86Asm, w: bool, dst: IPReg, src: IPMCVal) !void {
     switch (src) {
         .frameslot => |f| try cfo.movrm(w, r(dst), slotea(f)),
         .ipreg => |reg| if (dst != reg) try cfo.mov(w, r(dst), r(reg)),
-        .constval => |c| try movri_zero(cfo, dst, @intCast(c)),
+        .constval => |c| try movri_zero(cfo, w, dst, @intCast(c)),
         .constref, .constptr => |idx| {
             if (src == .constptr) {
                 return error.WIPError;
@@ -60,7 +58,7 @@ fn avxmovconst(cfo: *X86Asm, fmode: FMode, dst: u4, const_idx: u16) !void {
     try cfo.code.relocations.append(.{ .pos = cfo.code.get_target() - 4, .idx = const_idx });
 }
 
-fn regaritmc(cfo: *X86Asm, op: AOp, dst: IPReg, src: IPMCVal) !void {
+fn regaritmc(cfo: *X86Asm, w: bool, op: AOp, dst: IPReg, src: IPMCVal) !void {
     switch (src) {
         .frameslot => |f| try cfo.aritrm(op, w, r(dst), X86Asm.a(.rbp).o(slotoff(f))),
         .ipreg => |reg| try cfo.arit(op, w, r(dst), r(reg)),
@@ -71,7 +69,7 @@ fn regaritmc(cfo: *X86Asm, op: AOp, dst: IPReg, src: IPMCVal) !void {
     }
 }
 
-fn mcmovreg(cfo: *X86Asm, dst: IPMCVal, src: IPReg) !void {
+fn mcmovreg(cfo: *X86Asm, w: bool, dst: IPMCVal, src: IPReg) !void {
     switch (dst) {
         .frameslot => |f| try cfo.movmr(w, slotea(f), r(src)),
         .ipreg => |reg| if (reg != src) try cfo.mov(w, r(reg), r(src)),
@@ -79,22 +77,22 @@ fn mcmovreg(cfo: *X86Asm, dst: IPMCVal, src: IPReg) !void {
     }
 }
 
-fn movmcs(cfo: *X86Asm, dst: IPMCVal, src: IPMCVal) !void {
+fn movmcs(cfo: *X86Asm, w: bool, dst: IPMCVal, src: IPMCVal) !void {
     // sadge
     // if (dst.mckind == src.mckind and dst.mcidx == src.mcidx) {
     //     return;
     // }
     // TODO: encode size of src so we can use 32-bit move sometimes
     switch (dst) {
-        .ipreg => |reg| try regmovmc(cfo, reg, src),
+        .ipreg => |reg| try regmovmc(cfo, w, reg, src),
         else => switch (src) {
-            .ipreg => |reg| try mcmovreg(cfo, dst, reg),
+            .ipreg => |reg| try mcmovreg(cfo, w, dst, reg),
             else => return error.SpillError, // TODO: mov [slot], imm32 (s.e. 64) OK
         },
     }
 }
 
-fn regswapmc(cfo: *X86Asm, lhs: IPReg, rhs: IPMCVal) !void {
+fn regswapmc(cfo: *X86Asm, w: bool, lhs: IPReg, rhs: IPMCVal) !void {
     switch (rhs) {
         .ipreg => |reg| try cfo.xchg(w, r(lhs), r(reg)),
         .frameslot => |f| try cfo.xchg_rm(w, r(lhs), slotea(f)),
@@ -102,11 +100,11 @@ fn regswapmc(cfo: *X86Asm, lhs: IPReg, rhs: IPMCVal) !void {
     }
 }
 
-fn swapmcs(cfo: *X86Asm, dst: IPMCVal, src: IPMCVal) !void {
+fn swapmcs(cfo: *X86Asm, w: bool, dst: IPMCVal, src: IPMCVal) !void {
     switch (dst) {
-        .ipreg => |reg| try regswapmc(cfo, reg, src),
+        .ipreg => |reg| try regswapmc(cfo, w, reg, src),
         else => switch (src) {
-            .ipreg => |reg| try regswapmc(cfo, reg, dst),
+            .ipreg => |reg| try regswapmc(cfo, w, reg, dst),
             else => return error.SpillError,
         },
     }
@@ -253,7 +251,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     // TRICKY: should i.op1 actually be the specific register?
                     const src = ABI.argregs[i.op1];
                     const dst = i.ipval() orelse return error.FLIRError;
-                    try mcmovreg(&cfo, dst, src);
+                    try mcmovreg(&cfo, true, dst, src); // TODO: not always wide!!
                 },
                 // lea relative RBP when used
                 .alloc => {},
@@ -261,9 +259,9 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     // TODO: extend i.res_type() to a useful SpecType from self.val(REF) ??
                     // then we won't need to encode the type on .ret separately...
                     switch (i.mem_type()) {
-                        .intptr => |_| {
+                        .intptr => |size| {
                             const ipval = self.ipval(i.op1) orelse return error.FLIRError;
-                            try regmovmc(&cfo, X86Asm.IPReg.rax.into(), ipval);
+                            try regmovmc(&cfo, size.wide(), X86Asm.IPReg.rax.into(), ipval);
                         },
                         .avxval => |fmode| {
                             const avxval = self.iref(i.op1) orelse return error.FLIRError;
@@ -278,7 +276,8 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     var lhs = self.ipval(i.op1) orelse return error.FLIRError;
                     var rhs = self.ipval(i.op2) orelse return error.FLIRError;
                     const dst = i.ipreg() orelse return error.SpillError;
-                    const op: FLIR.IntBinOp = @enumFromInt(i.spec);
+                    const op = i.ibinop();
+                    const w = i.iop_size().wide();
 
                     var dst_conflict = (dst == rhs.as_ipreg() and dst != lhs.as_ipreg());
                     // TODO: later on all these cases might be handled earlier in isel
@@ -290,36 +289,37 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     if (op.asAOP()) |aop| {
                         // TODO: fugly: remove once we have constraint handling in isel/regalloc
                         if (dst_conflict) @panic("conflict!");
-                        try regmovmc(&cfo, dst, lhs); // often elided if lhs has the same reg
-                        try regaritmc(&cfo, aop, dst, rhs);
+                        try regmovmc(&cfo, w, dst, lhs); // often elided if lhs has the same reg
+                        try regaritmc(&cfo, w, aop, dst, rhs);
                     } else if (op == .mul) {
                         switch (rhs) {
                             .constval => |c| {
                                 const src = lhs.as_ipreg() orelse dstsrc: {
-                                    try regmovmc(&cfo, dst, lhs);
+                                    try regmovmc(&cfo, w, dst, lhs);
                                     break :dstsrc dst;
                                 };
-                                try cfo.imulrri(true, r(dst), r(src), @intCast(c));
+                                try cfo.imulrri(w, r(dst), r(src), @intCast(c));
                             },
                             .ipreg => if (rhs.as_ipreg()) |rhsreg| {
-                                try regmovmc(&cfo, dst, lhs);
-                                try cfo.imulrr(true, r(dst), r(rhsreg));
+                                try regmovmc(&cfo, w, dst, lhs);
+                                try cfo.imulrr(w, r(dst), r(rhsreg));
                             },
                             else => return error.SpillError, // TODO: can be mem if lhs reg
                         }
                     } else if (op.asShift()) |sop| {
                         switch (rhs) {
                             .constval => |c| {
-                                try regmovmc(&cfo, dst, lhs);
-                                try cfo.sh_ri(r(dst), sop, @intCast(c));
+                                try regmovmc(&cfo, w, dst, lhs);
+                                try cfo.sh_ri(w, r(dst), sop, @intCast(c));
                             },
                             .ipreg => |src2| {
                                 const src1 = lhs.as_ipreg() orelse src1: {
                                     if (dst == src2) return error.FLIRError; // conflict
-                                    try regmovmc(&cfo, dst, lhs);
+                                    try regmovmc(&cfo, w, dst, lhs);
                                     break :src1 dst;
                                 };
-                                try cfo.sx(sop, r(dst), r(src1), r(src2));
+                                // TODO: hint so we can use ECX
+                                try cfo.sx(w, sop, r(dst), r(src1), r(src2));
                             },
                             else => return error.SpillError,
                         }
@@ -332,20 +332,22 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     // best if an earlier ABI step takes care of all of this
                     const lhs = self.ipreg(i.op1) orelse return error.SpillError;
                     const rhs = self.ipval(i.op2) orelse return error.FLIRError;
-                    try regaritmc(&cfo, .cmp, lhs, rhs);
-                    cond = @as(FLIR.IntCond, @enumFromInt(i.spec)).asX86Cond();
+                    const w = i.iop_size().wide();
+                    try regaritmc(&cfo, w, .cmp, lhs, rhs);
+                    cond = i.intcond().asX86Cond();
                 },
                 // parallel move family
                 .putphi, .callarg => {
                     // fubbigt: the idea is than movins_read will return null
                     // exactly when reading an UNDEF, incase this insn becomes a no-op
+                    const w = true; // TODO: aaaaaaaaaaaa
                     if (try self.movins_read2(i)) |src| {
                         const dest = (try self.movins_dest(i)).ipval() orelse return error.FLIRError;
                         if (i.f.do_swap) {
                             if (swap_source) |swap_src| {
-                                try swapmcs(&cfo, dest, swap_src); // PLOCKA INTE UPP DEN
+                                try swapmcs(&cfo, w, dest, swap_src); // PLOCKA INTE UPP DEN
                             } else {
-                                try swapmcs(&cfo, dest, src);
+                                try swapmcs(&cfo, w, dest, src);
                                 swap_source = src;
                             }
                         } else if (i.f.swap_done) {
@@ -354,7 +356,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                             swap_source = null;
                         } else {
                             // TODO: phi of avxval
-                            try movmcs(&cfo, dest, src);
+                            try movmcs(&cfo, w, dest, src);
                         }
                     }
                 },
@@ -367,9 +369,9 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                             const dst = i.ipreg() orelse return error.SpillError;
                             switch (size) {
                                 .byte => {
-                                    try cfo.movrm_byte(w, r(dst), eaddr);
+                                    try cfo.movrm_byte(false, r(dst), eaddr);
                                 },
-                                .quadword => try cfo.movrm(w, r(dst), eaddr),
+                                .quadword => try cfo.movrm(true, r(dst), eaddr),
                                 else => return error.NotImplemented,
                             }
                         },
@@ -401,7 +403,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                                         .byte => {
                                             try cfo.movmr_byte(eaddr, r(reg));
                                         },
-                                        .quadword => try cfo.movmr(w, eaddr, r(reg)),
+                                        .quadword => try cfo.movmr(true, eaddr, r(reg)),
                                         else => return error.NotImplemented,
                                     }
                                 },
@@ -410,7 +412,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                                         .byte => {
                                             try cfo.movmi_byte(eaddr, @truncate(@as(u32, @bitCast(c))));
                                         },
-                                        .quadword => try cfo.movmi(w, eaddr, @intCast(c)),
+                                        .quadword => try cfo.movmi(true, eaddr, @intCast(c)),
                                         else => return error.NotImplemented,
                                     }
                                 },
@@ -481,7 +483,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     const kind: FLIR.CallKind = @enumFromInt(i.spec);
                     switch (kind) {
                         .syscall => {
-                            try regmovmc(&cfo, X86Asm.IPReg.rax.into(), self.ipval(i.op1).?);
+                            try regmovmc(&cfo, false, X86Asm.IPReg.rax.into(), self.ipval(i.op1).?);
                             try cfo.syscall();
                         },
                         .near => {
@@ -503,7 +505,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     // TODO: of course also avxvals can be copied!
                     const src = self.ipval(i.op1) orelse return error.FLIRError;
                     const dest = i.ipval() orelse return error.FLIRError;
-                    try movmcs(&cfo, dest, src);
+                    try movmcs(&cfo, true, dest, src); // TODO: wide
                 },
                 .bpf_load_map => {
                     print("platform unsupported: {}\n", .{i.tag});

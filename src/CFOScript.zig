@@ -175,7 +175,8 @@ pub fn expr_2(self: *Self, type_ctx: SpecType) !?u16 {
 
             self.t.pos += opstr.len;
             const op = (try self.expr_0(type_ctx)) orelse return error.SyntaxError;
-            val = try self.ir.ibinop(self.curnode, theop, val, op);
+            // TODO: int types other than qword is not really supported
+            val = try self.ir.ibinop(self.curnode, type_ctx.intptr, theop, val, op);
         }
     }
     return val;
@@ -208,7 +209,7 @@ pub fn expr_3(self: *Self, type_ctx: SpecType) !?u16 {
             };
             self.t.pos += 1;
             const op = (try self.expr_2(type_ctx)) orelse return error.SyntaxError;
-            val = try self.ir.ibinop(self.curnode, theop, val, op);
+            val = try self.ir.ibinop(self.curnode, type_ctx.intptr, theop, val, op);
         }
     }
     return val;
@@ -341,7 +342,7 @@ pub fn cond_expr(self: *Self, typ: SpecType) !u16 {
 
     switch (typ) {
         .avxval => |fmode| return self.ir.fcmp(self.curnode, op, fmode, left, right),
-        .intptr => return self.ir.icmp(self.curnode, op, left, right),
+        .intptr => return self.ir.icmp(self.curnode, .quadword, op, left, right),
     }
 }
 

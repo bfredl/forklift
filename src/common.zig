@@ -6,6 +6,10 @@ pub const ISize = enum(u2) {
     word,
     dword,
     quadword,
+
+    pub fn wide(self: ISize) bool {
+        return self == .quadword;
+    }
 };
 
 pub const IPReg = enum(u4) {

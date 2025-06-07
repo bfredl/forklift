@@ -60,16 +60,16 @@ test "diamond cfg" {
     // const const_0 = try self.const_int(0);
     const const_42 = try self.const_int(42);
     try self.putvar(start, v, const_42);
-    _ = try self.icmp(start, .lt, arg1, v);
+    _ = try self.icmp(start, .quadword, .lt, arg1, v);
 
     const left = try self.addNode();
     self.n.items[start].s[0] = left;
-    const addl = try self.ibinop(left, .add, v, arg2);
+    const addl = try self.ibinop(left, .quadword, .add, v, arg2);
     try self.putvar(left, v, addl);
 
     const right = try self.addNode();
     self.n.items[start].s[1] = right;
-    const addr = try self.ibinop(right, .add, v, arg1);
+    const addr = try self.ibinop(right, .quadword, .add, v, arg1);
     try self.putvar(right, v, addr);
 
     const end = try self.addNode();
@@ -77,7 +77,7 @@ test "diamond cfg" {
     self.n.items[right].s[0] = end;
 
     const const_77 = try self.const_int(77);
-    const adde = try self.ibinop(end, .add, v, const_77);
+    const adde = try self.ibinop(end, .quadword, .add, v, const_77);
     try self.putvar(end, v, adde);
 
     try self.ret(end, FLIR.intspec(.quadword), v);

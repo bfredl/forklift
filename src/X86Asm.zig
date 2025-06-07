@@ -744,9 +744,9 @@ pub fn mulr(self: *Self, src: IPReg) !void {
 // bitshift instructions
 
 // shift with immediate count. use shorthand version when count==1
-pub fn sh_ri(self: *Self, dst: IPReg, op: ShiftOp, count: u8) !void {
+pub fn sh_ri(self: *Self, w: bool, dst: IPReg, op: ShiftOp, count: u8) !void {
     try self.new_inst(@returnAddress());
-    try self.rex_wrxb(true, false, false, dst.ext());
+    try self.rex_wrxb(w, false, false, dst.ext());
     try self.wb(if (count == 1) 0xD1 else 0xC1); // Sxx \rm, 1
     try self.modRm(0b11, op.to_rm(), dst.lowId());
     try if (count != 1) self.wb(count);
@@ -940,8 +940,8 @@ pub inline fn bmi_rr(self: *Self, op: u8, wide: bool, pp: PP, dst: IPReg, src1: 
     try self.modRm(0b11, dst.lowId(), src1.lowId());
 }
 
-pub fn sx(self: *Self, op: ShiftOp, dst: IPReg, src1: IPReg, src2: IPReg) !void {
-    try self.bmi_rr(0xf7, true, op.to_pp(), dst, src1, src2);
+pub fn sx(self: *Self, w: bool, op: ShiftOp, dst: IPReg, src1: IPReg, src2: IPReg) !void {
+    try self.bmi_rr(0xf7, w, op.to_pp(), dst, src1, src2);
 }
 
 // output functions

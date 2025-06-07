@@ -274,7 +274,7 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
                 .ret => try regmovmc(code, r0, self.ipval(i.op1).?),
                 .ibinop => {
                     const dst = i.ipreg() orelse return error.FLIRError;
-                    const op = @as(FLIR.IntBinOp, @enumFromInt(i.spec)).asBpfAluOp() orelse return error.FLIRError;
+                    const op = i.ibinop().asBpfAluOp() orelse return error.FLIRError;
                     const op1 = self.ipval(i.op1).?;
                     const op2 = self.ipval(i.op2).?;
                     try regmovmc(code, dst, op1);
@@ -284,7 +284,7 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
                 .icmp => {
                     const op1 = i.ipreg() orelse return error.FLIRError;
                     const op2 = self.ipval(i.op2).?;
-                    var spec: FLIR.IntCond = @enumFromInt(i.spec);
+                    var spec = i.intcond();
                     var taken: u1 = 1;
 
                     // TODO: this should have been optimized earlier!

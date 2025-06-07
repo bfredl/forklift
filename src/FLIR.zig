@@ -296,6 +296,7 @@ pub const Inst = struct {
     }
 
     // For load/store insts that can handle both intptr and avxvalues
+    // TODO: reconsider it all so we can say "load 8/16 bits into 32/64 bit register"
     pub fn mem_type(self: Inst) SpecType {
         return SpecType.from(self.low_spec());
     }
@@ -329,6 +330,19 @@ pub const Inst = struct {
 
     // only valid for op instructions. otherwise use mem_type
     pub fn fmode_op(self: Inst) FMode {
+        return @enumFromInt(self.high_spec());
+    }
+
+    pub fn intcond(self: *Inst) IntCond {
+        return @enumFromInt(self.low_spec());
+    }
+
+    pub fn ibinop(self: *Inst) IntBinOp {
+        return @enumFromInt(self.low_spec());
+    }
+
+    // valid for .ibinop and .icmp
+    pub fn iop_size(self: *Inst) ISize {
         return @enumFromInt(self.high_spec());
     }
 
@@ -508,7 +522,8 @@ pub const Tag = enum(u8) {
     xadd,
 };
 
-pub const IntBinOp = enum(u6) {
+// could be u6 but then we need special spec packing (2+6)
+pub const IntBinOp = enum(u5) {
     add,
     sub,
     @"or",
@@ -925,12 +940,12 @@ pub fn float2int(self: *Self, node: u16, fmode: FMode, op1: u16) !u16 {
 }
 
 // TODO: 32bit vs 64bit (also for int in i2f and f2i, and so on)
-pub fn ibinop(self: *Self, node: u16, op: IntBinOp, op1: u16, op2: u16) !u16 {
-    return self.addInst(node, .{ .tag = .ibinop, .spec = @intFromEnum(op), .op1 = op1, .op2 = op2 });
+pub fn ibinop(self: *Self, node: u16, size: ISize, op: IntBinOp, op1: u16, op2: u16) !u16 {
+    return self.addInst(node, .{ .tag = .ibinop, .spec = sphigh(@intFromEnum(size), @intFromEnum(op)), .op1 = op1, .op2 = op2 });
 }
 
-pub fn icmp(self: *Self, node: u16, cond: IntCond, op1: u16, op2: u16) !u16 {
-    return self.addInst(node, .{ .tag = .icmp, .spec = cond.off(), .op1 = op1, .op2 = op2 });
+pub fn icmp(self: *Self, node: u16, size: ISize, cond: IntCond, op1: u16, op2: u16) !u16 {
+    return self.addInst(node, .{ .tag = .icmp, .spec = sphigh(@intFromEnum(size), cond.off()), .op1 = op1, .op2 = op2 });
 }
 
 pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
@@ -1727,7 +1742,7 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, i: *Inst, free_regs_ip: *[n_i
 
     // TODO: this would be handled by materializing the constant 1 in "VAL2 = 1 << VAL1"
     // as a register, in a proper target dependent isel-pass, IF WE HAD ONE
-    if (i.tag == .ibinop and @as(IntBinOp, @enumFromInt(i.spec)).asShift() != null and constidx(i.op1) != null) {
+    if (i.tag == .ibinop and i.ibinop().asShift() != null and constidx(i.op1) != null) {
         if (self.iref(i.op2)) |amt| {
             if (amt.mckind == .ipreg) {
                 usable_regs[amt.mcidx] = false;
