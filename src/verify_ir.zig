@@ -255,9 +255,9 @@ pub fn print_inst(self: *FLIR, ref: u16, i: *FLIR.Inst) void {
     } else if (i.tag == .vcmpf) {
         print(".{s}", .{@tagName(i.vcmpop())});
     } else if (i.tag == .ibinop) {
-        print(".{s}", .{@tagName(@as(FLIR.IntBinOp, @enumFromInt(i.spec)))});
+        print(".{s}", .{@tagName(i.ibinop())});
     } else if (i.tag == .icmp) {
-        print(".{s}", .{@tagName(@as(FLIR.IntCond, @enumFromInt(i.spec)))});
+        print(".{s}", .{@tagName(i.intcond())});
     } else if (i.tag == .phi) {
         if (self.get_varname(i.op1)) |nam| {
             print(" {s}", .{nam});
