@@ -343,7 +343,7 @@ fn print_node(self: *FLIR, n: *FLIR.Node) void {
             print("\n", .{});
         } else if (i.tag == .putphi) {
             // TODO: this shows some duplicates post-reorder, trivial moves should only show up once
-            if (i.f.killed) print("\x1b[4m", .{});
+            if (i.f.killed) print("\x1b[38;5;244m", .{});
             print_inst(self, put_iter, i);
             if (i.f.killed) print("\x1b[0m", .{});
         } else {
