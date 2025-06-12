@@ -1,13 +1,16 @@
+const zig_version = @import("builtin").zig_version;
 const std = @import("std");
 const posix = std.posix;
 const debug = std.debug;
 const page_size_min = std.heap.page_size_min;
 
+const page_alignment = if (zig_version.major == 0 and zig_version.minor <= 14) page_size_min else std.mem.Alignment.fromByteUnits(page_size_min);
+
 const print = std.debug.print;
 const Self = @This();
 const common = @import("./common.zig");
 
-buf: std.ArrayListAligned(u8, page_size_min),
+buf: std.ArrayListAligned(u8, page_alignment),
 
 /// offset of each encoded instruction. Might not be needed
 /// but useful for debugging.
