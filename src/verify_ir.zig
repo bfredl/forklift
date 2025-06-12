@@ -342,7 +342,7 @@ fn print_node(self: *FLIR, n: *FLIR.Node) void {
             print_op(self, " := ", i.f.kill_op1, i.op1);
             print("\n", .{});
         } else if (i.tag == .putphi) {
-            if (!i.f.killed) print_inst(self, put_iter, i);
+            print_inst(self, put_iter, i);
         } else {
             print("MÖG: ", .{});
             print_inst(self, put_iter, i);
