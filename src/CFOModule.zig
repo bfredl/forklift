@@ -112,6 +112,12 @@ pub fn get_func_off(self: *CFOModule, idx: usize) ?u32 {
 }
 
 // this is weirdly inconsistent but whatever
+pub fn get_func_ptr_id(self: *CFOModule, idx: usize, comptime T: type) !T {
+    const off = self.get_func_off(idx) orelse return error.FAILURE;
+    return self.code.get_ptr(off, T);
+}
+
+// this is weirdly inconsistent but whatever
 pub fn get_func_ptr(self: *CFOModule, name: []const u8, comptime T: type) !T {
     const idx = self.lookup_obj(name) orelse return error.FAILURE;
     const off = self.get_func_off(idx) orelse return error.FAILURE;
