@@ -741,6 +741,13 @@ pub fn mulr(self: *Self, src: IPReg) !void {
     try self.modRm(0b11, 4, src.lowId());
 }
 
+pub fn div(self: *Self, w: bool, src: IPReg, signed: bool) !void {
+    try self.new_inst(@returnAddress());
+    try self.rex_wrxb(w, false, false, src.ext());
+    try self.wb(0xf7); // IDIV \rm
+    try self.modRm(0b11, if (signed) 7 else 6, src.lowId());
+}
+
 // bitshift instructions
 
 // shift with immediate count. use shorthand version when count==1

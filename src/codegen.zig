@@ -323,6 +323,10 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                             },
                             else => return error.SpillError,
                         }
+                    } else if (op == .sdiv or op == .udiv) {
+                        @panic("division!");
+                    } else {
+                        return error.NotImplemented;
                     }
                 },
                 .icmp => {

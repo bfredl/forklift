@@ -75,7 +75,7 @@ nslots: u8 = 0,
 nsave: u8 = 0,
 ndf: u16 = 0,
 call_clobber_mask: u16 = undefined,
-x86_mem_instrinsics: bool = false,
+abi_tag: ABITag = undefined,
 
 var_names: ArrayList(?[]const u8),
 
@@ -135,7 +135,14 @@ pub fn erase(xregs: anytype) [xregs.len]IPReg {
     return r;
 }
 
+// TODO: messy. first ABI was just a comptime struct, now it is also a tag. reorganize!
+pub const ABITag = enum {
+    X86,
+    BPF,
+};
+
 pub const X86ABI = struct {
+    const tag: ABITag = .X86;
     const Reg = X86Asm.IPReg;
     // Args: used used both for incoming args and nested calls (including syscalls)
     pub const argregs = erase([6]Reg{ .rdi, .rsi, .rdx, .rcx, .r8, .r9 });
@@ -146,13 +153,12 @@ pub const X86ABI = struct {
     pub const callee_saved = erase([5]Reg{ .rbx, .r12, .r13, .r14, .r15 });
     pub const call_unsaved = erase([9]Reg{ .rax, .rcx, .rdx, .rsi, .rdi, .r8, .r9, .r10, .r11 });
 
-    pub const x86_mem_instrinsics = true;
-
     // excludes: stack reg, frame reg (just say NO to -fomiting the framepointer!)
     const reg_order: [14]IPReg = call_unsaved ++ callee_saved;
 };
 
 pub const BPF_ABI = struct {
+    const tag: ABITag = .BPF;
     const Reg = BPF.Insn.Reg;
     // Args: used used both for incoming args and nested calls (including syscalls)
     pub const argregs = erase([5]Reg{ .r1, .r2, .r3, .r4, .r5 });
@@ -162,8 +168,6 @@ pub const BPF_ABI = struct {
     // the first nsave items needs to be saved and restored
     pub const callee_saved = erase([4]Reg{ .r6, .r7, .r8, .r9 });
     pub const call_unsaved = erase([6]Reg{ .r0, .r1, .r2, .r3, .r4, .r5 });
-
-    pub const x86_mem_instrinsics = false;
 
     // excludes: r10 (immutable frame pointer)
     const reg_order: [10]IPReg = call_unsaved ++ callee_saved;
@@ -530,6 +534,8 @@ pub const IntBinOp = enum(u5) {
     @"and", // det finns en and
     xor,
     mul,
+    sdiv, // signed division
+    udiv, // unsigned division
     shl,
     sar,
     shr,
@@ -572,6 +578,8 @@ pub const IntBinOp = enum(u5) {
             .shl => .lsh,
             .sar => .arsh,
             .shr => .rsh,
+            .sdiv => .div, // signed, unsigned, schmigned
+            .udiv => .div,
         };
     }
 };
@@ -1454,6 +1462,17 @@ fn mark_ops_who_kill(self: *Self, i: *Inst, killed: *u64) void {
 }
 
 pub fn get_clobbers(self: *Self, i: *Inst) !u16 {
+    // other platforms: why can't you just be normal. x86:
+    const is_x86 = self.abi_tag == .X86;
+
+    if (is_x86 and i.tag == .ibinop) {
+        const Reg = X86Asm.IPReg;
+        const op = i.ibinop();
+        if (op == .sdiv or op == .udiv) {
+            return ipreg_flag(Reg.rax.id()) | ipreg_flag(Reg.rdx.id());
+        }
+    }
+
     if (i.tag != .call) {
         return 0;
     }
@@ -1461,7 +1480,7 @@ pub fn get_clobbers(self: *Self, i: *Inst) !u16 {
     // call: result not considered live.
     // arguments are handled in callarg and are also not conflicting
     const kind: CallKind = @enumFromInt(i.spec);
-    if (kind == .memory_intrinsic and self.x86_mem_instrinsics) {
+    if (kind == .memory_intrinsic and is_x86) {
         const Reg = X86Asm.IPReg;
         const idx = self.constval(i.op1) orelse return error.FLIRError;
         const intrinsic: MemoryIntrinsic = @enumFromInt(idx);
@@ -1796,7 +1815,7 @@ const ABICallInfo = struct {
 
 pub fn abi_call_info(self: *Self, comptime ABI: type, i: *Inst) !ABICallInfo {
     const kind: CallKind = @enumFromInt(i.spec);
-    if (kind == .memory_intrinsic and ABI.x86_mem_instrinsics) {
+    if (kind == .memory_intrinsic and ABI.tag == .X86) {
         print("PILUTTA\n", .{});
         const Reg = X86Asm.IPReg;
         const idx = self.constval(i.op1) orelse return error.FLIRError;
@@ -1857,7 +1876,7 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
     self.call_clobber_mask = mask;
 
     // this is a bit of a placeholder, either we support the X86 memory ops or nothing :P
-    self.x86_mem_instrinsics = ABI.x86_mem_instrinsics;
+    self.abi_tag = ABI.tag;
 }
 
 fn mcshow(inst: *Inst) struct { MCKind, u16 } {
