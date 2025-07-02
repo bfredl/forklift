@@ -11,7 +11,7 @@ const BPF = linux.BPF;
 const Reg = BPF.Insn.Reg;
 const Allocator = mem.Allocator;
 const fd_t = linux.fd_t;
-const IPMCVal = FLIR.IPMCVal;
+const IPMCVal = defs.IPMCVal;
 
 const CFOModule = @import("./CFOModule.zig");
 const BPFCode = CFOModule.BPFCode;
@@ -344,7 +344,7 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
                 },
                 .alloc => {},
                 .call => {
-                    const kind: FLIR.CallKind = @enumFromInt(i.spec);
+                    const kind: defs.CallKind = @enumFromInt(i.spec);
                     switch (kind) {
                         .bpf_helper => {
                             try put(code, I.call(@as(BPF.Helper, @enumFromInt(i.spec))));

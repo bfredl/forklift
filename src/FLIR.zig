@@ -27,9 +27,6 @@ pub const read_ref = SSA_GVN.read_ref;
 const ArrayList = std.ArrayList;
 const assert = std.debug.assert;
 
-const IPReg = defs.IPReg;
-const ISize = defs.ISize;
-
 pub const VMathOp = X86Asm.VMathOp;
 const VCmpOp = X86Asm.VCmpOp;
 const FMode = X86Asm.FMode;
@@ -126,9 +123,9 @@ pub const EMPTY: Inst = .{ .tag = .empty, .op1 = 0, .op2 = 0 };
 // really 14 usable, but let's keep simple by not renumbering ipregs
 pub const n_ipreg = 16;
 
-// erase(xregs: [N]X86Asm.IPReg) [N]IPReg
-pub fn erase(xregs: anytype) [xregs.len]IPReg {
-    var r: [xregs.len]IPReg = undefined;
+// erase(xregs: [N]X86Asm.IPReg) [N]defs.IPReg
+pub fn erase(xregs: anytype) [xregs.len]defs.IPReg {
+    var r: [xregs.len]defs.IPReg = undefined;
     for (xregs, 0..) |x, i| {
         r[i] = @enumFromInt(@intFromEnum(x));
     }
@@ -146,7 +143,7 @@ pub const X86ABI = struct {
     const Reg = X86Asm.IPReg;
     // Args: used used both for incoming args and nested calls (including syscalls)
     pub const argregs = erase([6]Reg{ .rdi, .rsi, .rdx, .rcx, .r8, .r9 });
-    pub const ret_reg: IPReg = Reg.rax.into();
+    pub const ret_reg = Reg.rax.into();
 
     // canonical order of callee saved registers. nsave>0 means
     // the first nsave items needs to be saved and restored
@@ -154,7 +151,7 @@ pub const X86ABI = struct {
     pub const call_unsaved = erase([9]Reg{ .rax, .rcx, .rdx, .rsi, .rdi, .r8, .r9, .r10, .r11 });
 
     // excludes: stack reg, frame reg (just say NO to -fomiting the framepointer!)
-    const reg_order: [14]IPReg = call_unsaved ++ callee_saved;
+    const reg_order: [14]defs.IPReg = call_unsaved ++ callee_saved;
 };
 
 pub const BPF_ABI = struct {
@@ -162,7 +159,7 @@ pub const BPF_ABI = struct {
     const Reg = BPF.Insn.Reg;
     // Args: used used both for incoming args and nested calls (including syscalls)
     pub const argregs = erase([5]Reg{ .r1, .r2, .r3, .r4, .r5 });
-    pub const ret_reg: IPReg = @enumFromInt(0);
+    pub const ret_reg: defs.IPReg = @enumFromInt(0);
 
     // canonical order of callee saved registers. nsave>0 means
     // the first nsave items needs to be saved and restored
@@ -170,7 +167,7 @@ pub const BPF_ABI = struct {
     pub const call_unsaved = erase([6]Reg{ .r0, .r1, .r2, .r3, .r4, .r5 });
 
     // excludes: r10 (immutable frame pointer)
-    const reg_order: [10]IPReg = call_unsaved ++ callee_saved;
+    const reg_order: [10]defs.IPReg = call_unsaved ++ callee_saved;
 };
 
 pub const BLK_SIZE = 16;
@@ -190,48 +187,9 @@ pub const Block = struct {
     }
 };
 
-// TODO: integrate properly with SpecType
-pub const ValType = enum(u4) {
-    intptr = 0,
-    avxval,
-
-    pub fn spec(self: @This()) u4 {
-        return @intFromEnum(self);
-    }
-};
-
-// union of integer sizes and Fmode
-// not very well thought out but works for now to merge the intptry (eiri) and AVX:y aspects of FLIR
-// currently u4 is enough but expand later?
-pub const SpecType = union(ValType) {
-    intptr: ISize,
-    avxval: FMode,
-    const INT_SPEC_OFF: u4 = 8;
-    pub fn val_type(self: @This()) ValType {
-        return if (@intFromEnum(self) >= INT_SPEC_OFF) .intptr else .avxval;
-    }
-    pub fn from(val: u8) SpecType {
-        if (val >= INT_SPEC_OFF) {
-            return .{ .intptr = @enumFromInt(val - INT_SPEC_OFF) };
-        } else {
-            return .{ .avxval = @enumFromInt(val) };
-        }
-    }
-    pub fn into(self: SpecType) u5 {
-        return switch (self) {
-            .intptr => |i| INT_SPEC_OFF + @intFromEnum(i),
-            .avxval => |a| @intFromEnum(a),
-        };
-    }
-};
-
 // looks cute, might delete later
-pub fn intspec(s: ISize) SpecType {
+pub fn intspec(s: defs.ISize) defs.SpecType {
     return .{ .intptr = s };
-}
-
-pub fn avxspec(s: FMode) SpecType {
-    return .{ .avxval = s };
 }
 
 test "sizey" {
@@ -257,7 +215,7 @@ pub const Inst = struct {
     spec: u8 = 0,
     op1: u16,
     op2: u16,
-    mckind: MCKind = .unallocated_raw,
+    mckind: defs.MCKind = .unallocated_raw,
     mcidx: u8 = undefined,
     vreg_scratch: u16 = NoRef,
     // can share space with vreg_scratch later?
@@ -295,14 +253,14 @@ pub const Inst = struct {
         return if (self.f.is_vreg) self.vreg_scratch else return null;
     }
 
-    fn spec_type(self: Inst) ValType {
+    fn spec_type(self: Inst) defs.ValType {
         return self.mem_type();
     }
 
     // For load/store insts that can handle both intptr and avxvalues
     // TODO: reconsider it all so we can say "load 8/16 bits into 32/64 bit register"
-    pub fn mem_type(self: Inst) SpecType {
-        return SpecType.from(self.low_spec());
+    pub fn mem_type(self: Inst) defs.SpecType {
+        return .from(self.low_spec());
     }
 
     pub fn scale(self: Inst) u2 {
@@ -328,7 +286,7 @@ pub const Inst = struct {
         return @enumFromInt(self.low_spec());
     }
 
-    pub fn fcmpop(self: Inst) IntCond {
+    pub fn fcmpop(self: Inst) defs.IntCond {
         return @enumFromInt(self.low_spec());
     }
 
@@ -337,20 +295,20 @@ pub const Inst = struct {
         return @enumFromInt(self.high_spec());
     }
 
-    pub fn intcond(self: *Inst) IntCond {
+    pub fn intcond(self: *Inst) defs.IntCond {
         return @enumFromInt(self.low_spec());
     }
 
-    pub fn ibinop(self: *Inst) IntBinOp {
+    pub fn ibinop(self: *Inst) defs.IntBinOp {
         return @enumFromInt(self.low_spec());
     }
 
     // valid for .ibinop and .icmp
-    pub fn iop_size(self: *Inst) ISize {
+    pub fn iop_size(self: *Inst) defs.ISize {
         return @enumFromInt(self.high_spec());
     }
 
-    pub fn res_type(inst: Inst) ?ValType {
+    pub fn res_type(inst: Inst) ?defs.ValType {
         return switch (inst.tag) {
             .freelist => null,
             .arg => inst.mem_type(), // TODO: haIIIII
@@ -421,38 +379,18 @@ pub const Inst = struct {
         return @as([*]u16, @ptrCast(&i.op1))[0..i.n_op(rw)];
     }
 
-    pub fn ipreg(i: Inst) ?IPReg {
-        return if (i.mckind == .ipreg) @as(IPReg, @enumFromInt(i.mcidx)) else null;
+    pub fn ipreg(i: Inst) ?defs.IPReg {
+        return if (i.mckind == .ipreg) @as(defs.IPReg, @enumFromInt(i.mcidx)) else null;
     }
 
     pub fn avxreg(i: Inst) ?u4 {
         return if (i.mckind == .vfreg) @as(u4, @intCast(i.mcidx)) else null;
     }
 
-    pub fn ipval(i: Inst) ?IPMCVal {
+    pub fn ipval(i: Inst) ?defs.IPMCVal {
         if (i.ipreg()) |reg| return .{ .ipreg = reg };
         if (i.mckind == .frameslot) return .{ .frameslot = i.mcidx };
         return null;
-    }
-};
-
-pub const IPMCVal = union(enum) {
-    ipreg: IPReg,
-    constval: i32, //sign extended in 64-bit context
-    frameslot: u8,
-    // both these adresses constant data stored in memory
-    // "constref" implies loading the actual value
-    // while "constptr" loads a pointer to the constant memory
-    constref: u16,
-    constptr: u16,
-    // frameslot_ptr: u8,
-
-    // TODO: this is not a builtin? (or maybe meta)
-    pub fn as_ipreg(self: IPMCVal) ?IPReg {
-        return switch (self) {
-            .ipreg => |reg| reg,
-            else => null,
-        };
     }
 };
 
@@ -470,7 +408,7 @@ pub fn constval(self: *Self, ref: u16) ?u64 {
 }
 
 // if null: still could be a value, just not an ipval
-pub fn ipval(self: *Self, ref: u16) ?IPMCVal {
+pub fn ipval(self: *Self, ref: u16) ?defs.IPMCVal {
     if (constidx(ref)) |idx| {
         const val: u64 = self.constvals.items[idx];
         const vali32: i32 = @bitCast(@as(u32, @truncate(val)));
@@ -488,7 +426,7 @@ pub fn ipval(self: *Self, ref: u16) ?IPMCVal {
     }
 }
 
-pub fn ipreg(self: *Self, ref: u16) ?IPReg {
+pub fn ipreg(self: *Self, ref: u16) ?defs.IPReg {
     return (self.iref(ref) orelse return null).ipreg();
 }
 
@@ -526,174 +464,8 @@ pub const Tag = enum(u8) {
     xadd,
 };
 
-// could be u6 but then we need special spec packing (2+6)
-pub const IntBinOp = enum(u5) {
-    add,
-    sub,
-    @"or",
-    @"and", // det finns en and
-    xor,
-    mul,
-    sdiv, // signed division
-    udiv, // unsigned division
-    shl,
-    sar,
-    shr,
-
-    pub fn symmetric(self: IntBinOp) bool {
-        return switch (self) {
-            .add, .@"or", .@"and", .xor, .mul => true,
-            else => false,
-        };
-    }
-
-    pub fn asAOP(self: IntBinOp) ?X86Asm.AOp {
-        return switch (self) {
-            .add => .add,
-            .sub => .sub,
-            .@"or" => .bor,
-            .@"and" => .band,
-            .xor => .xor,
-            else => null,
-        };
-    }
-
-    pub fn asShift(self: IntBinOp) ?X86Asm.ShiftOp {
-        return switch (self) {
-            .shl => .hl,
-            .sar => .ar,
-            .shr => .hr,
-            else => null,
-        };
-    }
-
-    pub fn asBpfAluOp(self: IntBinOp) ?BPF.Insn.AluOp {
-        return switch (self) {
-            .add => .add,
-            .sub => .sub,
-            .mul => .mul,
-            .@"or" => .alu_or,
-            .@"and" => .alu_and,
-            .xor => .xor,
-            .shl => .lsh,
-            .sar => .arsh,
-            .shr => .rsh,
-            .sdiv => .div, // signed, unsigned, schmigned
-            .udiv => .div,
-        };
-    }
-};
-
-pub const IntCond = enum(u4) {
-    eq,
-    neq,
-    gt,
-    ge,
-    lt,
-    le,
-    a, // above: unsigned greather than
-    na,
-    b, // beloved: unsigned less than
-    nb,
-
-    pub fn asX86Cond(self: IntCond) ?X86Asm.Cond {
-        return switch (self) {
-            .eq => .e,
-            .neq => .ne,
-            .gt => .g,
-            .ge => .nl,
-            .lt => .l,
-            .le => .ng,
-            .a => .a,
-            .na => .na,
-            .b => .b,
-            .nb => .nb,
-        };
-    }
-
-    pub fn asBpfJmpOp(self: IntCond) ?BPF.Insn.JmpOp {
-        return switch (self) {
-            .eq => .jeq,
-            .neq => .jne,
-            .gt => .jgt,
-            .ge => .jge,
-            .lt => .jlt,
-            .le => .jle,
-            else => null,
-        };
-    }
-
-    pub fn off(self: IntCond) u4 {
-        return @intFromEnum(self);
-    }
-
-    pub fn invert(self: IntCond) IntCond {
-        return switch (self) {
-            .eq => .neq,
-            .neq => .eq,
-            .gt => .le,
-            .ge => .lt,
-            .lt => .ge,
-            .le => .gt,
-            .a => .na,
-            .na => .a,
-            .b => .nb,
-            .nb => .b,
-        };
-    }
-};
-
 pub const MemoryIntrinsic = enum(u8) {
     memset, // dest [rsi], what [rax], count [rcx]
-};
-
-// op1 is always a ref, use a const ref when a constant is required
-pub const CallKind = enum(u8) {
-    /// op1 is relative start of pointer, must be a constant
-    near,
-    /// op1 is function pointer
-    fun_ptr,
-    /// platform dependent. syscall index in op1
-    /// directly encodes the linux syscall number of the target
-    syscall,
-    /// op1: bpf helper index
-    bpf_helper,
-    /// spec is like memtype, op1 is index into MemoryIntrinsic
-    memory_intrinsic,
-};
-
-pub const MCKind = enum(u8) {
-    // not yet allocated, or Inst that trivially produces no value
-    unallocated_raw = 0,
-    // general purpose register like rax, r12, etc
-    ipreg,
-    // SSE/AVX registers, ie xmm0/ymm0-15
-    vfreg,
-
-    // unallocated, but has a ipreg hint
-    unallocated_ipreghint,
-    // unallocated, but has a vfreg hint
-    unallocated_vfreghint,
-
-    // TODO: support non-uniform sizes of spilled value
-    frameslot,
-    // unused value, perhaps should have been deleted before alloc
-    dead,
-    // not stored as such, will be emitted togheter with the next inst
-    // example "lea" and then "store", or "load" and then ibinop/vmath
-    fused,
-
-    constval, // constvals[i] interpreted as "data"
-    constptr, // pointer to a constvals[i] emitted value
-
-    pub fn unallocated(self: MCKind) bool {
-        return switch (self) {
-            .unallocated_raw => true,
-            .unallocated_ipreghint => true,
-            .unallocated_vfreghint => true,
-            else => false,
-        };
-    }
 };
 
 fn initConsts(self: *Self) void {
@@ -772,7 +544,7 @@ pub fn vcmpfspec(vcmp: VCmpOp, fmode: FMode) u8 {
     return sphigh(@intFromEnum(fmode), vcmp.val());
 }
 
-pub fn fcmpspec(cond: IntCond, fmode: FMode) u8 {
+pub fn fcmpspec(cond: defs.IntCond, fmode: FMode) u8 {
     return sphigh(@intFromEnum(fmode), cond.off());
 }
 
@@ -906,10 +678,10 @@ pub fn binop(self: *Self, node: u16, tag: Tag, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = tag, .op1 = op1, .op2 = op2 });
 }
 
-pub fn load(self: *Self, node: u16, kind: SpecType, base: u16, idx: u16, scale: u2) !u16 {
+pub fn load(self: *Self, node: u16, kind: defs.SpecType, base: u16, idx: u16, scale: u2) !u16 {
     return self.addInst(node, .{ .tag = .load, .op1 = base, .op2 = idx, .spec = sphigh(scale, kind.into()) });
 }
-pub fn store(self: *Self, node: u16, kind: SpecType, base: u16, idx: u16, scale: u2, val: u16) !u16 {
+pub fn store(self: *Self, node: u16, kind: defs.SpecType, base: u16, idx: u16, scale: u2, val: u16) !u16 {
     // FUBBIT: all possible instances of fusing should be detected in analysis anyway
     const addr = if (idx != NoRef) try self.addInst(node, .{ .tag = .lea, .op1 = base, .op2 = idx, .mckind = .fused, .spec = sphigh(scale, 0) }) else base;
     return self.addInst(node, .{ .tag = .store, .op1 = addr, .op2 = val, .spec = sphigh(0, kind.into()) });
@@ -931,7 +703,7 @@ pub fn vcmpf(self: *Self, node: u16, vop: VCmpOp, fmode: FMode, op1: u16, op2: u
 }
 
 // TODO: a bit contradictory naming with IntCond
-pub fn fcmp(self: *Self, node: u16, cond: IntCond, fmode: FMode, op1: u16, op2: u16) !u16 {
+pub fn fcmp(self: *Self, node: u16, cond: defs.IntCond, fmode: FMode, op1: u16, op2: u16) !u16 {
     if (!fmode.scalar()) return error.FLIRError;
     return self.addInst(node, .{ .tag = .fcmp, .spec = fcmpspec(cond, fmode), .op1 = op1, .op2 = op2 });
 }
@@ -948,11 +720,11 @@ pub fn float2int(self: *Self, node: u16, fmode: FMode, op1: u16) !u16 {
 }
 
 // TODO: 32bit vs 64bit (also for int in i2f and f2i, and so on)
-pub fn ibinop(self: *Self, node: u16, size: ISize, op: IntBinOp, op1: u16, op2: u16) !u16 {
+pub fn ibinop(self: *Self, node: u16, size: defs.ISize, op: defs.IntBinOp, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .ibinop, .spec = sphigh(@intFromEnum(size), @intFromEnum(op)), .op1 = op1, .op2 = op2 });
 }
 
-pub fn icmp(self: *Self, node: u16, size: ISize, cond: IntCond, op1: u16, op2: u16) !u16 {
+pub fn icmp(self: *Self, node: u16, size: defs.ISize, cond: defs.IntCond, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .icmp, .spec = sphigh(@intFromEnum(size), cond.off()), .op1 = op1, .op2 = op2 });
 }
 
@@ -975,7 +747,7 @@ pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
     n.putphi_list = try self.addRawInst(.{ .tag = .putvar, .op1 = refval, .op2 = v.op1, .next = n.putphi_list, .node_delete_this = node });
 }
 
-pub fn ret(self: *Self, node: u16, kind: SpecType, val: u16) !void {
+pub fn ret(self: *Self, node: u16, kind: defs.SpecType, val: u16) !void {
     _ = try self.addInst(node, .{ .tag = .ret, .op1 = val, .op2 = 0, .spec = sphigh(0, kind.into()) });
 }
 
@@ -988,7 +760,7 @@ pub fn callarg(self: *Self, node: u16, num: u8, ref: u16) !void {
     });
 }
 
-pub fn call(self: *Self, node: u16, kind: CallKind, num: u16, extra: u16) !u16 {
+pub fn call(self: *Self, node: u16, kind: defs.CallKind, num: u16, extra: u16) !u16 {
     const c = try self.addInst(node, .{
         .tag = .call,
         .spec = @intFromEnum(kind),
@@ -1016,7 +788,7 @@ pub fn arg(self: *Self) !u16 {
     return inst;
 }
 
-pub fn variable(self: *Self, typ: SpecType) !u16 {
+pub fn variable(self: *Self, typ: defs.SpecType) !u16 {
     if (self.n.items.len == 0) return error.FLIRError;
     const inst = try self.addRawInst(.{ .tag = .variable, .op1 = self.nvar, .op2 = 0, .spec = typ.into(), .next = self.var_list });
     self.var_list = inst;
@@ -1479,7 +1251,7 @@ pub fn get_clobbers(self: *Self, i: *Inst) !u16 {
 
     // call: result not considered live.
     // arguments are handled in callarg and are also not conflicting
-    const kind: CallKind = @enumFromInt(i.spec);
+    const kind: defs.CallKind = @enumFromInt(i.spec);
     if (kind == .memory_intrinsic and is_x86) {
         const Reg = X86Asm.IPReg;
         const idx = self.constval(i.op1) orelse return error.FLIRError;
@@ -1579,7 +1351,7 @@ fn renumber(self: *Self, firstblk: u16, from: u16, to: u16) void {
 // reuses op1 if it is from the same block and we are the last user
 pub fn trivial_alloc(self: *Self) !void {
     // TRRICKY: start with the ABI arg registers, and just skip as many args as we have
-    const regs: [8]IPReg = undefined;
+    const regs: [8]defs.IPReg = undefined;
     var used: usize = self.narg;
     var avxused: u8 = 0;
     for (self.n.items) |*n| {
@@ -1590,7 +1362,7 @@ pub fn trivial_alloc(self: *Self) !void {
                 const ref = toref(blk, uv(idx));
 
                 if (i.has_res() and i.mckind.unallocated()) {
-                    const regkind: MCKind = if (i.res_type() == ValType.avxval) .vfreg else .ipreg;
+                    const regkind: defs.MCKind = if (i.res_type() == .avxval) .vfreg else .ipreg;
                     const op1 = if (i.n_op(false) > 0) self.iref(i.op1) else null;
                     if (op1) |o| {
                         if (o.mckind == regkind and o.vreg() == null and o.last_use == ref) {
@@ -1599,7 +1371,7 @@ pub fn trivial_alloc(self: *Self) !void {
                             continue;
                         }
                     }
-                    if (i.res_type() == ValType.avxval) {
+                    if (i.res_type() == .avxval) {
                         if (avxused == 16) {
                             return error.GOOOF;
                         }
@@ -1668,7 +1440,7 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
             const i = item.i;
             // const ref = item.ref;
 
-            const is_avx = (i.res_type() == ValType.avxval);
+            const is_avx = (i.res_type() == .avxval);
 
             if (i.f.kill_op1) {
                 if (self.iref(i.op1)) |op| {
@@ -1725,10 +1497,10 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, i: *Inst, free_regs_ip: *[n_i
         return;
     }
 
-    const is_avx = (i.res_type() == ValType.avxval);
+    const is_avx = (i.res_type() == .avxval);
     var usable_regs: [16]bool = undefined;
     var free_regs = if (is_avx) free_regs_avx else free_regs_ip;
-    const reg_kind: MCKind = if (is_avx) .vfreg else .ipreg;
+    const reg_kind: defs.MCKind = if (is_avx) .vfreg else .ipreg;
 
     @memcpy(&usable_regs, free_regs);
     var conflicts: u16 = 0;
@@ -1771,7 +1543,7 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, i: *Inst, free_regs_ip: *[n_i
 
     var chosen_reg: ?u8 = null;
     if (i.mckind == .unallocated_ipreghint) {
-        if (i.res_type() != ValType.intptr) unreachable;
+        if (i.res_type() != .intptr) unreachable;
         if (usable_regs[i.mcidx]) {
             chosen_reg = i.mcidx;
         }
@@ -1809,12 +1581,12 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, i: *Inst, free_regs_ip: *[n_i
 
 // TODO: clobbers should be in here :P
 const ABICallInfo = struct {
-    args: []const IPReg,
-    ret: IPReg,
+    args: []const defs.IPReg,
+    ret: defs.IPReg,
 };
 
 pub fn abi_call_info(self: *Self, comptime ABI: type, i: *Inst) !ABICallInfo {
-    const kind: CallKind = @enumFromInt(i.spec);
+    const kind: defs.CallKind = @enumFromInt(i.spec);
     if (kind == .memory_intrinsic and ABI.tag == .X86) {
         print("PILUTTA\n", .{});
         const Reg = X86Asm.IPReg;
@@ -1879,7 +1651,7 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
     self.abi_tag = ABI.tag;
 }
 
-fn mcshow(inst: *Inst) struct { MCKind, u16 } {
+fn mcshow(inst: *Inst) struct { defs.MCKind, u16 } {
     return .{ inst.mckind, inst.mcidx };
 }
 
@@ -2072,7 +1844,7 @@ fn movins_read(self: *Self, movins: *Inst) !?*Inst {
 }
 
 // fubbigt: use IPMCVal even in the analysis stage
-pub fn movins_read2(self: *Self, movins: *Inst) !?IPMCVal {
+pub fn movins_read2(self: *Self, movins: *Inst) !?defs.IPMCVal {
     return switch (movins.tag) {
         .putphi => self.ipval(movins.op1),
         .callarg => self.ipval(movins.op1),

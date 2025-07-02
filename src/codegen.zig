@@ -5,9 +5,9 @@ const print = std.debug.print;
 const X86Asm = @import("./X86Asm.zig");
 const IPReg = defs.IPReg;
 const Inst = FLIR.Inst;
-const IPMCVal = FLIR.IPMCVal;
+const IPMCVal = defs.IPMCVal;
 const uv = FLIR.uv;
-const ValType = FLIR.ValType;
+const ValType = defs.ValType;
 const FMode = X86Asm.FMode;
 const VMathOp = X86Asm.VMathOp;
 const EAddr = X86Asm.EAddr;
@@ -231,7 +231,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
 
         var cond: ?X86Asm.Cond = null;
         var it = self.ins_iterator(n.firstblk);
-        var swap_source: ?FLIR.IPMCVal = null;
+        var swap_source: ?defs.IPMCVal = null;
         while (it.next()) |item| {
             const i = item.i;
 
@@ -494,7 +494,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     const y = self.avxreg(i.op2) orelse return error.FLIRError;
                     const dst = i.avxreg() orelse return error.FLIRError;
                     try cfo.vcmpf(i.vcmpop(), i.fmode_op(), dst, x, y);
-                    cond = @as(FLIR.IntCond, @enumFromInt(i.spec)).asX86Cond();
+                    cond = @as(defs.IntCond, @enumFromInt(i.spec)).asX86Cond();
                 },
                 .fcmp => {
                     const x = self.avxreg(i.op1) orelse return error.FLIRError;
@@ -521,7 +521,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     try cfo.vcvtsx2si_rr(i.fmode_op(), true, r(dst), src);
                 },
                 .call => {
-                    const kind: FLIR.CallKind = @enumFromInt(i.spec);
+                    const kind: defs.CallKind = @enumFromInt(i.spec);
                     switch (kind) {
                         .syscall => {
                             try regmovmc(&cfo, false, X86Asm.IPReg.rax.into(), self.ipval(i.op1).?);

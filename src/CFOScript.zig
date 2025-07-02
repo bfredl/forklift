@@ -20,7 +20,7 @@ const codegen_bpf = @import("./codegen_bpf.zig").codegen;
 
 const Self = @This();
 const ParseError = error{ ParseError, SyntaxError, OutOfMemory, FLIRError, UndefinedName, TooManyArgs, TypeError, NotYetImplemented };
-const SpecType = FLIR.SpecType;
+const SpecType = defs.SpecType;
 
 // NOTE: currently "int_ctx" doesn't affect reads beyond upcast into quadword for further aritmethic
 const int_ctx: SpecType = .{ .intptr = .quadword };
@@ -158,7 +158,7 @@ pub fn expr_2(self: *Self, type_ctx: SpecType) !?u16 {
         } else {
             const opstr = self.t.peek_operator() orelse return val;
 
-            const theop: FLIR.IntBinOp = if (opstr.len == 1)
+            const theop: defs.IntBinOp = if (opstr.len == 1)
                 switch (opstr[0]) {
                     '*' => .mul,
                     '/' => @panic(".div"),
@@ -200,7 +200,7 @@ pub fn expr_3(self: *Self, type_ctx: SpecType) !?u16 {
             const op = (try self.expr_2(type_ctx)) orelse return error.SyntaxError;
             val = try self.ir.vmath(self.curnode, theop, fmode, val, op);
         } else {
-            const theop: FLIR.IntBinOp = switch (char) {
+            const theop: defs.IntBinOp = switch (char) {
                 '+' => .add,
                 '-' => .sub,
                 '|' => .@"or",
@@ -255,7 +255,7 @@ fn requireEnumKey(comptime T: type, key: []const u8, klagel: []const u8) !T {
 }
 
 pub fn call_expr(self: *Self, type_ctx: SpecType, kind: []const u8) !u16 {
-    const calltype: FLIR.CallKind, const callwhat, const extra: u16 = target: {
+    const calltype: defs.CallKind, const callwhat, const extra: u16 = target: {
         if (type_ctx != .intptr) return error.TypeError;
 
         if (mem.eql(u8, kind, "near")) {
@@ -304,7 +304,7 @@ pub fn call_expr(self: *Self, type_ctx: SpecType, kind: []const u8) !u16 {
     return self.ir.call(self.curnode, calltype, callwhat, extra);
 }
 
-pub fn cond_op(op: []const u8) ?FLIR.IntCond {
+pub fn cond_op(op: []const u8) ?defs.IntCond {
     if (op.len == 1) {
         return switch (op[0]) {
             '<' => .lt,
