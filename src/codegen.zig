@@ -324,7 +324,44 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                             else => return error.SpillError,
                         }
                     } else if (op == .sdiv or op == .udiv) {
-                        @panic("division!");
+                        // FREESTYLIN': as RAX and RDX registers are clobbered anyway, we can use RDX as the op2 intermediate, as needed
+                        // although ideally regalloc should avoid this:p
+                        var rhs_reg: X86Asm.IPReg = .rdx;
+                        var swapped = false;
+                        switch (rhs) {
+                            .constval => |c| {
+                                try cfo.movri(w, rhs_reg, c);
+                            },
+                            .ipreg => |reg| {
+                                if (r(reg) == .rax) {
+                                    if (lhs == .ipreg and lhs.ipreg == X86Asm.IPReg.rdx.into()) {
+                                        try cfo.xchg(w, rhs_reg, r(reg));
+                                        swapped = true;
+                                    } else {
+                                        try cfo.mov(w, rhs_reg, r(reg));
+                                    }
+                                } else {
+                                    rhs_reg = r(reg);
+                                }
+                            },
+                            else => {
+                                @panic("implement 'div [mem]' form");
+                            },
+                        }
+                        switch (lhs) {
+                            .constval => |c| {
+                                try cfo.movri(w, .rax, c);
+                            },
+                            .ipreg => |reg| {
+                                if (r(reg) != .rax and !swapped) {
+                                    try cfo.mov(w, .rax, r(reg));
+                                }
+                            },
+                            else => {
+                                return error.NotImplemented;
+                            },
+                        }
+                        try cfo.div(w, rhs_reg, op == .sdiv);
                     } else {
                         return error.NotImplemented;
                     }
