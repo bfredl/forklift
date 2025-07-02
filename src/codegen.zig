@@ -534,7 +534,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                         .memory_intrinsic => {
                             const idx = self.constval(i.op1) orelse return error.FLIRError;
                             const size: defs.ISize = @enumFromInt(i.op2);
-                            const intrinsic: FLIR.MemoryIntrinsic = @enumFromInt(idx);
+                            const intrinsic: defs.MemoryIntrinsic = @enumFromInt(idx);
                             if (intrinsic == .memset) {
                                 try cfo.stos(true, size);
                             }

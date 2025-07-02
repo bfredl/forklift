@@ -10,7 +10,8 @@ const print = std.debug.print;
 const mem = std.mem;
 const CFOModule = @import("./CFOModule.zig");
 const Tokenizer = @import("./Tokenizer.zig");
-const FMode = @import("./X86Asm.zig").FMode;
+const X86Asm = @import("./X86Asm.zig");
+const FMode = X86Asm.FMode;
 const BPF = std.os.linux.BPF;
 const meta = std.meta;
 const options = defs.debug_options;
@@ -147,7 +148,7 @@ pub fn expr_2(self: *Self, type_ctx: SpecType) !?u16 {
     var val = (try self.expr_0(type_ctx)) orelse return null;
     while (self.t.nonws()) |char| {
         if (f_ctx(type_ctx)) |fmode| {
-            const theop: FLIR.VMathOp = switch (char) {
+            const theop: X86Asm.VMathOp = switch (char) {
                 '*' => .mul,
                 '/' => .div,
                 else => break,
@@ -191,7 +192,7 @@ pub fn expr_3(self: *Self, type_ctx: SpecType) !?u16 {
         }
 
         if (f_ctx(type_ctx)) |fmode| {
-            const theop: FLIR.VMathOp = switch (char) {
+            const theop: X86Asm.VMathOp = switch (char) {
                 '+' => .add,
                 '-' => .sub,
                 else => break,
@@ -274,7 +275,7 @@ pub fn call_expr(self: *Self, type_ctx: SpecType, kind: []const u8) !u16 {
             const helper = try requireEnumKey(BPF.Helper, name, "unknown BPF helper");
             break :target .{ .bpf_helper, try self.ir.const_int(@intCast(@intFromEnum(helper))), 0 };
         } else if (mem.eql(u8, kind, "memset")) {
-            const idx = @intFromEnum(FLIR.MemoryIntrinsic.memset);
+            const idx = @intFromEnum(defs.MemoryIntrinsic.memset);
             break :target .{ .memory_intrinsic, try self.ir.const_int(@intCast(idx)), 0 };
         } else {
             return error.ParseError;

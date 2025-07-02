@@ -1,5 +1,5 @@
 const FLIR = @import("./FLIR.zig");
-const Tag = FLIR.Tag;
+const Tag = FLIR.Inst.Tag;
 const NoRef = FLIR.NoRef;
 const uv = FLIR.uv;
 

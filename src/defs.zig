@@ -188,6 +188,10 @@ pub const IntCond = enum(u4) {
     }
 };
 
+pub const MemoryIntrinsic = enum(u8) {
+    memset, // dest [rsi], what [rax], count [rcx]
+};
+
 pub const IPMCVal = union(enum) {
     ipreg: IPReg,
     constval: i32, //sign extended in 64-bit context

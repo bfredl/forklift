@@ -27,9 +27,7 @@ pub const read_ref = SSA_GVN.read_ref;
 const ArrayList = std.ArrayList;
 const assert = std.debug.assert;
 
-pub const VMathOp = X86Asm.VMathOp;
-const VCmpOp = X86Asm.VCmpOp;
-const FMode = X86Asm.FMode;
+pub const Inst = @import("./Inst.zig");
 
 a: Allocator,
 // TODO: unmanage all these:
@@ -115,8 +113,6 @@ pub const Node = struct {
     phi_list: u16 = NoRef, // currently also scheduled (CRINGE)
     putphi_list: u16 = NoRef, // also used for "putvar" entries in the construction phase
 };
-
-pub const EMPTY: Inst = .{ .tag = .empty, .op1 = 0, .op2 = 0 };
 
 // amd64 ABI
 
@@ -210,190 +206,6 @@ fn node_flag(node: u6) u64 {
     return @as(u64, 1) << node;
 }
 
-pub const Inst = struct {
-    tag: Tag,
-    spec: u8 = 0,
-    op1: u16,
-    op2: u16,
-    mckind: defs.MCKind = .unallocated_raw,
-    mcidx: u8 = undefined,
-    vreg_scratch: u16 = NoRef,
-    // can share space with vreg_scratch later?
-    node_delete_this: u16 = NoRef,
-    // only var, phi and putphi currently use this. other types can assign other meaning:
-    next: u16 = NoRef,
-    f: packed struct {
-        // note: if the reference is a vreg, it might
-        // be alive in an other branch processed later
-        // in phi node: "kill_op1" is overloaded as resolved (it doesn't use any op:s in the normal sense)
-        // NOTE: putphis doesn't set kill_op1 because they don't need to (what is dead may never die)
-        kill_op1: bool = false,
-        kill_op2: bool = false,
-        killed: bool = false, // if false after calc_use, a non-vreg is never used
-        is_vreg: bool = false, // if true: vreg_scratch is a vreg number. otherwise it is free real (scratch) estate
-
-        // if true: vregs_scratch encodes a bitset of conflicting regs.
-        // for a vreg, this is always false, but check vregs[v].conflicts
-        conflicts: bool = false,
-
-        // for the parallel move class of instructions:
-        // perform a swap between target and dest
-        do_swap: bool = false,
-        // gen as a no-op as previous instruction was a swap
-        swap_done: bool = false,
-
-        // note this can be more than two instructions, like
-        // do_swap a->b
-        // do_swap c->a
-        // swap_done b->c
-        // is a legal lowering of a->b, b->c, c->a or any permutation thereof
-    } = .{},
-
-    pub fn vreg(self: Inst) ?u16 {
-        return if (self.f.is_vreg) self.vreg_scratch else return null;
-    }
-
-    fn spec_type(self: Inst) defs.ValType {
-        return self.mem_type();
-    }
-
-    // For load/store insts that can handle both intptr and avxvalues
-    // TODO: reconsider it all so we can say "load 8/16 bits into 32/64 bit register"
-    pub fn mem_type(self: Inst) defs.SpecType {
-        return .from(self.low_spec());
-    }
-
-    pub fn scale(self: Inst) u2 {
-        return @intCast(self.high_spec());
-    }
-
-    const LOW_MASK: u8 = (1 << 5) - 1;
-    const HIGH_MASK: u8 = ~LOW_MASK;
-
-    fn high_spec(self: Inst) u3 {
-        return @intCast((self.spec & HIGH_MASK) >> 5);
-    }
-
-    fn low_spec(self: Inst) u5 {
-        return @intCast(self.spec & LOW_MASK);
-    }
-
-    pub fn vmathop(self: Inst) VMathOp {
-        return @enumFromInt(self.low_spec());
-    }
-
-    pub fn vcmpop(self: Inst) VCmpOp {
-        return @enumFromInt(self.low_spec());
-    }
-
-    pub fn fcmpop(self: Inst) defs.IntCond {
-        return @enumFromInt(self.low_spec());
-    }
-
-    // only valid for op instructions. otherwise use mem_type
-    pub fn fmode_op(self: Inst) FMode {
-        return @enumFromInt(self.high_spec());
-    }
-
-    pub fn intcond(self: *Inst) defs.IntCond {
-        return @enumFromInt(self.low_spec());
-    }
-
-    pub fn ibinop(self: *Inst) defs.IntBinOp {
-        return @enumFromInt(self.low_spec());
-    }
-
-    // valid for .ibinop and .icmp
-    pub fn iop_size(self: *Inst) defs.ISize {
-        return @enumFromInt(self.high_spec());
-    }
-
-    pub fn res_type(inst: Inst) ?defs.ValType {
-        return switch (inst.tag) {
-            .freelist => null,
-            .arg => inst.mem_type(), // TODO: haIIIII
-            .variable => inst.mem_type(), // gets preserved to the phis
-            .putvar => null,
-            .phi => inst.mem_type(),
-            .putphi => null, // stated in the phi instruction
-            .alloc => .intptr, // the type of .alloc is a pointer to it
-            .copy => inst.mem_type(),
-            .load => inst.mem_type(),
-            .lea => .intptr, // Lea? Who's Lea??
-            .store => null,
-            .ibinop => .intptr,
-            .icmp => null, // technically the FLAG register but anyway
-            .vmath => .avxval,
-            .vcmpf => .avxval,
-            .fcmp => null, // matching icmp
-            .int2vf => .avxval, // convert int to float, or move int from gp to vector reg
-            .fconst => .avxval,
-            .vf2int => .intptr,
-            .ret => null,
-            .call => .intptr,
-            .callarg => null,
-            .bpf_load_map => .intptr,
-            .xadd => null,
-        };
-    }
-
-    pub fn has_res(inst: Inst) bool {
-        return inst.res_type() != null;
-    }
-
-    // number of op:s which are inst references.
-    // otherwise they can store whatever data
-    pub fn n_op(inst: Inst, rw: bool) u2 {
-        return switch (inst.tag) {
-            .freelist => 0,
-            .arg => 0,
-            .variable => 0,
-            // really only one, but we will get rid of this lie
-            // before getting into any serious analysis.
-            .putvar => 2, // TODO: if (rw) 2 else 1, FAST ÅT ANDRA HÅLLET
-            .phi => 0,
-            .putphi => if (rw) 2 else 1,
-            .copy => 1,
-            .load => 2, // base, idx
-            .lea => 2, // base, idx. elided when only used for a store!
-            .store => 2, // addr, val
-            .ibinop => 2,
-            .icmp => 2,
-            .vmath => 2,
-            .vcmpf => 2,
-            .fcmp => 2,
-            .int2vf => 1,
-            .fconst => 1, // but note: always a constval
-            .vf2int => 1,
-            .ret => 1,
-            .callarg => 1,
-            .call => 1, // could be for funptr/dynamic syscall?
-            .alloc => 0,
-            .bpf_load_map => 0,
-            .xadd => 2, // TODO: atomic instruction group
-        };
-    }
-
-    pub fn ops(i: *Inst, rw: bool) []u16 {
-        assert(@intFromPtr(&i.op2) - @intFromPtr(&i.op1) == @sizeOf(u16));
-        return @as([*]u16, @ptrCast(&i.op1))[0..i.n_op(rw)];
-    }
-
-    pub fn ipreg(i: Inst) ?defs.IPReg {
-        return if (i.mckind == .ipreg) @as(defs.IPReg, @enumFromInt(i.mcidx)) else null;
-    }
-
-    pub fn avxreg(i: Inst) ?u4 {
-        return if (i.mckind == .vfreg) @as(u4, @intCast(i.mcidx)) else null;
-    }
-
-    pub fn ipval(i: Inst) ?defs.IPMCVal {
-        if (i.ipreg()) |reg| return .{ .ipreg = reg };
-        if (i.mckind == .frameslot) return .{ .frameslot = i.mcidx };
-        return null;
-    }
-};
-
 pub fn constidx(ref: u16) ?u16 {
     if (ref == NoRef) return null;
     if (ref >= ConstOff) {
@@ -433,40 +245,6 @@ pub fn ipreg(self: *Self, ref: u16) ?defs.IPReg {
 pub fn avxreg(self: *Self, ref: u16) ?u4 {
     return (self.iref(ref) orelse return null).avxreg();
 }
-
-pub const Tag = enum(u8) {
-    freelist = 0, // item in freelist. must not be refered to!
-    alloc,
-    arg,
-    variable,
-    putvar, // unresolved phi assignment: VAR op2 := op1
-    phi,
-    /// put op1 into phi op2 of (only) successor
-    putphi,
-    copy,
-    load,
-    lea,
-    store,
-    ibinop,
-    icmp,
-    // in theory same as "intval to float bitcast", but separate fconst
-    // make life easier. add a int2vf mode for bitcasts
-    fconst, // op1 is a constref, opspec for type
-    vmath, // binops specifically
-    vcmpf,
-    fcmp,
-    int2vf,
-    vf2int,
-    ret,
-    call,
-    callarg,
-    bpf_load_map,
-    xadd,
-};
-
-pub const MemoryIntrinsic = enum(u8) {
-    memset, // dest [rsi], what [rax], count [rcx]
-};
 
 fn initConsts(self: *Self) void {
     self.constvals.appendAssumeCapacity(0);
@@ -530,27 +308,6 @@ pub fn iref(self: *Self, ref: u16) ?*Inst {
     }
     if (ref >= self.i.items.len) @panic("INVALID REF :(((");
     return &self.i.items[ref];
-}
-
-fn sphigh(high: u3, low: u5) u8 {
-    return @as(u8, high) << 5 | low;
-}
-
-pub fn vmathspec(vop: VMathOp, fmode: FMode) u8 {
-    return sphigh(@intFromEnum(fmode), @intCast(vop.off()));
-}
-
-pub fn vcmpfspec(vcmp: VCmpOp, fmode: FMode) u8 {
-    return sphigh(@intFromEnum(fmode), vcmp.val());
-}
-
-pub fn fcmpspec(cond: defs.IntCond, fmode: FMode) u8 {
-    return sphigh(@intFromEnum(fmode), cond.off());
-}
-
-// TODO: will generalize
-pub fn vcvtspec(fmode: FMode) u8 {
-    return sphigh(@intFromEnum(fmode), 0);
 }
 
 pub fn addNode(self: *Self) !u16 {
@@ -666,6 +423,7 @@ pub fn const_int(self: *Self, val: i32) !u16 {
     return const_uint(self, @as(u32, @bitCast(val)));
 }
 
+const sphigh = Inst.sphigh;
 // TODO: f64 vs f32
 // TODO: special case zero, one, mayhaps?
 // TODO: tricky with vectors, we might both simple broadcast and vector constants.
@@ -674,7 +432,7 @@ pub fn const_float(self: *Self, node: u16, val: f64) !u16 {
     return self.addInst(node, .{ .tag = .fconst, .op1 = constref, .op2 = NoRef, .spec = sphigh(@intFromEnum(FMode.sd), 0) });
 }
 
-pub fn binop(self: *Self, node: u16, tag: Tag, op1: u16, op2: u16) !u16 {
+pub fn binop(self: *Self, node: u16, tag: Inst.Tag, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = tag, .op1 = op1, .op2 = op2 });
 }
 
@@ -693,30 +451,31 @@ pub fn bpf_load_map(self: *Self, node: u16, map_idx: u32, is_value: bool) !u16 {
     return self.addInst(node, .{ .tag = .bpf_load_map, .op1 = low_idx, .op2 = 0, .spec = if (is_value) 1 else 0 });
 }
 
-pub fn vmath(self: *Self, node: u16, vop: VMathOp, fmode: FMode, op1: u16, op2: u16) !u16 {
+const FMode = X86Asm.FMode;
+pub fn vmath(self: *Self, node: u16, vop: X86Asm.VMathOp, fmode: FMode, op1: u16, op2: u16) !u16 {
     // TODO: somewhere, typecheck that FMode matches fmode of args..
-    return self.addInst(node, .{ .tag = .vmath, .spec = vmathspec(vop, fmode), .op1 = op1, .op2 = op2 });
+    return self.addInst(node, .{ .tag = .vmath, .spec = Inst.vmathspec(vop, fmode), .op1 = op1, .op2 = op2 });
 }
 
-pub fn vcmpf(self: *Self, node: u16, vop: VCmpOp, fmode: FMode, op1: u16, op2: u16) !u16 {
-    return self.addInst(node, .{ .tag = .vcmpf, .spec = vcmpfspec(vop, fmode), .op1 = op1, .op2 = op2 });
+pub fn vcmpf(self: *Self, node: u16, vop: X86Asm.VCmpOp, fmode: FMode, op1: u16, op2: u16) !u16 {
+    return self.addInst(node, .{ .tag = .vcmpf, .spec = Inst.vcmpfspec(vop, fmode), .op1 = op1, .op2 = op2 });
 }
 
 // TODO: a bit contradictory naming with IntCond
 pub fn fcmp(self: *Self, node: u16, cond: defs.IntCond, fmode: FMode, op1: u16, op2: u16) !u16 {
     if (!fmode.scalar()) return error.FLIRError;
-    return self.addInst(node, .{ .tag = .fcmp, .spec = fcmpspec(cond, fmode), .op1 = op1, .op2 = op2 });
+    return self.addInst(node, .{ .tag = .fcmp, .spec = Inst.fcmpspec(cond, fmode), .op1 = op1, .op2 = op2 });
 }
 
 pub fn int2float(self: *Self, node: u16, fmode: FMode, op1: u16) !u16 {
     // maybe a packed should implicitly convert and then broadcast?
     if (!fmode.scalar()) return error.FLIRError;
-    return self.addInst(node, .{ .tag = .int2vf, .spec = vcvtspec(fmode), .op1 = op1, .op2 = NoRef });
+    return self.addInst(node, .{ .tag = .int2vf, .spec = Inst.vcvtspec(fmode), .op1 = op1, .op2 = NoRef });
 }
 
 pub fn float2int(self: *Self, node: u16, fmode: FMode, op1: u16) !u16 {
     if (!fmode.scalar()) return error.FLIRError;
-    return self.addInst(node, .{ .tag = .vf2int, .spec = vcvtspec(fmode), .op1 = op1, .op2 = NoRef });
+    return self.addInst(node, .{ .tag = .vf2int, .spec = Inst.vcvtspec(fmode), .op1 = op1, .op2 = NoRef });
 }
 
 // TODO: 32bit vs 64bit (also for int in i2f and f2i, and so on)
@@ -1255,7 +1014,7 @@ pub fn get_clobbers(self: *Self, i: *Inst) !u16 {
     if (kind == .memory_intrinsic and is_x86) {
         const Reg = X86Asm.IPReg;
         const idx = self.constval(i.op1) orelse return error.FLIRError;
-        const intrinsic: MemoryIntrinsic = @enumFromInt(idx);
+        const intrinsic: defs.MemoryIntrinsic = @enumFromInt(idx);
         const base: u16 = ipreg_flag(Reg.rdi.id()) | ipreg_flag(Reg.rcx.id());
         if (intrinsic == .memset) {
             return base + ipreg_flag(Reg.rax.id());
@@ -1317,7 +1076,7 @@ pub fn maybe_split(self: *Self, after: u16) !u16 {
 
     if (r.idx < BLK_SIZE - 1) {
         @memcpy(newblk.i[r.idx + 1 ..], blk.i[r.idx + 1 ..]);
-        @memset(blk.i[r.idx + 1 ..], EMPTY);
+        @memset(blk.i[r.idx + 1 ..], .EMPTY);
         for (r.idx + 1..BLK_SIZE) |i| {
             self.renumber(blkid, toref(r.block, uv(i)), toref(blkid, uv(i)));
             if (newblk.i[i].vreg()) |vreg| {
@@ -1591,7 +1350,7 @@ pub fn abi_call_info(self: *Self, comptime ABI: type, i: *Inst) !ABICallInfo {
         print("PILUTTA\n", .{});
         const Reg = X86Asm.IPReg;
         const idx = self.constval(i.op1) orelse return error.FLIRError;
-        const intrinsic: MemoryIntrinsic = @enumFromInt(idx);
+        const intrinsic: defs.MemoryIntrinsic = @enumFromInt(idx);
         if (intrinsic == .memset) { // REP STOS
             const args = comptime erase([_]Reg{ .rdi, .rax, .rcx }); // (dest, val, len)
             // choice of ret is a bit arbitrary, but rdi is at least dest+len :P
@@ -1659,7 +1418,7 @@ fn mcshow(inst: *Inst) struct { defs.MCKind, u16 } {
 // callarg instruction: source in i.op1, destination i itself
 // putphi instruction: source in i.op1, destination in i.op2 (the phi instruction)
 // pos is advanced to first ins (or null) after the move group
-pub fn resolve_callargs_temp(self: *Self, pos: *InsIterator, tag: Tag) !void {
+pub fn resolve_callargs_temp(self: *Self, pos: *InsIterator, tag: Inst.Tag) !void {
     while (true) {
         var phi_1 = pos.*;
         var any_ready = false;
