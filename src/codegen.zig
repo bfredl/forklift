@@ -3,7 +3,7 @@ const mem = std.mem;
 const FLIR = @import("./FLIR.zig");
 const print = std.debug.print;
 const X86Asm = @import("./X86Asm.zig");
-const IPReg = common.IPReg;
+const IPReg = defs.IPReg;
 const Inst = FLIR.Inst;
 const IPMCVal = FLIR.IPMCVal;
 const uv = FLIR.uv;
@@ -14,8 +14,8 @@ const EAddr = X86Asm.EAddr;
 const AOp = X86Asm.AOp;
 const CodeBuffer = @import("./CodeBuffer.zig");
 
-const common = @import("./common.zig");
-const options = common.debug_options;
+const defs = @import("./defs.zig");
+const options = defs.debug_options;
 fn r(reg: IPReg) X86Asm.IPReg {
     return @enumFromInt(reg.id());
 }
@@ -533,7 +533,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                         },
                         .memory_intrinsic => {
                             const idx = self.constval(i.op1) orelse return error.FLIRError;
-                            const size: common.ISize = @enumFromInt(i.op2);
+                            const size: defs.ISize = @enumFromInt(i.op2);
                             const intrinsic: FLIR.MemoryIntrinsic = @enumFromInt(idx);
                             if (intrinsic == .memset) {
                                 try cfo.stos(true, size);

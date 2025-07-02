@@ -1,9 +1,9 @@
 const CFOModule = @import("./CFOModule.zig");
 const parse_mod = @import("./CFOScript.zig").parse_mod;
 const std = @import("std");
-const common = @import("./common.zig");
+const defs = @import("./defs.zig");
 
-pub var options: common.DebugOptions = .{};
+pub var options: defs.DebugOptions = .{};
 
 pub fn main() !void {
     const ir = "";

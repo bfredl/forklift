@@ -11,6 +11,6 @@ pub const bpf = @import("./bpf.zig");
 pub const dump_bpf = bpf.dump_bpf;
 pub const CFOModule = @import("./CFOModule.zig");
 
-const common = @import("./common.zig");
-pub const debug_options = common.debug_options;
-pub const DebugOptions = common.DebugOptions;
+const defs = @import("./defs.zig");
+pub const debug_options = defs.debug_options;
+pub const DebugOptions = defs.DebugOptions;

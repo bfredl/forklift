@@ -3,7 +3,7 @@ const mem = std.mem;
 const FLIR = @import("./FLIR.zig");
 const bpf = @import("./bpf.zig");
 const print = std.debug.print;
-const IPReg = common.IPReg;
+const IPReg = defs.IPReg;
 const Inst = FLIR.Inst;
 const uv = FLIR.uv;
 const linux = std.os.linux;
@@ -16,9 +16,9 @@ const IPMCVal = FLIR.IPMCVal;
 const CFOModule = @import("./CFOModule.zig");
 const BPFCode = CFOModule.BPFCode;
 
-const options = common.debug_options;
+const options = defs.debug_options;
 
-const common = @import("./common.zig");
+const defs = @import("./defs.zig");
 fn r(reg: IPReg) Reg {
     return @enumFromInt(reg.id());
 }
@@ -102,7 +102,7 @@ fn mov(code: *BPFCode, dst: IPReg, src: anytype) !void {
     try put(code, I.mov(r(dst), src));
 }
 
-const r0: common.IPReg = @enumFromInt(0);
+const r0: defs.IPReg = @enumFromInt(0);
 
 fn regmovmc(code: *BPFCode, dst: IPReg, src: IPMCVal) !void {
     switch (src) {
@@ -169,7 +169,7 @@ fn mcmovi(code: *BPFCode, i: Inst) !void {
     }
 }
 
-fn bpf_size(size: common.ISize) Insn.Size {
+fn bpf_size(size: defs.ISize) Insn.Size {
     return switch (size) {
         .byte => .byte,
         .word => .half_word,
@@ -178,7 +178,7 @@ fn bpf_size(size: common.ISize) Insn.Size {
     };
 }
 
-fn addrmovmc(code: *BPFCode, dst: EAddr, src: IPMCVal, size: common.ISize) !void {
+fn addrmovmc(code: *BPFCode, dst: EAddr, src: IPMCVal, size: defs.ISize) !void {
     const bsize = bpf_size(size);
     switch (src) {
         .ipreg => |reg| try put(code, I.stx(bsize, @enumFromInt(dst.reg), dst.off, r(reg))),
@@ -187,7 +187,7 @@ fn addrmovmc(code: *BPFCode, dst: EAddr, src: IPMCVal, size: common.ISize) !void
     }
 }
 
-fn regmovaddr(code: *BPFCode, dst: IPReg, src: EAddr, size: common.ISize) !void {
+fn regmovaddr(code: *BPFCode, dst: IPReg, src: EAddr, size: defs.ISize) !void {
     try put(code, I.ldx(bpf_size(size), r(dst), @enumFromInt(src.reg), src.off));
 }
 

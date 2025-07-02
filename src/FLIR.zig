@@ -4,7 +4,7 @@ const mem = std.mem;
 const Allocator = mem.Allocator;
 const Self = @This();
 const print = std.debug.print;
-const common = @import("./common.zig");
+const defs = @import("./defs.zig");
 const X86Asm = @import("./X86Asm.zig");
 const builtin = @import("builtin");
 const BPF = std.os.linux.BPF;
@@ -27,8 +27,8 @@ pub const read_ref = SSA_GVN.read_ref;
 const ArrayList = std.ArrayList;
 const assert = std.debug.assert;
 
-const IPReg = common.IPReg;
-const ISize = common.ISize;
+const IPReg = defs.IPReg;
+const ISize = defs.ISize;
 
 pub const VMathOp = X86Asm.VMathOp;
 const VCmpOp = X86Asm.VCmpOp;

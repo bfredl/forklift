@@ -10,8 +10,8 @@ const mem = std.mem;
 const ArrayList = std.ArrayList;
 const print = std.debug.print;
 
-const common = @import("./common.zig");
-const options = common.debug_options;
+const defs = @import("./defs.zig");
+const options = defs.debug_options;
 
 fn check_phi(self: *FLIR, worklist: *ArrayList(u16), pred: u16, succ: u16) !void {
     const pn = self.n.items[pred];

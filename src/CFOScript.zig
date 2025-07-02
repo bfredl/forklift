@@ -13,8 +13,8 @@ const Tokenizer = @import("./Tokenizer.zig");
 const FMode = @import("./X86Asm.zig").FMode;
 const BPF = std.os.linux.BPF;
 const meta = std.meta;
-const options = common.debug_options;
-const common = @import("./common.zig");
+const options = defs.debug_options;
+const defs = @import("./defs.zig");
 const codegen = @import("./codegen.zig");
 const codegen_bpf = @import("./codegen_bpf.zig").codegen;
 

@@ -5,7 +5,7 @@ const X86Asm = @import("./X86Asm.zig");
 const print = std.debug.print;
 
 const parse_mod = @import("./CFOScript.zig").parse_mod;
-const common = @import("./common.zig");
+const defs = @import("./defs.zig");
 const std = @import("std");
 const mem = std.mem;
 const os = std.os;
@@ -26,7 +26,7 @@ pub fn readall(allocator: mem.Allocator, filename: []u8) ![]u8 {
     return buf;
 }
 
-pub var options: common.DebugOptions = .{};
+pub var options: defs.DebugOptions = .{};
 
 pub fn main() !void {
     const argv = std.os.argv;

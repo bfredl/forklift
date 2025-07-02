@@ -8,7 +8,7 @@ const page_alignment = if (zig_version.major == 0 and zig_version.minor <= 14) p
 
 const print = std.debug.print;
 const Self = @This();
-const common = @import("./common.zig");
+const defs = @import("./defs.zig");
 
 buf: std.ArrayListAligned(u8, page_alignment),
 
@@ -31,7 +31,7 @@ pub const Relocation = struct {
 // at address &buf.items[pos] register "reg" will store value with "name"
 pub const ValueDebugInfo = struct {
     pos: u32,
-    reg: common.IPReg,
+    reg: defs.IPReg,
     name: []const u8,
 };
 

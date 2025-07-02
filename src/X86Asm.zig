@@ -4,8 +4,8 @@ const os = std.os;
 const debug = std.debug;
 const Allocator = mem.Allocator;
 
-const common = @import("./common.zig");
-const ISize = common.ISize;
+const defs = @import("./defs.zig");
+const ISize = defs.ISize;
 
 code: *@import("./CodeBuffer.zig"),
 long_jump_mode: bool = false,
@@ -61,11 +61,11 @@ pub const IPReg = enum(u4) {
         return @intFromEnum(self);
     }
 
-    pub fn into(self: IPReg) common.IPReg {
+    pub fn into(self: IPReg) defs.IPReg {
         return @enumFromInt(self.id());
     }
 
-    pub fn from(self: common.IPReg) IPReg {
+    pub fn from(self: defs.IPReg) IPReg {
         return @enumFromInt(self.id());
     }
 
