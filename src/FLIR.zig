@@ -812,13 +812,13 @@ pub fn calc_use(self: *Self) !void {
 
         while (true) : (ni -= 1) {
             const n = &self.n.items[ni];
-            var live: u64 = 0;
+            var live_vregs: u64 = 0;
             for (n.s) |s| {
                 if (s != 0) {
-                    live |= self.n.items[s].live_in;
+                    live_vregs |= self.n.items[s].live_in;
                 }
             }
-            // print("LIVEUT {}: {x} (dvs {})\n", .{ ni, live, @popCount(live) });
+            // print("LIVEUT {}: {x} (dvs {})\n", .{ ni, live_vregs, @popCount(live_vregs) });
 
             var neg_counter: u16 = 0;
             var last_clobber: [n_ipreg]u16 = .{0} ** n_ipreg;
@@ -829,7 +829,7 @@ pub fn calc_use(self: *Self) !void {
             while (listit != NoRef) {
                 // putphi:s arent ordered, so they all have neg_counter == 0
                 const i = self.iref(listit) orelse return error.FLIRError;
-                self.mark_ops_as_used(i, &live, neg_counter);
+                self.mark_ops_as_used(i, &live_vregs, neg_counter);
                 listit = i.next;
             }
 
@@ -838,9 +838,12 @@ pub fn calc_use(self: *Self) !void {
                 neg_counter += 1;
                 const i = item.i;
 
-                self.check_live_or_conflicts(i, &live, node_has_clobber, &last_clobber);
+                self.check_live_or_conflicts(i, &live_vregs, node_has_clobber, &last_clobber);
 
-                self.mark_ops_as_used(i, &live, neg_counter);
+                // TODO: currently this forbids clobbers as inputs, which is wrong when killing the op.
+                // just need to check for mismatches
+                // consider x86 IDIV: as op1 is fixed to be EAX, op2 conflicts with EAX even when killed!
+                self.mark_ops_as_used(i, &live_vregs, neg_counter);
 
                 // registers clobbered by this instruction
                 // TOOO: or having it as a fixed input, which is not ALWAYS a clobber
@@ -850,7 +853,7 @@ pub fn calc_use(self: *Self) !void {
                 if (clobber_mask != 0) {
                     node_has_clobber = true; // quick skipahead
                     for (self.vregs.items, 0..) |*v, vi| {
-                        if (live & vreg_flag(@as(u6, @intCast(vi))) != 0) {
+                        if (live_vregs & vreg_flag(@as(u6, @intCast(vi))) != 0) {
                             v.conflicts |= clobber_mask;
                         }
                     }
@@ -865,11 +868,11 @@ pub fn calc_use(self: *Self) !void {
             var phi = n.phi_list;
             while (phi != NoRef) {
                 const i = self.iref(phi) orelse return error.FLIRError;
-                self.check_live_or_conflicts(i, &live, node_has_clobber, &last_clobber);
+                self.check_live_or_conflicts(i, &live_vregs, node_has_clobber, &last_clobber);
                 phi = i.next;
             }
 
-            n.live_in = live;
+            n.live_in = live_vregs;
             // print("LIVEIN {}: {x} (dvs {})\n", .{ ni, n.live_in, @popCount(n.live_in) });
 
             if (n.is_header) {
@@ -924,12 +927,12 @@ pub fn calc_use(self: *Self) !void {
     }
 }
 
-fn check_live_or_conflicts(self: *Self, i: *Inst, live: *u64, node_has_clobber: bool, last_clobber: *const [n_ipreg]u16) void {
+fn check_live_or_conflicts(self: *Self, i: *Inst, live_vregs: *u64, node_has_clobber: bool, last_clobber: *const [n_ipreg]u16) void {
     _ = self;
 
     // TODO: need to consider phi:s even when they are unscheduled
     if (i.vreg()) |vreg| {
-        live.* &= ~vreg_flag(@intCast(vreg));
+        live_vregs.* &= ~vreg_flag(@intCast(vreg));
     } else {
         if (i.vreg_scratch != NoRef) {
             if (node_has_clobber) { // quick skipahead when no clobbers
@@ -1000,6 +1003,11 @@ pub fn get_clobbers(self: *Self, i: *Inst) !u16 {
         const Reg = X86Asm.IPReg;
         const op = i.ibinop();
         if (op == .sdiv or op == .udiv) {
+            if (i.mckind == .unallocated_raw) {
+                // FULING, but sure,  why now now?
+                i.mckind = .unallocated_ipreghint;
+                i.mcidx = Reg.rax.id();
+            }
             return ipreg_flag(Reg.rax.id()) | ipreg_flag(Reg.rdx.id());
         }
     }
