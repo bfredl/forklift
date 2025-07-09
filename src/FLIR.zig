@@ -29,6 +29,9 @@ const assert = std.debug.assert;
 
 pub const Inst = @import("./Inst.zig");
 
+pub const IntBinOp = defs.IntBinOp;
+pub const IntCond = defs.IntCond;
+
 a: Allocator,
 // TODO: unmanage all these:
 n: ArrayList(Node),
@@ -462,7 +465,7 @@ pub fn vcmpf(self: *Self, node: u16, vop: X86Asm.VCmpOp, fmode: FMode, op1: u16,
 }
 
 // TODO: a bit contradictory naming with IntCond
-pub fn fcmp(self: *Self, node: u16, cond: defs.IntCond, fmode: FMode, op1: u16, op2: u16) !u16 {
+pub fn fcmp(self: *Self, node: u16, cond: IntCond, fmode: FMode, op1: u16, op2: u16) !u16 {
     if (!fmode.scalar()) return error.FLIRError;
     return self.addInst(node, .{ .tag = .fcmp, .spec = Inst.fcmpspec(cond, fmode), .op1 = op1, .op2 = op2 });
 }
@@ -479,11 +482,11 @@ pub fn float2int(self: *Self, node: u16, fmode: FMode, op1: u16) !u16 {
 }
 
 // TODO: 32bit vs 64bit (also for int in i2f and f2i, and so on)
-pub fn ibinop(self: *Self, node: u16, size: defs.ISize, op: defs.IntBinOp, op1: u16, op2: u16) !u16 {
+pub fn ibinop(self: *Self, node: u16, size: defs.ISize, op: IntBinOp, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .ibinop, .spec = sphigh(@intFromEnum(size), @intFromEnum(op)), .op1 = op1, .op2 = op2 });
 }
 
-pub fn icmp(self: *Self, node: u16, size: defs.ISize, cond: defs.IntCond, op1: u16, op2: u16) !u16 {
+pub fn icmp(self: *Self, node: u16, size: defs.ISize, cond: IntCond, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .icmp, .spec = sphigh(@intFromEnum(size), cond.off()), .op1 = op1, .op2 = op2 });
 }
 
