@@ -550,6 +550,12 @@ pub fn jbck(self: *Self, cond: ?Cond, target: u32) !void {
     }
 }
 
+// jump to 8-byte address loded from mem
+pub fn jmpi_m(self: *Self, ea: EAddr) !void {
+    // TODO: fake, want self.op_x_m()
+    try self.op_rm(0xff, false, @enumFromInt(0x04), ea); // jmp NEAR
+}
+
 // stack management
 
 pub fn push(self: *Self, src: IPReg) !void {
