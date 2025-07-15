@@ -13,6 +13,7 @@ pub const Tag = enum(u8) {
     load,
     lea,
     store,
+    iunop,
     ibinop,
     icmp,
     icmpset, // cmp resulting in 0/1 ipreg val. maybe can be mergerd
@@ -121,11 +122,15 @@ pub fn intcond(self: *Inst) defs.IntCond {
     return @enumFromInt(self.low_spec());
 }
 
+pub fn iunop(self: *Inst) defs.IntUnOp {
+    return @enumFromInt(self.low_spec());
+}
+
 pub fn ibinop(self: *Inst) defs.IntBinOp {
     return @enumFromInt(self.low_spec());
 }
 
-// valid for .ibinop and .icmp
+// valid for .iunop, .ibinop and .icmp
 pub fn iop_size(self: *Inst) defs.ISize {
     return @enumFromInt(self.high_spec());
 }
@@ -143,6 +148,7 @@ pub fn res_type(inst: Inst) ?defs.ValType {
         .load => inst.mem_type(),
         .lea => .intptr, // Lea? Who's Lea??
         .store => null,
+        .iunop => .intptr,
         .ibinop => .intptr,
         .icmp => null, // not indicated: ending the node with a branch
         .icmpset => .intptr,
@@ -180,6 +186,7 @@ pub fn n_op(inst: Inst, rw: bool) u2 {
         .load => 2, // base, idx
         .lea => 2, // base, idx. elided when only used for a store!
         .store => 2, // addr, val
+        .iunop => 1,
         .ibinop => 2,
         .icmp => 2,
         .icmpset => 2,

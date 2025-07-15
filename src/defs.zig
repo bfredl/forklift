@@ -71,6 +71,12 @@ pub const IPReg = enum(u4) {
     }
 };
 
+pub const IntUnOp = enum(u5) {
+    popcount,
+    ctz,
+    clz,
+};
+
 // could be u6 but then we need special spec packing (2+6)
 pub const IntBinOp = enum(u5) {
     add,

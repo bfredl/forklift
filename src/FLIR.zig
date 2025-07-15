@@ -29,6 +29,7 @@ const assert = std.debug.assert;
 
 pub const Inst = @import("./Inst.zig");
 
+pub const IntUnOp = defs.IntUnOp;
 pub const IntBinOp = defs.IntBinOp;
 pub const IntCond = defs.IntCond;
 
@@ -482,6 +483,11 @@ pub fn float2int(self: *Self, node: u16, fmode: FMode, op1: u16) !u16 {
 }
 
 // TODO: 32bit vs 64bit (also for int in i2f and f2i, and so on)
+pub fn iunop(self: *Self, node: u16, size: defs.ISize, op: IntUnOp, op1: u16) !u16 {
+    return self.addInst(node, .{ .tag = .iunop, .spec = sphigh(@intFromEnum(size), @intFromEnum(op)), .op1 = op1, .op2 = NoRef });
+}
+
+// TODO: 32bit vs 64bit (also for int in i2f and f2i, and so on)
 pub fn ibinop(self: *Self, node: u16, size: defs.ISize, op: IntBinOp, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .ibinop, .spec = sphigh(@intFromEnum(size), @intFromEnum(op)), .op1 = op1, .op2 = op2 });
 }
@@ -863,7 +869,7 @@ pub fn calc_use(self: *Self) !void {
                 if (i.tag == .ret) {
                     if (self.abi_tag == .X86) {
                         if (self.iref(i.op1)) |ref| {
-                            if (ref.mckind == .unallocated_raw) {
+                            if (ref.mckind == .unallocated_raw and i.res_type() == .intptr) {
                                 ref.mckind = .unallocated_ipreghint;
                                 ref.mcidx = X86Asm.IPReg.rax.id();
                             }

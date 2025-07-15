@@ -272,6 +272,18 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                         },
                     }
                 },
+                .iunop => {
+                    const src = self.ipval(i.op1) orelse return error.FLIRError;
+                    const dst = i.ipreg() orelse return error.SpillError;
+                    const op = i.iunop();
+                    const w = i.iop_size().wide();
+
+                    switch (src) {
+                        .frameslot => |_| return error.WIPError,
+                        .ipreg => |reg| try cfo.bitunop(op, w, r(dst), r(reg)),
+                        .constval, .constref, .constptr => return error.FLIRError,
+                    }
+                },
                 .ibinop => {
                     var lhs = self.ipval(i.op1) orelse return error.FLIRError;
                     var rhs = self.ipval(i.op2) orelse return error.FLIRError;

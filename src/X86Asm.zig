@@ -598,6 +598,20 @@ pub fn zero(self: *Self, dst: IPReg) !void {
     try self.modRm(0b11, dst.lowId(), dst.lowId());
 }
 
+// currently, all IntBinOp:s are bitops..
+pub fn bitunop(self: *Self, op: defs.IntUnOp, w: bool, dst: IPReg, src: IPReg) !void {
+    try self.new_inst(@returnAddress());
+    try self.rex_wrxb(w, dst.ext(), false, src.ext());
+    try self.wb(0xF3);
+    try self.wb(0x0F);
+    try self.wb(switch (op) {
+        .popcount => 0xb8, // POPCNT
+        .ctz => 0xbc, // TZCNT
+        .clz => 0xbd, // LZCNT
+    });
+    try self.modRm(0b11, dst.lowId(), src.lowId());
+}
+
 pub fn arit(self: *Self, op: AOp, w: bool, dst: IPReg, src: IPReg) !void {
     try self.op_rr(op.off() + 0b11, w, dst, src);
 }

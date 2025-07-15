@@ -299,6 +299,8 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
                     const pos = try regjmpmc(code, op, op1, op2);
                     targets[ni][taken] = pos;
                 },
+                .icmpset => return error.NotImplemented,
+                .iunop => return error.NotImplemented,
                 .putphi, .callarg => {
                     if (i.f.do_swap) return error.NotImplemented;
                     const dest = (try self.movins_dest(i)).ipval() orelse return error.FLIRError;
