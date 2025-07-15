@@ -490,6 +490,10 @@ pub fn icmp(self: *Self, node: u16, size: defs.ISize, cond: IntCond, op1: u16, o
     return self.addInst(node, .{ .tag = .icmp, .spec = sphigh(@intFromEnum(size), cond.off()), .op1 = op1, .op2 = op2 });
 }
 
+pub fn icmpset(self: *Self, node: u16, size: defs.ISize, cond: IntCond, op1: u16, op2: u16) !u16 {
+    return self.addInst(node, .{ .tag = .icmpset, .spec = sphigh(@intFromEnum(size), cond.off()), .op1 = op1, .op2 = op2 });
+}
+
 pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
     // value could be another varref
     const refval = try self.read_ref(node, value);
@@ -852,6 +856,20 @@ pub fn calc_use(self: *Self) !void {
                 // TOOO: or having it as a fixed input, which is not ALWAYS a clobber
                 // (like two shr intructions in a row sharing the same ecx input)
                 const clobber_mask: u16 = try self.get_clobbers(i);
+
+                // TODO: very ad-hoc,
+                // currently there is no praxis for back-propagating reghints
+                // like this one should obviosly work across a (%1 = phi; ret %1) and so on and so on
+                if (i.tag == .ret) {
+                    if (self.abi_tag == .X86) {
+                        if (self.iref(i.op1)) |ref| {
+                            if (ref.mckind == .unallocated_raw) {
+                                ref.mckind = .unallocated_ipreghint;
+                                ref.mcidx = X86Asm.IPReg.rax.id();
+                            }
+                        }
+                    }
+                }
 
                 if (clobber_mask != 0) {
                     node_has_clobber = true; // quick skipahead

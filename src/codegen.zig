@@ -358,7 +358,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                         return error.NotImplemented;
                     }
                 },
-                .icmp => {
+                .icmp, .icmpset => {
                     // TODO: we can actually cmp [slot], reg as well as cmp reg, [slot].
                     // just `cmp [slot1], [slot2]` is a violation
                     // although "cmp imm, reg" needs an operand swap.
@@ -367,7 +367,15 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     const rhs = self.ipval(i.op2) orelse return error.FLIRError;
                     const w = i.iop_size().wide();
                     try regaritmc(&cfo, w, .cmp, lhs, rhs);
-                    cond = i.intcond().asX86Cond();
+                    const xcond = i.intcond().asX86Cond();
+                    if (i.tag == .icmp) {
+                        cond = xcond;
+                    } else {
+                        const dst = i.ipreg() orelse return error.SpillError;
+                        // try cfo.zero(r(dst));
+                        try cfo.set(r(dst), xcond orelse return error.FLIRError);
+                        try cfo.movzx(r(dst), r(dst)); // SILLY!
+                    }
                 },
                 // parallel move family
                 .putphi, .callarg => {

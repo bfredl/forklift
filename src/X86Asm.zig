@@ -140,15 +140,14 @@ pub const Cond = enum(u4) {
     ng,
     g, // greater
 
-    const C = @This();
-    pub const c = C.b;
-    pub const nc = C.nb;
+    pub const c = Cond.b;
+    pub const nc = Cond.nb;
 
-    pub const ae = C.nb;
-    pub const be = C.na;
-    pub const ge = C.nl;
-    pub const le = C.ng;
-    pub fn off(self: @This()) u8 {
+    pub const ae = Cond.nb;
+    pub const be = Cond.na;
+    pub const ge = Cond.nl;
+    pub const le = Cond.ng;
+    pub fn off(self: Cond) u8 {
         return @intFromEnum(self);
     }
 };
@@ -480,6 +479,15 @@ pub fn call_ptr(self: *Self, reg: IPReg) !void {
     try self.modRm(0b11, 2, reg.lowId());
 }
 
+pub fn set(self: *Self, reg: IPReg, cond: Cond) !void {
+    try self.new_inst(@returnAddress());
+    try self.rex_wrxb_force(false, false, false, reg.ext(), reg.highlike());
+    try self.wb(0x0F);
+    try self.wb(0x90 + cond.off());
+    const ignored = 0;
+    try self.modRm(0b11, ignored, reg.lowId());
+}
+
 // there..
 pub fn jfwd(self: *Self, cond: ?Cond) !u32 {
     try self.new_inst(@returnAddress());
@@ -608,6 +616,7 @@ pub fn movrm(self: *Self, w: bool, dst: IPReg, src: EAddr) !void {
 
 // FIXME: all IPReg ops should take size!
 pub fn movrm_byte(self: *Self, w: bool, dst: IPReg, src: EAddr) !void {
+    try self.new_inst(@returnAddress());
     const reg = dst;
     const ea = src;
     try self.rex_wrxb(w, reg.ext(), ea.x(), ea.b());
@@ -615,6 +624,14 @@ pub fn movrm_byte(self: *Self, w: bool, dst: IPReg, src: EAddr) !void {
     try self.wb(0x0F);
     try self.wb(0xB6);
     try self.modRmEA(reg.lowId(), ea);
+}
+
+pub fn movzx(self: *Self, dst: IPReg, src: IPReg) !void {
+    try self.new_inst(@returnAddress());
+    try self.rex_wrxb_force(false, dst.ext(), false, src.ext(), src.highlike());
+    try self.wb(0x0F);
+    try self.wb(0xB6);
+    try self.modRm(0b11, dst.lowId(), src.lowId());
 }
 
 pub fn movmr(self: *Self, w: bool, dst: EAddr, src: IPReg) !void {

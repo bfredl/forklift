@@ -15,6 +15,7 @@ pub const Tag = enum(u8) {
     store,
     ibinop,
     icmp,
+    icmpset, // cmp resulting in 0/1 ipreg val. maybe can be mergerd
     // in theory same as "intval to float bitcast", but separate fconst
     // make life easier. add a int2vf mode for bitcasts
     fconst, // op1 is a constref, opspec for type
@@ -143,7 +144,8 @@ pub fn res_type(inst: Inst) ?defs.ValType {
         .lea => .intptr, // Lea? Who's Lea??
         .store => null,
         .ibinop => .intptr,
-        .icmp => null, // technically the FLAG register but anyway
+        .icmp => null, // not indicated: ending the node with a branch
+        .icmpset => .intptr,
         .vmath => .avxval,
         .vcmpf => .avxval,
         .fcmp => null, // matching icmp
@@ -180,6 +182,7 @@ pub fn n_op(inst: Inst, rw: bool) u2 {
         .store => 2, // addr, val
         .ibinop => 2,
         .icmp => 2,
+        .icmpset => 2,
         .vmath => 2,
         .vcmpf => 2,
         .fcmp => 2,
