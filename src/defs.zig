@@ -87,6 +87,8 @@ pub const IntBinOp = enum(u5) {
     mul,
     sdiv, // signed division
     udiv, // unsigned division
+    srem, // signed reminder
+    urem, // unsigned reminder
     shl,
     sar,
     shr,

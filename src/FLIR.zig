@@ -1029,7 +1029,7 @@ pub fn get_clobbers(self: *Self, i: *Inst) !u16 {
     if (is_x86 and i.tag == .ibinop) {
         const Reg = X86Asm.IPReg;
         const op = i.ibinop();
-        if (op == .sdiv or op == .udiv) {
+        if (op == .sdiv or op == .udiv or op == .srem or op == .urem) {
             if (i.mckind == .unallocated_raw) {
                 // FULING, but sure,  why now now?
                 i.mckind = .unallocated_ipreghint;

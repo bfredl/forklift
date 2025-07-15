@@ -335,7 +335,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                             },
                             else => return error.SpillError,
                         }
-                    } else if (op == .sdiv or op == .udiv) {
+                    } else if (op == .sdiv or op == .udiv or op == .srem or op == .urem) {
                         switch (lhs) {
                             .constval => |c| {
                                 try cfo.movri(w, .rax, c);
@@ -349,23 +349,18 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                                 return error.NotImplemented;
                             },
                         }
-                        // FREESTYLIN': as RAX and RDX registers are clobbered anyway, we can use RDX as the op2 intermediate, as needed
-                        // although ideally regalloc should avoid this:p
-                        var rhs_reg: X86Asm.IPReg = .rdx;
-                        switch (rhs) {
-                            .constval => |c| {
-                                try cfo.movri(w, rhs_reg, c);
-                            },
-                            .ipreg => |reg| {
-                                if (r(reg) == .rax) return error.CRINGE; // just checking...
-                                rhs_reg = r(reg);
-                            },
+                        const rhs_reg = switch (rhs) {
+                            .constval => @panic("aaaaaaaa"),
+                            .ipreg => |reg| r(reg),
                             else => {
                                 @panic("implement 'div [mem]' form");
                             },
-                        }
-                        try cfo.div(w, rhs_reg, op == .sdiv);
-                        if (r(dst) != .rax) try cfo.mov(w, r(dst), .rax);
+                        };
+                        if (rhs_reg == .rax) return error.CRINGE; // just checking...
+                        try cfo.zero(.rdx); // baaaa
+                        try cfo.div(w, rhs_reg, op == .sdiv or op == .srem);
+                        const fixed_res: X86Asm.IPReg = if (op == .srem or op == .urem) .rdx else .rax;
+                        if (r(dst) != fixed_res) try cfo.mov(w, r(dst), fixed_res);
                     } else {
                         return error.NotImplemented;
                     }
@@ -384,7 +379,6 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                         cond = xcond;
                     } else {
                         const dst = i.ipreg() orelse return error.SpillError;
-                        // try cfo.zero(r(dst));
                         try cfo.set(r(dst), xcond orelse return error.FLIRError);
                         try cfo.movzx(r(dst), r(dst)); // SILLY!
                     }
