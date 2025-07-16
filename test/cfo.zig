@@ -12,19 +12,19 @@ const w = true;
 
 pub fn test_call2(self: *CodeBuffer, arg1: usize, arg2: usize) !usize {
     try self.finalize();
-    const FunPtr = *const fn (arg1: usize, arg2: usize) callconv(.C) usize;
+    const FunPtr = *const fn (arg1: usize, arg2: usize) callconv(.c) usize;
     return self.get_ptr(0, FunPtr)(arg1, arg2);
 }
 
 pub fn test_call2f64(self: *CodeBuffer, arg1: f64, arg2: f64) !f64 {
     try self.finalize();
-    const FunPtr = *const fn (arg1: f64, arg2: f64) callconv(.C) f64;
+    const FunPtr = *const fn (arg1: f64, arg2: f64) callconv(.c) f64;
     return self.get_ptr(0, FunPtr)(arg1, arg2);
 }
 
 pub fn test_call2x(self: *CodeBuffer, comptime T: type, arg1: anytype, arg2: anytype) !T {
     try self.finalize();
-    const FunPtr = *const fn (arg1: @TypeOf(arg1), arg2: @TypeOf(arg2)) callconv(.C) T;
+    const FunPtr = *const fn (arg1: @TypeOf(arg1), arg2: @TypeOf(arg2)) callconv(.c) T;
     return self.get_ptr(0, FunPtr)(arg1, arg2);
 }
 
@@ -95,7 +95,7 @@ test "RIP-relative read" {
     try cfo.ret();
 
     try code.finalize();
-    const fun = code.get_ptr(entry, *const fn () callconv(.C) u64);
+    const fun = code.get_ptr(entry, *const fn () callconv(.c) u64);
     try expectEqual(@as(u64, 0x1122334455667788), fun());
 }
 
@@ -123,7 +123,7 @@ test "lealink" {
     try cfo.wq(0x0104050610405060);
 
     try code.finalize();
-    const fun = code.get_ptr(entry, *const fn (*u64) callconv(.C) u64);
+    const fun = code.get_ptr(entry, *const fn (*u64) callconv(.c) u64);
     var somemem: u64 = undefined;
     try expectEqual(@as(u64, 0x8822883344114422), fun(&somemem));
     try expectEqual(@as(u64, 0x0104050610405060), somemem);
@@ -408,7 +408,7 @@ test "shlx (shift left)" {
     try expectEqual(@as(usize, 136), retval);
 }
 
-fn multiplier(arg: u64) callconv(.C) u64 {
+fn multiplier(arg: u64) callconv(.c) u64 {
     return arg * 10 + 7;
 }
 
@@ -469,9 +469,9 @@ test "local call" {
     try cfo.ret();
 
     try code.finalize();
-    const fun = code.get_ptr(entry, *const fn () callconv(.C) u64);
+    const fun = code.get_ptr(entry, *const fn () callconv(.c) u64);
     try expectEqual(@as(u64, 2048474), fun());
     // why not
-    const fun2 = code.get_ptr(entry_nested, *const fn (usize, usize) callconv(.C) u64);
+    const fun2 = code.get_ptr(entry_nested, *const fn (usize, usize) callconv(.c) u64);
     try expectEqual(@as(u64, 10243), fun2(10, 3));
 }

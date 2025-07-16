@@ -3,8 +3,8 @@ const parse_test = testutil.parse_test;
 const expect = testutil.expect;
 const std = @import("std");
 
-const SFunc = *const fn (arg1: [*]const u8, arg2: usize) callconv(.C) usize;
-const TFunc = *const fn (arg1: [*]const u8, arg2: usize, arg3: [*]const u8, arg4: usize) callconv(.C) usize;
+const SFunc = *const fn (arg1: [*]const u8, arg2: usize) callconv(.c) usize;
+const TFunc = *const fn (arg1: [*]const u8, arg2: usize, arg3: [*]const u8, arg4: usize) callconv(.c) usize;
 
 fn s_call(func: SFunc, str: []const u8) usize {
     return func(str.ptr, str.len);

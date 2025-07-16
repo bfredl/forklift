@@ -41,12 +41,12 @@ pub fn expect(comptime T: type, x: T, y: T) !void {
     return std.testing.expectEqual(x, y);
 }
 
-const UFunc = *const fn () callconv(.C) usize;
-const AFunc = *const fn (arg1: usize) callconv(.C) usize;
-const BFunc = *const fn (arg1: usize, arg2: usize) callconv(.C) usize;
-const AIFunc = *const fn (arg1: isize) callconv(.C) isize;
-const PFunc = *const fn (arg1: [*]const u8) callconv(.C) usize;
-const SFunc = *const fn (arg1: [*]const u8, arg2: usize) callconv(.C) usize;
+const UFunc = *const fn () callconv(.c) usize;
+const AFunc = *const fn (arg1: usize) callconv(.c) usize;
+const BFunc = *const fn (arg1: usize, arg2: usize) callconv(.c) usize;
+const AIFunc = *const fn (arg1: isize) callconv(.c) isize;
+const PFunc = *const fn (arg1: [*]const u8) callconv(.c) usize;
+const SFunc = *const fn (arg1: [*]const u8, arg2: usize) callconv(.c) usize;
 
 test "diamond cfg" {
     var self = try FLIR.init(8, test_allocator);
@@ -443,7 +443,7 @@ test "store byte" {
     );
     defer cfo.deinit();
 
-    const FFunc = *const fn (arg1: [*]u8, arg2: usize, val: usize) callconv(.C) usize;
+    const FFunc = *const fn (arg1: [*]u8, arg2: usize, val: usize) callconv(.c) usize;
     const fun = cfo.get_ptr(0, FFunc);
     var bytes: [4]u8 = .{ 17, 43, 6, 19 };
     try expect(usize, 0, fun(&bytes, 1, 4));
@@ -467,7 +467,7 @@ test "store loop" {
         \\}
     );
     defer cfo.deinit();
-    const func = cfo.get_ptr(0, *const fn (arg1: [*]u8, arg2: usize) callconv(.C) usize);
+    const func = cfo.get_ptr(0, *const fn (arg1: [*]u8, arg2: usize) callconv(.c) usize);
     var data1 = [_]u8{ 23, 15, 28, 2, 30, 7 };
     try expect(usize, 15, func(&data1, data1.len));
     try expect([6]u8, .{ 0, 15, 3, 2, 10, 7 }, data1);
@@ -487,7 +487,7 @@ test "vopper" {
     var x: f64 = 28.0;
     var y: f64 = 2.75;
 
-    const FFunc = *const fn (arg1: *f64, arg2: *f64, yark: usize) callconv(.C) usize;
+    const FFunc = *const fn (arg1: *f64, arg2: *f64, yark: usize) callconv(.c) usize;
     const fun = cfo.get_ptr(0, FFunc);
     try expect(usize, 0, fun(&x, &y, 0));
     try expect(f64, 30.75, x);
@@ -512,7 +512,7 @@ test "float square array" {
     );
     defer cfo.deinit();
 
-    const func = cfo.get_ptr(0, *const fn (arg1: [*]f64, arg2: usize) callconv(.C) usize);
+    const func = cfo.get_ptr(0, *const fn (arg1: [*]f64, arg2: usize) callconv(.c) usize);
     var data = [_]f64{ 1.0, 3.0, 0.5, 10.0 };
     try expect(usize, 0, func(&data, data.len));
     try expect([4]f64, .{ 1.0, 9.0, 0.25, 100.0 }, data);
@@ -529,7 +529,7 @@ test "int2float" {
     defer cfo.deinit();
 
     var z: f64 = undefined;
-    const FFunc = *const fn (x: usize, y: usize, z: *f64) callconv(.C) usize;
+    const FFunc = *const fn (x: usize, y: usize, z: *f64) callconv(.c) usize;
     const fun = cfo.get_ptr(0, FFunc);
     try expect(usize, 0, fun(3, 4, &z));
     try expect(f64, 0.75, z);
@@ -548,7 +548,7 @@ test "float2int" {
     );
     defer cfo.deinit();
 
-    const FFunc = *const fn (z: *const f64) callconv(.C) usize;
+    const FFunc = *const fn (z: *const f64) callconv(.c) usize;
     const fun = cfo.get_ptr(0, FFunc);
     try expect(usize, 23, fun(&4.8));
 }
@@ -571,7 +571,7 @@ test "float variable" {
     );
     defer cfo.deinit();
 
-    const func = cfo.get_ptr(0, *const fn (arg: usize) callconv(.C) usize);
+    const func = cfo.get_ptr(0, *const fn (arg: usize) callconv(.c) usize);
     try expect(usize, 4, func(2));
 }
 
@@ -593,7 +593,7 @@ test "float sum of array" {
 
     const yarr: [4]f64 = .{ 0.5, 3.0, 0.0, 5.75 };
 
-    const func = cfo.get_ptr(0, *const fn (arr: [*]const f64, len: usize) callconv(.C) f64);
+    const func = cfo.get_ptr(0, *const fn (arr: [*]const f64, len: usize) callconv(.c) f64);
     try expect(f64, 9.25, func(&yarr, yarr.len));
     try expect(f64, 3.5, func(&yarr, 3));
     try expect(f64, 3.5, func(&yarr, 2));

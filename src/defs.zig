@@ -92,6 +92,8 @@ pub const IntBinOp = enum(u5) {
     shl,
     sar,
     shr,
+    rotl,
+    rotr,
 
     pub fn symmetric(self: IntBinOp) bool {
         return switch (self) {
@@ -133,6 +135,7 @@ pub const IntBinOp = enum(u5) {
             .shr => .rsh,
             .sdiv => .div, // signed, unsigned, schmigned
             .udiv => .div,
+            .srem, .urem, .rotl, .rotr => null,
         };
     }
 };

@@ -994,7 +994,7 @@ pub fn dbg_nasm(self: *const Self, allocator: Allocator) !void {
     var nasm = std.process.Child.init(&[_][]const u8{ "ndisasm", "-b", "64", "-" }, allocator);
     // defer nasm.deinit();
     nasm.stdin_behavior = .Pipe;
-    _ = try std.io.getStdOut().write("\n");
+    std.debug.print("\n", .{});
     try nasm.spawn();
     _ = try nasm.stdin.?.write(self.code.buf.items);
     _ = nasm.stdin.?.close();

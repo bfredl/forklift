@@ -1,4 +1,4 @@
-export fn doit(data: [*]u8, len: usize) callconv(.C) isize {
+export fn doit(data: [*]u8, len: usize) callconv(.c) isize {
     var max: isize = 0;
     var ipos: usize = 0;
     while (ipos < len) { // fyy

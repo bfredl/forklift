@@ -98,10 +98,10 @@ pub fn main() !void {
     try OSHA.install(&cfo);
     defer OSHA.clear();
 
-    const scalar_add = cfo.get_ptr(start, *const fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
-    // const parse_add = cfo.get_ptr(start_parse, *const fn (arg1: [*]f64, arg2: [*]f64, arg3: ?[*]f64, arg3: u64) callconv(.C) void);
-    const simd_add = cfo.get_ptr(start_simd, *const fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
-    const simd2_add = cfo.get_ptr(start_simd2, *const fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.C) void);
+    const scalar_add = cfo.get_ptr(start, *const fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.c) void);
+    // const parse_add = cfo.get_ptr(start_parse, *const fn (arg1: [*]f64, arg2: [*]f64, arg3: ?[*]f64, arg3: u64) callconv(.c) void);
+    const simd_add = cfo.get_ptr(start_simd, *const fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.c) void);
+    const simd2_add = cfo.get_ptr(start_simd2, *const fn (arg1: [*]f64, arg2: [*]f64, arg3: u64) callconv(.c) void);
 
     var timer = try std.time.Timer.start();
     i = 0;

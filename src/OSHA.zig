@@ -27,7 +27,7 @@ pub const context_order: [16]u8 = .{
     REG.R15,
 };
 
-fn sigHandler(sig: i32, info: *const posix.siginfo_t, ctx_ptr: ?*const anyopaque) callconv(.C) void {
+fn sigHandler(sig: i32, info: *const posix.siginfo_t, ctx_ptr: ?*const anyopaque) callconv(.c) void {
     const s = io.getStdErr().writer();
 
     const addr = @intFromPtr(info.fields.sigfault.addr);
