@@ -792,11 +792,19 @@ pub fn mulr(self: *Self, src: IPReg) !void {
     try self.modRm(0b11, 4, src.lowId());
 }
 
+// RAX = RAX:RDX / src, RDX = reminder
 pub fn div(self: *Self, w: bool, src: IPReg, signed: bool) !void {
     try self.new_inst(@returnAddress());
     try self.rex_wrxb(w, false, false, src.ext());
     try self.wb(0xf7); // IDIV \rm
     try self.modRm(0b11, if (signed) 7 else 6, src.lowId());
+}
+
+// jibble RDX before signed division
+pub fn cdq_cqo(self: *Self, w: bool) !void {
+    try self.new_inst(@returnAddress());
+    try self.rex_wrxb(w, false, false, false);
+    try self.wb(0x99); // CDQ or CQO
 }
 
 // bitshift instructions

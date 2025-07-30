@@ -366,7 +366,9 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                         };
                         if (rhs_reg == .rax) return error.CRINGE; // just checking...
                         try cfo.zero(.rdx); // baaaa
-                        try cfo.div(w, rhs_reg, op == .sdiv or op == .srem);
+                        const signed = op == .sdiv or op == .srem;
+                        if (signed) try cfo.cdq_cqo(w);
+                        try cfo.div(w, rhs_reg, signed);
                         const fixed_res: X86Asm.IPReg = if (op == .srem or op == .urem) .rdx else .rax;
                         if (r(dst) != fixed_res) try cfo.mov(w, r(dst), fixed_res);
                     } else {
