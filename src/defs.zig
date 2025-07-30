@@ -75,6 +75,11 @@ pub const IntUnOp = enum(u5) {
     popcount,
     ctz,
     clz,
+    sign_extend, // source is iop_size(), dest (w flag) is ??????????
+
+    pub fn is_bitop(self: IntUnOp) bool {
+        return @intFromEnum(self) < 3;
+    }
 };
 
 // could be u6 but then we need special spec packing (2+6)

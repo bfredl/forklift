@@ -278,11 +278,19 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     const op = i.iunop();
                     const w = i.iop_size().wide();
 
-                    switch (src) {
-                        .frameslot => |_| return error.WIPError,
-                        .ipreg => |reg| try cfo.bitunop(op, w, r(dst), r(reg)),
-                        .constval, .constref, .constptr => return error.FLIRError,
-                    }
+                    if (op.is_bitop()) {
+                        switch (src) {
+                            .frameslot => |_| return error.WIPError,
+                            .ipreg => |reg| try cfo.bitunop(op, w, r(dst), r(reg)),
+                            .constval, .constref, .constptr => return error.FLIRError,
+                        }
+                    } else if (op == .sign_extend) {
+                        switch (src) {
+                            .frameslot => |_| return error.WIPError,
+                            .ipreg => |reg| try cfo.movsx(r(dst), r(reg), i.iop_size()),
+                            .constval, .constref, .constptr => return error.FLIRError,
+                        }
+                    } else return error.NotImplemented;
                 },
                 .ibinop => {
                     var lhs = self.ipval(i.op1) orelse return error.FLIRError;

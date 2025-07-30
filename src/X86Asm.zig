@@ -598,7 +598,7 @@ pub fn zero(self: *Self, dst: IPReg) !void {
     try self.modRm(0b11, dst.lowId(), dst.lowId());
 }
 
-// currently, all IntBinOp:s are bitops..
+// TODO: not all IntUnOp:s are bitops!!
 pub fn bitunop(self: *Self, op: defs.IntUnOp, w: bool, dst: IPReg, src: IPReg) !void {
     try self.new_inst(@returnAddress());
     try self.rex_wrxb(w, dst.ext(), false, src.ext());
@@ -608,6 +608,7 @@ pub fn bitunop(self: *Self, op: defs.IntUnOp, w: bool, dst: IPReg, src: IPReg) !
         .popcount => 0xb8, // POPCNT
         .ctz => 0xbc, // TZCNT
         .clz => 0xbd, // LZCNT
+        else => @panic("FIXME"), // TODO
     });
     try self.modRm(0b11, dst.lowId(), src.lowId());
 }
@@ -645,6 +646,19 @@ pub fn movzx(self: *Self, dst: IPReg, src: IPReg) !void {
     try self.rex_wrxb_force(false, dst.ext(), false, src.ext(), src.highlike());
     try self.wb(0x0F);
     try self.wb(0xB6);
+    try self.modRm(0b11, dst.lowId(), src.lowId());
+}
+
+pub fn movsx(self: *Self, dst: IPReg, src: IPReg, src_size: ISize) !void {
+    try self.new_inst(@returnAddress());
+    const highlike_byte = src_size == .byte and src.highlike();
+    try self.rex_wrxb_force(false, dst.ext(), false, src.ext(), highlike_byte);
+    try self.wb(0x0F);
+    try self.wb(switch (src_size) {
+        .byte => 0xBE,
+        .word => 0xBF,
+        else => return error.Invalid,
+    });
     try self.modRm(0b11, dst.lowId(), src.lowId());
 }
 
