@@ -810,12 +810,26 @@ pub fn cdq_cqo(self: *Self, w: bool) !void {
 // bitshift instructions
 
 // shift with immediate count. use shorthand version when count==1
-pub fn sh_ri(self: *Self, w: bool, dst: IPReg, op: ShiftOp, count: u8) !void {
+fn shlike_ri(self: *Self, w: bool, dst: IPReg, op: u3, count: u8) !void {
     try self.new_inst(@returnAddress());
     try self.rex_wrxb(w, false, false, dst.ext());
     try self.wb(if (count == 1) 0xD1 else 0xC1); // Sxx \rm, 1
-    try self.modRm(0b11, op.to_rm(), dst.lowId());
+    try self.modRm(0b11, op, dst.lowId());
     try if (count != 1) self.wb(count);
+}
+pub fn sh_ri(self: *Self, w: bool, dst: IPReg, op: ShiftOp, count: u8) !void {
+    try self.shlike_ri(w, dst, op.to_rm(), count);
+}
+
+pub fn rot_ri(self: *Self, w: bool, dst: IPReg, is_right: bool, count: u8) !void {
+    try self.shlike_ri(w, dst, if (is_right) 1 else 0, count);
+}
+
+pub fn rot_rc(self: *Self, w: bool, dst: IPReg, is_right: bool) !void {
+    try self.new_inst(@returnAddress());
+    try self.rex_wrxb(w, false, false, dst.ext());
+    try self.wb(0xD3);
+    try self.modRm(0b11, if (is_right) 1 else 0, dst.lowId());
 }
 
 // string instructions

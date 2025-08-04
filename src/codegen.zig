@@ -343,6 +343,22 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                             },
                             else => return error.SpillError,
                         }
+                    } else if (op == .rotr or op == .rotl) {
+                        const is_right = op == .rotr;
+                        try regmovmc(&cfo, w, dst, lhs);
+                        switch (rhs) {
+                            .constval => |c| {
+                                try cfo.rot_ri(w, r(dst), is_right, @intCast(c));
+                            },
+                            .ipreg => |count| {
+                                if (r(count) != .rcx) {
+                                    if (r(dst) == .rcx) return error.TODO;
+                                    try cfo.mov(false, .rcx, r(count));
+                                }
+                                try cfo.rot_rc(w, r(dst), is_right);
+                            },
+                            else => return error.NotImplemented,
+                        }
                     } else if (op == .sdiv or op == .udiv or op == .srem or op == .urem) {
                         switch (lhs) {
                             .constval => |c| {

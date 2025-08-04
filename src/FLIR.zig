@@ -1036,6 +1036,10 @@ pub fn get_clobbers(self: *Self, i: *Inst) !u16 {
                 i.mcidx = Reg.rax.id();
             }
             return ipreg_flag(Reg.rax.id()) | ipreg_flag(Reg.rdx.id());
+        } else if (op == .rotl or op == .rotr) {
+            // TODO: rather input constraint only
+            // TODO: but only if non-const!!
+            return ipreg_flag(Reg.rcx.id());
         }
     }
 
