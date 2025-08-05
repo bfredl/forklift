@@ -771,6 +771,46 @@ pub fn reorder_nodes(self: *Self) !void {
     }
 }
 
+// not a complete optimization pass yet, just the thing needed for legalization
+pub fn const_fold_legalize(self: *Self) !void {
+    for (self.n.items) |*n| {
+        var it = self.ins_iterator(n.firstblk);
+        while (it.next()) |item| {
+            const i = item.i;
+            if (i.tag == .icmp) {
+                if (self.peep_constval_cmp(i)) |res| {
+                    if (res) n.s[1] = n.s[0];
+                    n.s[1] = 0;
+                    self.delete_itersafe(item);
+                }
+            }
+        }
+    }
+}
+
+pub fn peep_constval_cmp(self: *Self, i: *Inst) ?bool {
+    if (self.constval(i.op1)) |lhs| {
+        if (self.constval(i.op2)) |rhs| {
+            // TODO: haha, 64-bit signed comp??
+            const i_lhs: i32 = @intCast(@as(u32, @truncate(lhs)));
+            const i_rhs: i32 = @intCast(@as(u32, @truncate(rhs)));
+            return switch (i.intcond()) {
+                .eq => lhs == rhs,
+                .neq => lhs != rhs,
+                .gt => i_lhs > i_rhs,
+                .ge => i_lhs >= i_rhs,
+                .lt => i_lhs < i_rhs,
+                .le => i_lhs <= i_rhs,
+                .a => lhs > rhs,
+                .na => lhs <= rhs,
+                .b => lhs < rhs,
+                .nb => lhs >= rhs,
+            };
+        }
+    }
+    return null;
+}
+
 // ni = node id of user
 pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
     _ = user;
@@ -792,7 +832,7 @@ pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
 // go sea-of-nodeish with unscheduled opts
 //
 // not idempotent! does not reset n_use=0 first.
-pub fn calc_use(self: *Self) !void {
+pub fn calc_live(self: *Self) !void {
     // TODO: NOT LIKE THIS
     try self.vregs.ensureTotalCapacity(64);
 
@@ -1794,6 +1834,10 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
             return err;
         };
     }
+
+    // Just to get rid of trivial ops that codegen expect not to see.
+    try self.const_fold_legalize();
+
     try self.calc_preds();
 
     // modified reverse post-order where all loops
@@ -1810,12 +1854,13 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
     }
 
     try self.resolve_ssa();
+
     if (@TypeOf(options) != @TypeOf(null) and options.dbg_ssa_ir) {
         self.debug_print();
     }
     if (check) try self.check_ir_valid();
 
-    try self.calc_use();
+    try self.calc_live();
     if (check) try self.check_ir_valid();
     if (check) try self.check_vregs();
 
