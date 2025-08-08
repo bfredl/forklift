@@ -38,6 +38,11 @@ tag: Tag,
 spec: u8 = 0,
 op1: u16,
 op2: u16,
+
+// use_first: u16,
+// use_op1_first: u16,
+// use_op2_first: u32,
+
 mckind: defs.MCKind = .unallocated_raw,
 mcidx: u8 = undefined,
 vreg_scratch: u16 = FLIR.NoRef,

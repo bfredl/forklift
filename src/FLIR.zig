@@ -78,6 +78,9 @@ abi_tag: ABITag = undefined,
 
 var_names: ArrayList(?[]const u8),
 
+// currently mandatory for correctness
+construction_peep: bool = true,
+
 // filler value for unintialized refs. not a sentinel for
 // actually invalid refs!
 pub const DEAD: u16 = 0xFEFF;
@@ -484,6 +487,11 @@ pub fn float2int(self: *Self, node: u16, fmode: FMode, op1: u16) !u16 {
 
 // TODO: 32bit vs 64bit (also for int in i2f and f2i, and so on)
 pub fn iunop(self: *Self, node: u16, size: defs.ISize, op: IntUnOp, op1: u16) !u16 {
+    if (self.construction_peep) {
+        if (try self.peep_iunop(op, size, op1)) |res| {
+            return res;
+        }
+    }
     return self.addInst(node, .{ .tag = .iunop, .spec = sphigh(@intFromEnum(size), @intFromEnum(op)), .op1 = op1, .op2 = NoRef });
 }
 
@@ -806,6 +814,18 @@ pub fn peep_constval_cmp(self: *Self, i: *Inst) ?bool {
                 .b => lhs < rhs,
                 .nb => lhs >= rhs,
             };
+        }
+    }
+    return null;
+}
+
+// on success, return constval
+pub fn peep_iunop(self: *Self, op: IntUnOp, size: defs.ISize, input: u16) !?u16 {
+    if (self.constval(input)) |lhs| {
+        _ = size; // TODi: truncate lhs to "size" bitwidth
+        switch (op) {
+            .ctz => return try self.const_uint(@ctz(lhs)),
+            else => return null,
         }
     }
     return null;
