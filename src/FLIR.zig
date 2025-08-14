@@ -505,6 +505,11 @@ pub fn icmp(self: *Self, node: u16, size: defs.ISize, cond: IntCond, op1: u16, o
 }
 
 pub fn icmpset(self: *Self, node: u16, size: defs.ISize, cond: IntCond, op1: u16, op2: u16) !u16 {
+    if (self.construction_peep) {
+        if (self.peep_icmp(cond, size, op1, op2)) |res| {
+            return self.const_uint(if (res) 1 else 0);
+        }
+    }
     return self.addInst(node, .{ .tag = .icmpset, .spec = sphigh(@intFromEnum(size), cond.off()), .op1 = op1, .op2 = op2 });
 }
 
@@ -579,6 +584,21 @@ pub fn variable(self: *Self, typ: defs.SpecType) !u16 {
 pub fn preds(self: *Self, i: u16) []u16 {
     const v = self.n.items[i];
     return self.refs.items[v.predref..][0..v.npred];
+}
+
+pub fn cleanup_preds(self: *Self, i: u16) void {
+    const v = &self.n.items[i];
+    const p = self.refs.items[v.predref..];
+    var pos: u16 = 0;
+    while (pos < v.npred) {
+        if (p[pos] != NoRef) {
+            pos += 1;
+        } else {
+            // special case pos=(v.npred - 1) works due to immediate deletion:p
+            p[pos] = p[v.npred - 1];
+            v.npred -= 1;
+        }
+    }
 }
 
 fn predlink(self: *Self, i: u16, si: u1, split: bool) !void {
@@ -755,6 +775,8 @@ pub fn reorder_nodes(self: *Self) !void {
         for (self.preds(uv(ni))) |*pi| {
             pi.* = newlink[pi.*];
         }
+        self.cleanup_preds(uv(ni));
+
         n.loop = newlink[n.loop];
 
         var cur_blk: ?u16 = n.firstblk;
@@ -781,28 +803,43 @@ pub fn reorder_nodes(self: *Self) !void {
 
 // not a complete optimization pass yet, just the thing needed for legalization
 pub fn const_fold_legalize(self: *Self) !void {
-    for (self.n.items) |*n| {
+    for (self.n.items, 0..) |*n, ni| {
         var it = self.ins_iterator(n.firstblk);
         while (it.next()) |item| {
             const i = item.i;
             if (i.tag == .icmp) {
-                if (self.peep_constval_cmp(i)) |res| {
-                    if (res) n.s[1] = n.s[0];
+                if (self.peep_icmp(i.intcond(), i.iop_size(), i.op1, i.op2)) |res| {
+                    const deleted = if (res) n.s[0] else n.s[1];
+                    if (res) n.s[0] = n.s[1];
                     n.s[1] = 0;
                     self.delete_itersafe(item);
+
+                    const v = &self.n.items[deleted];
+                    // TODO: rethink this, deleting preds should be easier..
+                    if (v.npred > 0) {
+                        const p = self.refs.items[v.predref..];
+                        for (0..v.npred) |ipred| {
+                            if (p[ipred] == ni) {
+                                p[ipred] = p[v.npred - 1];
+                                v.npred -= 1;
+                                break;
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-pub fn peep_constval_cmp(self: *Self, i: *Inst) ?bool {
-    if (self.constval(i.op1)) |lhs| {
-        if (self.constval(i.op2)) |rhs| {
+pub fn peep_icmp(self: *Self, cond: IntCond, size: defs.ISize, op1: u16, op2: u16) ?bool {
+    if (self.constval(op1)) |lhs| {
+        if (self.constval(op2)) |rhs| {
             // TODO: haha, 64-bit signed comp??
+            _ = size;
             const i_lhs: i32 = @intCast(@as(u32, @truncate(lhs)));
             const i_rhs: i32 = @intCast(@as(u32, @truncate(rhs)));
-            return switch (i.intcond()) {
+            return switch (cond) {
                 .eq => lhs == rhs,
                 .neq => lhs != rhs,
                 .gt => i_lhs > i_rhs,
@@ -1855,10 +1892,17 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
         };
     }
 
+    std.debug.print("\nBEGAAA\n", .{});
+    self.debug_print();
+
     // Just to get rid of trivial ops that codegen expect not to see.
     try self.const_fold_legalize();
 
+    std.debug.print("\nUNOS\n", .{});
+    self.debug_print();
     try self.calc_preds();
+    std.debug.print("\nKLOSS\n", .{});
+    self.debug_print();
 
     // modified reverse post-order where all loops
     // are emitted contigously
@@ -1867,6 +1911,9 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
     try self.set_abi(ABI);
 
     try self.reorder_nodes();
+
+    std.debug.print("\nBOSSS\n", .{});
+    self.debug_print();
 
     if (check) try self.check_ir_valid();
     if (@TypeOf(options) != @TypeOf(null) and options.dbg_raw_reorder_ir) {
@@ -1879,6 +1926,10 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
         self.debug_print();
     }
     if (check) try self.check_ir_valid();
+
+    // EAGAIN: trivial phis might give us these
+    // likely "resorve phi" needs to be part of the worklist loop
+    try self.const_fold_legalize();
 
     try self.calc_live();
     if (check) try self.check_ir_valid();
