@@ -48,14 +48,14 @@ fn regmovmc(cfo: *X86Asm, w: bool, dst: IPReg, src: IPMCVal) !void {
             } else {
                 try cfo.movrm(w, r(dst), X86Asm.rel_placeholder());
             }
-            try cfo.code.relocations.append(.{ .pos = cfo.code.get_target() - 4, .idx = idx });
+            try cfo.code.relocations.append(cfo.code.gpa, .{ .pos = cfo.code.get_target() - 4, .idx = idx });
         },
     }
 }
 
 fn avxmovconst(cfo: *X86Asm, fmode: FMode, dst: u4, const_idx: u16) !void {
     try cfo.vmovurm(fmode, dst, X86Asm.rel_placeholder());
-    try cfo.code.relocations.append(.{ .pos = cfo.code.get_target() - 4, .idx = const_idx });
+    try cfo.code.relocations.append(cfo.code.gpa, .{ .pos = cfo.code.get_target() - 4, .idx = const_idx });
 }
 
 fn regaritmc(cfo: *X86Asm, w: bool, op: AOp, dst: IPReg, src: IPMCVal) !void {
@@ -178,10 +178,10 @@ pub fn set_pred(self: *FLIR, cfo: *X86Asm, targets: [][2]u32, ni: u16) !void {
 const ABI = FLIR.X86ABI;
 
 pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
-    const labels = try self.a.alloc(u32, self.n.items.len);
-    const targets = try self.a.alloc([2]u32, self.n.items.len);
-    defer self.a.free(labels);
-    defer self.a.free(targets);
+    const labels = try self.gpa.alloc(u32, self.n.items.len);
+    const targets = try self.gpa.alloc([2]u32, self.n.items.len);
+    defer self.gpa.free(labels);
+    defer self.gpa.free(targets);
 
     var cfo = X86Asm{ .code = code };
     @memset(labels, 0);
@@ -242,7 +242,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     if (options.dbg_trap_join_nodes) {
                         if (i.ipreg()) |reg| {
                             if (self.get_varname(i.op1)) |nam| {
-                                try code.value_map.append(.{ .pos = n_target, .reg = reg, .name = nam });
+                                try code.value_map.append(self.gpa, .{ .pos = n_target, .reg = reg, .name = nam });
                             }
                         }
                     }
@@ -624,8 +624,8 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
 
     if (cfo.code.relocations.items.len > 0) {
         // TODO: have this as scratch space already in FLIR.constvals
-        var const_targets = try self.a.alloc(?u32, self.constvals.items.len);
-        defer self.a.free(const_targets);
+        var const_targets = try self.gpa.alloc(?u32, self.constvals.items.len);
+        defer self.gpa.free(const_targets);
         @memset(const_targets, null);
 
         while (cfo.code.buf.items.len & 7 != 0) {

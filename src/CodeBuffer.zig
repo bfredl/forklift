@@ -11,15 +11,16 @@ const Self = @This();
 const defs = @import("./defs.zig");
 
 buf: std.ArrayListAligned(u8, page_alignment),
+gpa: std.mem.Allocator,
 
 /// offset of each encoded instruction. Might not be needed
 /// but useful for debugging.
-inst_off: std.ArrayList(u32),
-inst_dbg: std.ArrayList(usize),
+inst_off: std.ArrayList(u32) = .empty,
+inst_dbg: std.ArrayList(usize) = .empty,
 
-relocations: std.ArrayList(Relocation),
+relocations: std.ArrayList(Relocation) = .empty,
 
-value_map: std.ArrayList(ValueDebugInfo),
+value_map: std.ArrayList(ValueDebugInfo) = .empty,
 
 // currently only for constant data past "ret", should also be
 // for calls to unemitted functions etc
@@ -41,29 +42,38 @@ pub fn get_target(self: *Self) u32 {
 
 pub fn new_inst(self: *Self, addr: usize) !void {
     const size = @as(u32, @intCast(self.get_target()));
-    try self.inst_off.append(size);
-    try self.inst_dbg.append(addr);
+    try self.inst_off.append(self.gpa, size);
+    try self.inst_dbg.append(self.gpa, addr);
 }
 
+const buf_alloc = std.heap.page_allocator;
 pub fn init(allocator: std.mem.Allocator) !Self {
     // TODO: allocate consequtive mprotectable pages
     return Self{
-        .buf = try .initCapacity(std.heap.page_allocator, page_size_min),
-        .inst_off = .init(allocator),
-        .inst_dbg = .init(allocator),
-        .relocations = .init(allocator),
-        .value_map = .init(allocator),
+        .buf = try .initCapacity(buf_alloc, page_size_min),
+        .gpa = allocator,
     };
 }
 
+pub fn buf_append(self: *Self, byte: u8) !void {
+    try self.buf.append(buf_alloc, byte);
+}
+
+pub fn buf_addManyAsArray(self: *Self, comptime n: usize) !*[n]u8 {
+    return self.buf.addManyAsArray(buf_alloc, n);
+}
+
+pub fn buf_appendNTimes(self: *Self, byte: u8, n: usize) !void {
+    return self.buf.appendNTimes(buf_alloc, byte, n);
+}
 pub fn deinit(self: *Self) void {
     // TODO: only in debug mode (as clobbers the array, needs r/w)
     posix.mprotect(self.buf.items.ptr[0..self.buf.capacity], posix.PROT.READ | posix.PROT.WRITE) catch unreachable;
-    self.buf.deinit();
-    self.inst_off.deinit();
-    self.inst_dbg.deinit();
-    self.relocations.deinit();
-    self.value_map.deinit();
+    self.buf.deinit(buf_alloc);
+    self.inst_off.deinit(self.gpa);
+    self.inst_dbg.deinit(self.gpa);
+    self.relocations.deinit(self.gpa);
+    self.value_map.deinit(self.gpa);
 }
 
 pub fn dump(self: *Self) !void {

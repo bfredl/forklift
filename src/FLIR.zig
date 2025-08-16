@@ -33,13 +33,13 @@ pub const IntUnOp = defs.IntUnOp;
 pub const IntBinOp = defs.IntBinOp;
 pub const IntCond = defs.IntCond;
 
-a: Allocator,
+gpa: Allocator,
 // TODO: unmanage all these:
 n: ArrayList(Node),
 b: ArrayList(Block),
 i: ArrayList(Inst),
-preorder: ArrayList(u16),
-blkorder: ArrayList(u16),
+preorder: ArrayList(u16) = .empty,
+blkorder: ArrayList(u16) = .empty,
 // This only handles int and float64 constants,
 // we need something else for "address into string table"
 constvals: ArrayList(u64), // raw data for constants, can contain embedded data
@@ -67,7 +67,7 @@ unsealed: bool = true,
 // variables 2.0: virtual registero
 // vregs is any result which is live outside of its defining node, that's it.
 nvreg: u16 = 0,
-vregs: ArrayList(struct { ref: u16, def_node: u16, live_in: u64 = 0, conflicts: u16 = 0 }),
+vregs: ArrayList(struct { ref: u16, def_node: u16, live_in: u64 = 0, conflicts: u16 = 0 }) = .empty,
 
 // 8-byte slots in stack frame
 nslots: u8 = 0,
@@ -76,7 +76,7 @@ ndf: u16 = 0,
 call_clobber_mask: u16 = undefined,
 abi_tag: ABITag = undefined,
 
-var_names: ArrayList(?[]const u8),
+var_names: ArrayList(?[]const u8) = .empty,
 
 // currently mandatory for correctness
 construction_peep: bool = true,
@@ -260,14 +260,10 @@ fn initConsts(self: *Self) void {
 
 pub fn init(n: u16, allocator: Allocator) !Self {
     var self = Self{
-        .a = allocator,
+        .gpa = allocator,
         .n = try .initCapacity(allocator, n),
         .b = try .initCapacity(allocator, n),
         .i = try .initCapacity(allocator, 4 * n),
-        .vregs = .init(allocator),
-        .blkorder = .init(allocator),
-        .preorder = .init(allocator),
-        .var_names = .init(allocator),
         .refs = try .initCapacity(allocator, 4 * n),
         .constvals = try .initCapacity(allocator, 8),
     };
@@ -281,12 +277,10 @@ pub fn reinit(self: *Self) void {
     // 1. reset fields with initializers to their initial value (most int members)
     // 2. set ArrayList members to empty (but keep existing allocations)
     inline for (info.fields) |field| {
-        if (field.defaultValue()) |default_value| {
+        if (@typeInfo(field.type) == .@"struct" and @hasField(field.type, "items")) {
+            @field(self, field.name).items.len = 0;
+        } else if (field.defaultValue()) |default_value| {
             @field(self, field.name) = default_value;
-        } else if (@typeInfo(field.type) == .@"struct") {
-            if (@hasField(field.type, "items")) {
-                @field(self, field.name).items.len = 0;
-            }
         }
     }
 
@@ -294,15 +288,15 @@ pub fn reinit(self: *Self) void {
 }
 
 pub fn deinit(self: *Self) void {
-    self.n.deinit();
-    self.b.deinit();
-    self.i.deinit();
-    self.blkorder.deinit();
-    self.preorder.deinit();
-    self.var_names.deinit(); // actual strings are owned by producer
-    self.refs.deinit();
-    self.constvals.deinit();
-    self.vregs.deinit();
+    self.n.deinit(self.gpa);
+    self.b.deinit(self.gpa);
+    self.i.deinit(self.gpa);
+    self.blkorder.deinit(self.gpa);
+    self.preorder.deinit(self.gpa);
+    self.var_names.deinit(self.gpa); // actual strings are owned by producer
+    self.refs.deinit(self.gpa);
+    self.constvals.deinit(self.gpa);
+    self.vregs.deinit(self.gpa);
 }
 
 pub fn toref() u16 {
@@ -318,8 +312,8 @@ pub fn iref(self: *Self, ref: u16) ?*Inst {
 }
 
 pub fn addNode(self: *Self) !u16 {
-    const n = try self.n.addOne();
-    const b = try self.b.addOne();
+    const n = try self.n.addOne(self.gpa);
+    const b = try self.b.addOne(self.gpa);
     const nodeid = uv(self.n.items.len - 1);
     const blkid = uv(self.b.items.len - 1);
     n.* = .{ .firstblk = blkid, .lastblk = blkid };
@@ -348,7 +342,7 @@ pub fn addRawInst(self: *Self, inst: Inst) !u16 {
         return ref;
     } else {
         const ref = uv(self.i.items.len);
-        try self.i.append(inst);
+        try self.i.append(self.gpa, inst);
         return ref;
     }
 }
@@ -412,7 +406,7 @@ pub fn new_blk(self: *Self) !u16 {
     }
 
     const blkid = uv(self.b.items.len);
-    _ = try self.b.addOne();
+    _ = try self.b.addOne(self.gpa);
     return blkid;
 }
 
@@ -422,7 +416,7 @@ pub fn const_uint(self: *Self, val: u64) !u16 {
     }
     if (self.constvals.items.len == 511) return error.FLIRError;
     const ref = ConstOff + self.constvals.items.len;
-    try self.constvals.append(val);
+    try self.constvals.append(self.gpa, val);
     return uv(ref);
 }
 
@@ -624,7 +618,7 @@ fn addpred(self: *Self, s: u16, i: u16) !void {
     // tricky: build the reflist per node backwards,
     // so the end result is the start index
     if (n[s].predref == 0) {
-        try self.refs.appendNTimes(DEAD, n[s].npred);
+        try self.refs.appendNTimes(self.gpa, DEAD, n[s].npred);
         n[s].predref = uv(self.refs.items.len);
     }
     n[s].predref -= 1;
@@ -657,7 +651,7 @@ pub fn calc_preds(self: *Self) !void {
 pub fn calc_loop(self: *Self) !void {
     _ = try self.rpo_visit(0);
     const big_n = self.preorder.items.len;
-    try self.blkorder.append(0); // ROOT
+    try self.blkorder.append(self.gpa, 0); // ROOT
     if (big_n > 1) {
         try self.loop_order(uv(big_n - 1));
     }
@@ -673,7 +667,7 @@ pub fn loop_order(self: *Self, ph: u16) !void {
         const node = self.preorder.items[i];
         const n = &self.n.items[node];
         if (n.loop == h) {
-            try self.blkorder.append(node);
+            try self.blkorder.append(self.gpa, node);
             if (n.is_header) {
                 // try self.loop_order(i);
                 try loop_order(self, i);
@@ -719,7 +713,7 @@ pub fn rpo_visit(self: *Self, node: u16) !?u16 {
             loop = loop2;
         }
     }
-    try self.preorder.append(node);
+    try self.preorder.append(self.gpa, node);
     n.rpolink = 2;
 
     if (node == loop) {
@@ -733,11 +727,11 @@ pub fn rpo_visit(self: *Self, node: u16) !?u16 {
 }
 
 pub fn reorder_nodes(self: *Self) !void {
-    const newlink = try self.a.alloc(u16, self.n.items.len);
-    defer self.a.free(newlink);
+    const newlink = try self.gpa.alloc(u16, self.n.items.len);
+    defer self.gpa.free(newlink);
     @memset(newlink, NoRef);
-    const oldlink = try self.a.alloc(u16, self.n.items.len);
-    defer self.a.free(oldlink);
+    const oldlink = try self.gpa.alloc(u16, self.n.items.len);
+    defer self.gpa.free(oldlink);
     @memset(oldlink, NoRef);
     var newpos: u16 = 0;
 
@@ -891,7 +885,7 @@ pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
 // not idempotent! does not reset n_use=0 first.
 pub fn calc_live(self: *Self) !void {
     // TODO: NOT LIKE THIS
-    try self.vregs.ensureTotalCapacity(64);
+    try self.vregs.ensureTotalCapacity(self.gpa, 64);
 
     // step1: allocate vregs for results that leak from the block
     for (self.n.items, 0..) |*n, ni| {

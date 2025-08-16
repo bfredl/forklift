@@ -22,7 +22,7 @@ fn check_phi(self: *FLIR, worklist: *ArrayList(u16), pred: u16, succ: u16) !void
         if (i.tag == .putphi) {
             // it.op1 == NoRef is techy allowed ( %thephi := undefined )
             if (i.op2 == NoRef) return error.InvalidCFG;
-            try worklist.append(i.op2); // TODO: check duplicate
+            try worklist.append(self.gpa, i.op2); // TODO: check duplicate
         } else if (i.tag != .putvar) { // only putvar and putphi allowed here
             return error.InvalidCFG;
         }
@@ -75,12 +75,12 @@ pub fn check_ir_valid(self: *FLIR) !void {
     if (comptime FLIR.minimal) {
         return;
     }
-    const reached = try self.a.alloc(bool, self.n.items.len);
-    defer self.a.free(reached);
+    const reached = try self.gpa.alloc(bool, self.n.items.len);
+    defer self.gpa.free(reached);
     @memset(reached, false);
 
-    var worklist = ArrayList(u16).init(self.a);
-    defer worklist.deinit();
+    var worklist: ArrayList(u16) = .empty;
+    defer worklist.deinit(self.gpa);
     for (self.n.items, 0..) |*n, ni| {
         for (n.s) |s| {
             if (s > self.n.items.len) return error.InvalidCFG;

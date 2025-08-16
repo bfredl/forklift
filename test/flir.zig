@@ -16,7 +16,7 @@ pub fn parse_test(ir: []const u8) !CodeBuffer {
         return error.ExpectedOneFunction;
     }
     // TODO: this is a bit funky..
-    res.objs.deinit();
+    res.objs.deinit(res.gpa);
     res.objs_map.deinit();
     return res.code;
 }

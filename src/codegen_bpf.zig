@@ -66,19 +66,19 @@ pub fn set_target(code: *BPFCode, pos: u32) void {
     code.items[pos].off = @intCast(off);
 }
 
-pub fn put(code: *BPFCode, insn: Insn) !void {
+pub fn put(code: *CFOModule, insn: Insn) !void {
     if (options.dbg_disasm_ir) {
         print("    ", .{});
         // bpf.dump_ins(writer, insn, code.items.len);
     }
-    try code.append(insn);
+    try code.bpf_code.append(code.gpa, insn);
 }
 
 pub fn slotoff(slotid: anytype) i16 {
     return -8 * (1 + @as(i16, @intCast(slotid)));
 }
 
-pub fn ld_map_fd(code: *BPFCode, reg: IPReg, map_fd: fd_t, spec: u8) !void {
+pub fn ld_map_fd(code: *CFOModule, reg: IPReg, map_fd: fd_t, spec: u8) !void {
     var insn = I.ld_map_fd1(r(reg), map_fd);
     if (spec == 0) {
         // ok
@@ -92,19 +92,19 @@ pub fn ld_map_fd(code: *BPFCode, reg: IPReg, map_fd: fd_t, spec: u8) !void {
     try put(code, I.ld_map_fd2(map_fd));
 }
 
-pub fn jeq(code: *BPFCode, src: IPReg, dst: anytype) !u32 {
+pub fn jeq(code: *CFOModule, src: IPReg, dst: anytype) !u32 {
     const pos = get_target(code);
     try put(code, I.jeq(src, dst, -0x7FFF));
     return pos;
 }
 
-fn mov(code: *BPFCode, dst: IPReg, src: anytype) !void {
+fn mov(code: *CFOModule, dst: IPReg, src: anytype) !void {
     try put(code, I.mov(r(dst), src));
 }
 
 const r0: defs.IPReg = @enumFromInt(0);
 
-fn regmovmc(code: *BPFCode, dst: IPReg, src: IPMCVal) !void {
+fn regmovmc(code: *CFOModule, dst: IPReg, src: IPMCVal) !void {
     switch (src) {
         .frameslot => |f| try put(code, I.ldx(.double_word, r(dst), .r10, slotoff(f))),
         .ipreg => |reg| if (dst != reg) try mov(code, dst, r(reg)),
@@ -119,10 +119,10 @@ fn regmovmc(code: *BPFCode, dst: IPReg, src: IPMCVal) !void {
     // },
 }
 
-fn regjmpmc(code: *BPFCode, op: Insn.JmpOp, dst: IPReg, src: IPMCVal) !u32 {
+fn regjmpmc(code: *CFOModule, op: Insn.JmpOp, dst: IPReg, src: IPMCVal) !u32 {
     _ = dst;
     _ = op;
-    const pos = get_target(code);
+    const pos = get_target(&code.bpf_code);
     switch (src) {
         .frameslot => return error.FLIRError,
         .ipreg => |_| unreachable,
@@ -134,7 +134,7 @@ fn regjmpmc(code: *BPFCode, op: Insn.JmpOp, dst: IPReg, src: IPMCVal) !u32 {
     return pos;
 }
 
-fn regaritmc(code: *BPFCode, op: Insn.AluOp, dst: IPReg, src: IPMCVal) !void {
+fn regaritmc(code: *CFOModule, op: Insn.AluOp, dst: IPReg, src: IPMCVal) !void {
     switch (src) {
         .frameslot => return error.FLIRError,
         .ipreg => |reg| try put(code, I.alu(64, op, r(dst), r(reg))),
@@ -144,7 +144,7 @@ fn regaritmc(code: *BPFCode, op: Insn.AluOp, dst: IPReg, src: IPMCVal) !void {
     }
 }
 
-fn mcmovreg(code: *BPFCode, dst: IPMCVal, src: IPReg) !void {
+fn mcmovreg(code: *CFOModule, dst: IPMCVal, src: IPReg) !void {
     switch (dst) {
         .frameslot => |f| try put(code, I.stx(.double_word, .r10, slotoff(f), r(src))),
         .ipreg => |reg| if (reg != src) try mov(code, reg, r(src)),
@@ -152,7 +152,7 @@ fn mcmovreg(code: *BPFCode, dst: IPMCVal, src: IPReg) !void {
     }
 }
 
-fn mcmovi(code: *BPFCode, i: Inst) !void {
+fn mcmovi(code: *CFOModule, i: Inst) !void {
     switch (i.mckind) {
         .frameslot => {
             // TODO: just store??
@@ -178,7 +178,7 @@ fn bpf_size(size: defs.ISize) Insn.Size {
     };
 }
 
-fn addrmovmc(code: *BPFCode, dst: EAddr, src: IPMCVal, size: defs.ISize) !void {
+fn addrmovmc(code: *CFOModule, dst: EAddr, src: IPMCVal, size: defs.ISize) !void {
     const bsize = bpf_size(size);
     switch (src) {
         .ipreg => |reg| try put(code, I.stx(bsize, @enumFromInt(dst.reg), dst.off, r(reg))),
@@ -187,11 +187,11 @@ fn addrmovmc(code: *BPFCode, dst: EAddr, src: IPMCVal, size: defs.ISize) !void {
     }
 }
 
-fn regmovaddr(code: *BPFCode, dst: IPReg, src: EAddr, size: defs.ISize) !void {
+fn regmovaddr(code: *CFOModule, dst: IPReg, src: EAddr, size: defs.ISize) !void {
     try put(code, I.ldx(bpf_size(size), r(dst), @enumFromInt(src.reg), src.off));
 }
 
-fn movmcs(code: *BPFCode, dst: IPMCVal, src: IPMCVal) !void {
+fn movmcs(code: *CFOModule, dst: IPMCVal, src: IPMCVal) !void {
     // sadge
     // if (dst.mckind == src.mckind and dst.mcidx == src.mcidx) {
     //     return;
@@ -205,7 +205,7 @@ fn movmcs(code: *BPFCode, dst: IPMCVal, src: IPMCVal) !void {
     }
 }
 
-// pub fn makejmp(self: *FLIR, code: *BPFCode, op: ?Insn.JmpOp, ni: u16, si: u1, labels: []u32, targets: [][2]u32) !void {
+// pub fn makejmp(self: *FLIR, code: *CFOModule, op: ?Insn.JmpOp, ni: u16, si: u1, labels: []u32, targets: [][2]u32) !void {
 //     const succ = self.n.items[ni].s[si];
 //     // NOTE: we assume blk 0 always has the prologue (push rbp; mov rbp, rsp)
 //     // at least, so that even if blk 0 is empty, blk 1 has target larger than 0x00
@@ -219,16 +219,16 @@ fn movmcs(code: *BPFCode, dst: IPMCVal, src: IPMCVal) !void {
 
 pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
     const code = &mod.bpf_code;
-    var labels = try self.a.alloc(u32, self.n.items.len);
-    var targets = try self.a.alloc([2]u32, self.n.items.len);
+    var labels = try self.gpa.alloc(u32, self.n.items.len);
+    var targets = try self.gpa.alloc([2]u32, self.n.items.len);
 
     // const color_map = self.a.alloc(u8, self.n_ins()) catch @panic("OOM in debug_print");
     // defer self.a.free(color_map);
     // mem.set(u8, color_map, 0);
     // var last_color: u8 = 0;
 
-    defer self.a.free(labels);
-    defer self.a.free(targets);
+    defer self.gpa.free(labels);
+    defer self.gpa.free(targets);
     @memset(labels, 0);
     @memset(targets, .{ 0, 0 });
 
@@ -271,14 +271,14 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
                 .freelist => @panic("KATASTROFEN"),
                 // work is done by putphi
                 .phi => {},
-                .ret => try regmovmc(code, r0, self.ipval(i.op1).?),
+                .ret => try regmovmc(mod, r0, self.ipval(i.op1).?),
                 .ibinop => {
                     const dst = i.ipreg() orelse return error.FLIRError;
                     const op = i.ibinop().asBpfAluOp() orelse return error.FLIRError;
                     const op1 = self.ipval(i.op1).?;
                     const op2 = self.ipval(i.op2).?;
-                    try regmovmc(code, dst, op1);
-                    try regaritmc(code, op, dst, op2);
+                    try regmovmc(mod, dst, op1);
+                    try regaritmc(mod, op, dst, op2);
                     unreachable;
                 },
                 .icmp => {
@@ -296,7 +296,7 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
 
                     const op = spec.asBpfJmpOp() orelse return error.FLIRError;
 
-                    const pos = try regjmpmc(code, op, op1, op2);
+                    const pos = try regjmpmc(mod, op, op1, op2);
                     targets[ni][taken] = pos;
                 },
                 .icmpset => return error.NotImplemented,
@@ -305,7 +305,7 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
                     if (i.f.do_swap) return error.NotImplemented;
                     const dest = (try self.movins_dest(i)).ipval() orelse return error.FLIRError;
                     if (try self.movins_read2(i)) |src| {
-                        try movmcs(code, dest, src);
+                        try movmcs(mod, dest, src);
                     }
                 },
                 .load => {
@@ -320,8 +320,8 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
 
                     const eaddr: EAddr = (try get_eaddr(self, addr, false)).o(@intCast(off));
                     const dst = i.ipreg() orelse r0;
-                    try regmovaddr(code, dst, eaddr, i.mem_type().intptr);
-                    try mcmovreg(code, i.ipval().?, dst); // elided if dst is register
+                    try regmovaddr(mod, dst, eaddr, i.mem_type().intptr);
+                    try mcmovreg(mod, i.ipval().?, dst); // elided if dst is register
                 },
                 .lea => {
                     // TODO: keep track of lifetime extensions of fused values somewhere
@@ -336,26 +336,26 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
                     const addr = self.iref(i.op1).?.*;
                     const eaddr: EAddr = try get_eaddr(self, addr, true);
                     const val = self.ipval(i.op2).?;
-                    try addrmovmc(code, eaddr, val, size);
+                    try addrmovmc(mod, eaddr, val, size);
                 },
                 .bpf_load_map => {
                     const reg: IPReg = if (i.mckind == .ipreg) @enumFromInt(i.mcidx) else r0;
-                    try mod.relocations.append(.{ .pos = get_target(code), .obj_idx = i.op1 });
-                    try ld_map_fd(code, reg, 0x7FFFFFFF, i.spec);
-                    try mcmovreg(code, i.ipval().?, reg);
+                    try mod.relocations.append(mod.gpa, .{ .pos = get_target(code), .obj_idx = i.op1 });
+                    try ld_map_fd(mod, reg, 0x7FFFFFFF, i.spec);
+                    try mcmovreg(mod, i.ipval().?, reg);
                 },
                 .alloc => {},
                 .call => {
                     const kind: defs.CallKind = @enumFromInt(i.spec);
                     switch (kind) {
                         .bpf_helper => {
-                            try put(code, I.call(@as(BPF.Helper, @enumFromInt(i.spec))));
+                            try put(mod, I.call(@as(BPF.Helper, @enumFromInt(i.spec))));
                         },
                         else => return error.FLIRError,
                     }
                 },
                 .copy => {
-                    try movmcs(code, i.ipval().?, self.ipval(i.op1).?);
+                    try movmcs(mod, i.ipval().?, self.ipval(i.op1).?);
                 },
                 .xadd => {
                     const dest = self.iref(i.op1).?.*;
@@ -366,15 +366,15 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
                         .ipreg => |reg| reg,
                         else => r0,
                     };
-                    try regmovmc(code, sreg, src);
+                    try regmovmc(mod, sreg, src);
                     var insn = I.xadd(@as(Reg, @enumFromInt(dest_addr.reg)), r(sreg));
                     // TODO: if this works, upstream!
                     insn.off = dest_addr.off;
-                    try put(code, insn);
+                    try put(mod, insn);
                 },
                 .arg => {
                     if (i.op1 != 0) unreachable;
-                    try mcmovreg(code, i.ipval().?, @enumFromInt(1));
+                    try mcmovreg(mod, i.ipval().?, @enumFromInt(1));
                 },
                 .fconst => {},
                 .vmath, .vcmpf, .int2vf, .vf2int, .fcmp => {
@@ -390,11 +390,11 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
 
         if (n.s[default_branch] != fallthru and n.s[default_branch] != 0) {
             const pos = get_target(code);
-            try put(code, I.ja(0x7FFF)); // unconditional
+            try put(mod, I.ja(0x7FFF)); // unconditional
             targets[ni][default_branch] = pos;
         }
     }
 
-    try put(code, I.exit());
+    try put(mod, I.exit());
     return target;
 }

@@ -36,31 +36,30 @@ pub const RTObject = union(enum) {
 
 const CFOModule = @This();
 
-bpf_code: BPFCode,
+gpa: std.mem.Allocator,
+bpf_code: BPFCode = .empty,
 code: CodeBuffer,
-objs: std.ArrayList(struct { name: ?[]const u8, obj: RTObject }),
+objs: std.ArrayList(struct { name: ?[]const u8, obj: RTObject }) = .empty,
 // quick stub, replace with something which reuses objs[index].name as key
 objs_map: std.StringHashMap(usize),
 // bpf_code.items[id] needs to point at fd of object specified by obj_idx
-relocations: std.ArrayList(struct { pos: u32, obj_idx: u32 }),
+relocations: std.ArrayList(struct { pos: u32, obj_idx: u32 }) = .empty,
 
 pub fn init(allocator: std.mem.Allocator) !CFOModule {
     return .{
+        .gpa = allocator,
         .code = try .init(allocator),
-        .bpf_code = .init(allocator),
-        .objs = .init(allocator),
         .objs_map = .init(allocator),
-        .relocations = .init(allocator),
     };
 }
 
 /// Frees all memory from `allocator`, but does not close any fd:s.
 pub fn deinit_mem(self: *CFOModule) void {
-    self.bpf_code.deinit();
+    self.bpf_code.deinit(self.gpa);
     self.code.deinit();
-    self.objs.deinit();
+    self.objs.deinit(self.gpa);
     self.objs_map.deinit();
-    self.relocations.deinit();
+    self.relocations.deinit(self.gpa);
 }
 
 pub fn load(self: *CFOModule) !void {
@@ -97,7 +96,7 @@ pub fn put_nonexisting(self: *CFOModule, name: []const u8) !?*RTObject {
     if (item.found_existing) {
         return null;
     }
-    const ptr = try self.objs.addOne();
+    const ptr = try self.objs.addOne(self.gpa);
     item.value_ptr.* = self.objs.items.len - 1;
     ptr.name = name;
     return &ptr.obj;

@@ -16,7 +16,7 @@ fn new_inst(self: *Self, addr: usize) !void {
 
 // TODO: use appendAssumeCapacity in a smart way like arch/x86_64
 pub fn wb(self: *Self, opcode: u8) !void {
-    try self.code.buf.append(opcode);
+    try self.code.buf_append(opcode);
 }
 
 pub fn wbi(self: *Self, imm: i8) !void {
@@ -24,11 +24,11 @@ pub fn wbi(self: *Self, imm: i8) !void {
 }
 
 pub fn wd(self: *Self, dword: i32) !void {
-    std.mem.writeInt(i32, try self.code.buf.addManyAsArray(4), dword, .little);
+    std.mem.writeInt(i32, try self.code.buf_addManyAsArray(4), dword, .little);
 }
 
 pub fn wq(self: *Self, qword: u64) !void {
-    std.mem.writeInt(u64, try self.code.buf.addManyAsArray(8), qword, .little);
+    std.mem.writeInt(u64, try self.code.buf_addManyAsArray(8), qword, .little);
 }
 
 const Self = @This();
@@ -267,7 +267,7 @@ pub fn set_align(self: *Self, alignment: u32) !void {
     const residue = self.code.get_target() & (alignment - 1);
     const padding = alignment - residue;
     if (padding != 0 and padding != alignment) {
-        try self.code.buf.appendNTimes(0x90, padding);
+        try self.code.buf_appendNTimes(0x90, padding);
     }
 }
 

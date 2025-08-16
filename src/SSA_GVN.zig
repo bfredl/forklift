@@ -10,8 +10,8 @@ const NoRef = FLIR.NoRef;
 // Simple and Eﬃcient Construction of Static Single Assignment Form
 // Matthias Braun et al, 2013
 pub fn resolve_ssa(self: *FLIR) !void {
-    const pred_buf = try self.a.alloc(PredItem, self.n.items.len);
-    defer self.a.free(pred_buf);
+    const pred_buf = try self.gpa.alloc(PredItem, self.n.items.len);
+    defer self.gpa.free(pred_buf);
 
     self.unsealed = false;
 

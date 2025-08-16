@@ -632,7 +632,7 @@ pub fn parse_func(mod: *CFOModule, ir: *FLIR, t: *Tokenizer, allocator: Allocato
     // TODO: pattern for "is debug mode". Although all of CFOScript is "debug mode" in some sense
     if (!FLIR.minimal) {
         ir.var_names.clearRetainingCapacity();
-        try ir.var_names.appendNTimes(null, ir.nvar);
+        try ir.var_names.appendNTimes(self.ir.gpa, null, ir.nvar);
         var iter = self.vars.iterator();
         while (iter.next()) |it| {
             const vref = it.value_ptr.ref;

@@ -28,7 +28,11 @@ pub const context_order: [16]u8 = .{
 };
 
 fn sigHandler(sig: i32, info: *const posix.siginfo_t, ctx_ptr: ?*const anyopaque) callconv(.c) void {
-    const s = io.getStdErr().writer();
+    // TODO: bull, just use a big enough buffer and always do a single syscall write in the
+    // end, no locks needed
+    var buffer: [64]u8 = undefined;
+    const s = std.debug.lockStderrWriter(&buffer);
+    defer std.debug.unlockStderrWriter();
 
     const addr = @intFromPtr(info.fields.sigfault.addr);
 
@@ -86,7 +90,7 @@ pub fn install(cfo: *CodeBuffer) !void {
 
     var act = posix.Sigaction{
         .handler = .{ .sigaction = sigHandler },
-        .mask = posix.empty_sigset,
+        .mask = posix.sigemptyset(),
         .flags = (posix.SA.SIGINFO | posix.SA.RESTART),
     };
 
