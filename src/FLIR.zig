@@ -1892,44 +1892,38 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
         };
     }
 
-    std.debug.print("\nBEGAAA\n", .{});
-    self.debug_print();
+    // TODO: this "optmization order" is not optimal but enough to legalize
+    // the IR, i e no (locally) constant ops, no dead succs
+
+    // TODO: missed opportunity: some branches are already trivial
+    try self.calc_preds();
+
+    try self.resolve_ssa();
+
+    if (check) try self.check_ir_valid();
+    if (@TypeOf(options) != @TypeOf(null) and options.dbg_ssa_ir) {
+        self.debug_print();
+    }
 
     // Just to get rid of trivial ops that codegen expect not to see.
     try self.const_fold_legalize();
 
-    std.debug.print("\nUNOS\n", .{});
-    self.debug_print();
-    try self.calc_preds();
-    std.debug.print("\nKLOSS\n", .{});
-    self.debug_print();
+    // unreachable nodes here, cannot check:p
+    // if (check) try self.check_ir_valid();
 
     // modified reverse post-order where all loops
     // are emitted contigously
     try self.calc_loop(); // also fills node.dfnum
-
-    try self.set_abi(ABI);
-
     try self.reorder_nodes();
-
-    std.debug.print("\nBOSSS\n", .{});
-    self.debug_print();
 
     if (check) try self.check_ir_valid();
     if (@TypeOf(options) != @TypeOf(null) and options.dbg_raw_reorder_ir) {
         self.debug_print();
     }
 
-    try self.resolve_ssa();
+    try self.set_abi(ABI);
 
-    if (@TypeOf(options) != @TypeOf(null) and options.dbg_ssa_ir) {
-        self.debug_print();
-    }
     if (check) try self.check_ir_valid();
-
-    // EAGAIN: trivial phis might give us these
-    // likely "resorve phi" needs to be part of the worklist loop
-    try self.const_fold_legalize();
 
     try self.calc_live();
     if (check) try self.check_ir_valid();

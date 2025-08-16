@@ -76,7 +76,9 @@ fn read_var(self: *FLIR, node: u16, vidx: u16, vspec: u8, direct_putvar: ?*u16) 
         } else if (n.npred == 1) {
             const pred = self.refs.items[n.predref];
             // assert recursion eventually terminates
-            assert(self.n.items[pred].dfnum < n.dfnum);
+            // TODO: still want this check somehow, we just doesn't fill dfnum yet..
+            // assert(self.n.items[pred].dfnum < n.dfnum);
+
             // no longer direct, discard direct_putvar
             break :thedef try read_var(self, pred, vidx, vspec, null);
         } else { // n.npred == 0
