@@ -646,6 +646,6 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
             cfo.set_target_32(reloc.pos, target);
         }
     }
-    if (options.dbg_disasm) try cfo.dbg_nasm(self.a);
+    if (options.dbg_disasm) try cfo.dbg_nasm(self.gpa);
     return entry;
 }
