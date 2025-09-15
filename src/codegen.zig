@@ -276,7 +276,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     const src = self.ipval(i.op1) orelse return error.FLIRError;
                     const dst = i.ipreg() orelse return error.SpillError;
                     const op = i.iunop();
-                    const w = i.iop_size().wide();
+                    const w = i.f.wide;
 
                     if (op.is_bitop()) {
                         switch (src) {
@@ -287,7 +287,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     } else if (op == .sign_extend) {
                         switch (src) {
                             .frameslot => |_| return error.WIPError,
-                            .ipreg => |reg| try cfo.movsx(r(dst), r(reg), i.iop_size()),
+                            .ipreg => |reg| try cfo.movsx(r(dst), r(reg), return error.WIPError),
                             .constval, .constref, .constptr => return error.FLIRError,
                         }
                     } else return error.NotImplemented;
@@ -297,7 +297,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     var rhs = self.ipval(i.op2) orelse return error.FLIRError;
                     const dst = i.ipreg() orelse return error.SpillError;
                     const op = i.ibinop();
-                    const w = i.iop_size().wide();
+                    const w = i.f.wide;
 
                     var dst_conflict = (dst == rhs.as_ipreg() and dst != lhs.as_ipreg());
                     // TODO: later on all these cases might be handled earlier in isel
@@ -398,8 +398,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     // best if an earlier ABI step takes care of all of this
                     const lhs = self.ipreg(i.op1) orelse return error.SpillError;
                     const rhs = self.ipval(i.op2) orelse return error.FLIRError;
-                    const w = i.iop_size().wide();
-                    try regaritmc(&cfo, w, .cmp, lhs, rhs);
+                    try regaritmc(&cfo, i.f.wide, .cmp, lhs, rhs);
                     const xcond = i.intcond().asX86Cond();
                     if (i.tag == .icmp) {
                         cond = xcond;

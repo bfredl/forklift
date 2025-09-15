@@ -70,6 +70,12 @@ f: packed struct {
     // gen as a no-op as previous instruction was a swap
     swap_done: bool = false,
 
+    // indicates, in general, that an integer operation is 64-bit instead of 32-bit
+    // in general 32-bit math is expected to always leave the upper 32-bits zero
+    // For loads, it means e.g an i16 will be sign exstended to 64 bits instead of 32
+    // this might be extended to an ISize if we want to support native 16-bit math (unlikely)
+    wide: bool = false,
+
     // note this can be more than two instructions, like
     // do_swap a->b
     // do_swap c->a
@@ -133,11 +139,6 @@ pub fn iunop(self: *Inst) defs.IntUnOp {
 
 pub fn ibinop(self: *Inst) defs.IntBinOp {
     return @enumFromInt(self.low_spec());
-}
-
-// valid for .iunop, .ibinop and .icmp
-pub fn iop_size(self: *Inst) defs.ISize {
-    return @enumFromInt(self.high_spec());
 }
 
 pub fn res_type(inst: Inst) ?defs.ValType {

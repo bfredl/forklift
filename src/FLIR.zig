@@ -479,6 +479,14 @@ pub fn float2int(self: *Self, node: u16, fmode: FMode, op1: u16) !u16 {
     return self.addInst(node, .{ .tag = .vf2int, .spec = Inst.vcvtspec(fmode), .op1 = op1, .op2 = NoRef });
 }
 
+fn wsize(size: defs.ISize) !bool {
+    return switch (size) {
+        .quadword => true,
+        .dword => false,
+        else => return error.WIPError, // or never:p
+    };
+}
+
 // TODO: 32bit vs 64bit (also for int in i2f and f2i, and so on)
 pub fn iunop(self: *Self, node: u16, size: defs.ISize, op: IntUnOp, op1: u16) !u16 {
     if (self.construction_peep) {
@@ -486,16 +494,16 @@ pub fn iunop(self: *Self, node: u16, size: defs.ISize, op: IntUnOp, op1: u16) !u
             return res;
         }
     }
-    return self.addInst(node, .{ .tag = .iunop, .spec = sphigh(@intFromEnum(size), @intFromEnum(op)), .op1 = op1, .op2 = NoRef });
+    return self.addInst(node, .{ .tag = .iunop, .spec = @intFromEnum(op), .op1 = op1, .op2 = NoRef, .f = .{ .wide = try wsize(size) } });
 }
 
 // TODO: 32bit vs 64bit (also for int in i2f and f2i, and so on)
 pub fn ibinop(self: *Self, node: u16, size: defs.ISize, op: IntBinOp, op1: u16, op2: u16) !u16 {
-    return self.addInst(node, .{ .tag = .ibinop, .spec = sphigh(@intFromEnum(size), @intFromEnum(op)), .op1 = op1, .op2 = op2 });
+    return self.addInst(node, .{ .tag = .ibinop, .spec = @intFromEnum(op), .op1 = op1, .op2 = op2, .f = .{ .wide = try wsize(size) } });
 }
 
 pub fn icmp(self: *Self, node: u16, size: defs.ISize, cond: IntCond, op1: u16, op2: u16) !u16 {
-    return self.addInst(node, .{ .tag = .icmp, .spec = sphigh(@intFromEnum(size), cond.off()), .op1 = op1, .op2 = op2 });
+    return self.addInst(node, .{ .tag = .icmp, .spec = cond.off(), .op1 = op1, .op2 = op2, .f = .{ .wide = try wsize(size) } });
 }
 
 pub fn icmpset(self: *Self, node: u16, size: defs.ISize, cond: IntCond, op1: u16, op2: u16) !u16 {
@@ -504,7 +512,7 @@ pub fn icmpset(self: *Self, node: u16, size: defs.ISize, cond: IntCond, op1: u16
             return self.const_uint(if (res) 1 else 0);
         }
     }
-    return self.addInst(node, .{ .tag = .icmpset, .spec = sphigh(@intFromEnum(size), cond.off()), .op1 = op1, .op2 = op2 });
+    return self.addInst(node, .{ .tag = .icmpset, .spec = cond.off(), .op1 = op1, .op2 = op2, .f = .{ .wide = try wsize(size) } });
 }
 
 pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
@@ -802,7 +810,7 @@ pub fn const_fold_legalize(self: *Self) !void {
         while (it.next()) |item| {
             const i = item.i;
             if (i.tag == .icmp) {
-                if (self.peep_icmp(i.intcond(), i.iop_size(), i.op1, i.op2)) |res| {
+                if (self.peep_icmp(i.intcond(), i.f.wide, i.op1, i.op2)) |res| {
                     const deleted = if (res) n.s[0] else n.s[1];
                     if (res) n.s[0] = n.s[1];
                     n.s[1] = 0;
@@ -826,11 +834,11 @@ pub fn const_fold_legalize(self: *Self) !void {
     }
 }
 
-pub fn peep_icmp(self: *Self, cond: IntCond, size: defs.ISize, op1: u16, op2: u16) ?bool {
+pub fn peep_icmp(self: *Self, cond: IntCond, wide: bool, op1: u16, op2: u16) ?bool {
     if (self.constval(op1)) |lhs| {
         if (self.constval(op2)) |rhs| {
             // TODO: haha, 64-bit signed comp??
-            _ = size;
+            _ = wide;
             const i_lhs: i32 = @intCast(@as(u32, @truncate(lhs)));
             const i_rhs: i32 = @intCast(@as(u32, @truncate(rhs)));
             return switch (cond) {

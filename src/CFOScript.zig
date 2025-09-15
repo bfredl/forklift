@@ -20,7 +20,7 @@ const codegen = @import("./codegen.zig");
 const codegen_bpf = @import("./codegen_bpf.zig").codegen;
 
 const Self = @This();
-const ParseError = error{ ParseError, SyntaxError, OutOfMemory, FLIRError, UndefinedName, TooManyArgs, TypeError, NotYetImplemented };
+const ParseError = error{ ParseError, SyntaxError, OutOfMemory, FLIRError, UndefinedName, TooManyArgs, TypeError, WIPError };
 const SpecType = defs.SpecType;
 
 // NOTE: currently "int_ctx" doesn't affect reads beyond upcast into quadword for further aritmethic
