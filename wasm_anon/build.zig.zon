@@ -1,0 +1,35 @@
+.{
+    .name = .wasm_anon,
+    .fingerprint = 0x349fd9c4a74a7cdc,
+
+    // This is a [Semantic Version](https://semver.org/).
+    // In a future version of Zig it will be used for package deduplication.
+    .version = "0.0.0",
+
+    .minimum_zig_version = "0.14.0",
+
+    // This field is optional.
+    // Each dependency must either provide a `url` and `hash`, or a `path`.
+    // `zig build --fetch` can be used to fetch all dependencies of a package, recursively.
+    // Once all dependencies are fetched, `zig build` no longer requires
+    // internet connectivity.
+    .dependencies = .{
+        .spec = .{
+            .url = "git+https://github.com/WebAssembly/spec#f3a0e06235d2d84bb0f3b5014da4370613886965",
+            .hash = "N-V-__8AADKJRwGjeuQmyPCcft4e84_b43dq6zxhUnK1VP7Q",
+            .lazy = true,
+        },
+        .clap = .{
+            .url = "git+https://github.com/Hejsil/zig-clap#a05e82841740fbc3a79474aa88b107d86392f948",
+            .hash = "clap-0.10.0-oBajB_TnAQB0l5UdW9WYhhJDEswbedvwFOzzZwGknYeR",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        // For example...
+        //"LICENSE",
+        //"README.md",
+    },
+}
