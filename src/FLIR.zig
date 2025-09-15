@@ -508,7 +508,7 @@ pub fn icmp(self: *Self, node: u16, size: defs.ISize, cond: IntCond, op1: u16, o
 
 pub fn icmpset(self: *Self, node: u16, size: defs.ISize, cond: IntCond, op1: u16, op2: u16) !u16 {
     if (self.construction_peep) {
-        if (self.peep_icmp(cond, size, op1, op2)) |res| {
+        if (self.peep_icmp(cond, try wsize(size), op1, op2)) |res| {
             return self.const_uint(if (res) 1 else 0);
         }
     }
