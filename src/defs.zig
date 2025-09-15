@@ -75,10 +75,21 @@ pub const IntUnOp = enum(u5) {
     popcount,
     ctz,
     clz,
-    sign_extend, // source is iop_size(), dest (w flag) is ??????????
+    sign_extend8,
+    sign_extend16,
+    sign_extend32,
 
     pub fn is_bitop(self: IntUnOp) bool {
         return @intFromEnum(self) < 3;
+    }
+
+    pub fn is_sign_extend(self: IntUnOp) ?ISize {
+        return switch (self) {
+            .sign_extend8 => .byte,
+            .sign_extend16 => .word,
+            .sign_extend32 => .dword,
+            else => null,
+        };
     }
 };
 

@@ -649,16 +649,22 @@ pub fn movzx(self: *Self, dst: IPReg, src: IPReg) !void {
     try self.modRm(0b11, dst.lowId(), src.lowId());
 }
 
-pub fn movsx(self: *Self, dst: IPReg, src: IPReg, src_size: ISize) !void {
+pub fn movsx(self: *Self, w: bool, dst: IPReg, src: IPReg, src_size: ISize) !void {
     try self.new_inst(@returnAddress());
     const highlike_byte = src_size == .byte and src.highlike();
-    try self.rex_wrxb_force(false, dst.ext(), false, src.ext(), highlike_byte);
-    try self.wb(0x0F);
-    try self.wb(switch (src_size) {
-        .byte => 0xBE,
-        .word => 0xBF,
+    try self.rex_wrxb_force(w, dst.ext(), false, src.ext(), highlike_byte);
+    switch (src_size) {
+        .byte => {
+            try self.wb(0x0F);
+            try self.wb(0xBE);
+        },
+        .word => {
+            try self.wb(0x0F);
+            try self.wb(0xBF);
+        },
+        .dword => try self.wb(0x63),
         else => return error.Invalid,
-    });
+    }
     try self.modRm(0b11, dst.lowId(), src.lowId());
 }
 

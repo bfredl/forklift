@@ -193,12 +193,21 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     var label_stack: std.ArrayList(struct { c_ip: u32, ir_target: u16, else_target: u16 = FLIR.NoRef, loop: bool, res_var: u16, value_stack_level: usize }) = .empty;
     defer label_stack.deinit(gpa);
 
+    const max_args = 2;
+    if (f.n_params > max_args) return error.NotImplemented;
+
+    var local_types_buf: [max_args]defs.ValType = undefined;
+    const ret_type = try in.mod.type_params(f.typeidx, &local_types_buf);
+    // TODO: redundant with f.local_types??????????????????
+    const local_types = local_types_buf[0..f.n_params];
+
     // only a single node doing "ir.ret"
     const exit_node = try ir.addNode();
     if (f.n_res > 1) return error.NotImplemented;
-    const exit_var = try ir.variable(.{ .intptr = .dword });
+    const iret: forklift.defs.ISize = if (ret_type == .i64) .quadword else .dword;
+    const exit_var = try ir.variable(.{ .intptr = iret });
     // TODO: ir.ret(VOID)
-    try ir.ret(exit_node, .{ .intptr = .dword }, if (f.n_res > 0) exit_var else try ir.const_uint(0));
+    try ir.ret(exit_node, .{ .intptr = iret }, if (f.n_res > 0) exit_var else try ir.const_uint(0));
     try label_stack.append(gpa, .{ .c_ip = 0, .ir_target = exit_node, .loop = false, .res_var = if (f.n_res > 0) exit_var else FLIR.NoRef, .value_stack_level = 0 });
 
     var c_ip: u32 = 0;
@@ -430,24 +439,15 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                             .i32_popcnt, .i64_popcnt => .popcount,
                             .i32_ctz, .i64_ctz => .ctz,
                             .i32_clz, .i64_clz => .clz,
-                            .i32_extend8_s => .sign_extend,
-                            .i32_extend16_s => .sign_extend,
-                            .i64_extend8_s => .sign_extend,
-                            .i64_extend16_s => .sign_extend,
-                            .i64_extend32_s => .sign_extend,
+                            .i32_extend8_s, .i64_extend8_s => .sign_extend8,
+                            .i32_extend16_s, .i64_extend16_s => .sign_extend16,
+                            .i64_extend32_s => .sign_extend32,
                             else => {
                                 f.hmt_error = try std.fmt.allocPrint(in.mod.allocator, "inst {s} in the {s} impl TBD, aborting!", .{ @tagName(tag), @tagName(category) });
                                 return error.NotImplemented;
                             },
                         };
-                        // TODO: wrongggg for sign_extend
-                        const size: forklift.defs.ISize = switch (tag) {
-                            .i32_extend8_s => .byte,
-                            .i32_extend16_s => .word,
-                            .i64_extend8_s, .i64_extend16_s, .i64_extend32_s => return error.NotImplemented,
-                            else => iSize(category == .i64_unop),
-                        };
-                        const res = try ir.iunop(node, size, flir_op, src);
+                        const res = try ir.iunop(node, iSize(category == .i64_unop), flir_op, src);
                         try value_stack.append(gpa, res);
                     },
                     .i32_binop, .i64_binop => {
@@ -525,12 +525,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     try self.mod.objs.append(self.mod.gpa, .{ .obj = .{ .func = .{ .code_start = target } }, .name = null });
 
     if (f.exported == null) return;
-
-    const max_args = 2;
-    if (f.n_params > max_args) return error.NotImplemented;
-    var local_types_buf: [max_args]defs.ValType = undefined;
-    const ret_type = try in.mod.type_params(f.typeidx, &local_types_buf);
-    const local_types = local_types_buf[0..f.n_params];
 
     var cfo = X86Asm{ .code = &self.mod.code, .long_jump_mode = true };
     const frame = true;

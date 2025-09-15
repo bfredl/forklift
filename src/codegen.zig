@@ -284,10 +284,10 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                             .ipreg => |reg| try cfo.bitunop(op, w, r(dst), r(reg)),
                             .constval, .constref, .constptr => return error.FLIRError,
                         }
-                    } else if (op == .sign_extend) {
+                    } else if (op.is_sign_extend()) |size| {
                         switch (src) {
                             .frameslot => |_| return error.WIPError,
-                            .ipreg => |reg| try cfo.movsx(r(dst), r(reg), return error.WIPError),
+                            .ipreg => |reg| try cfo.movsx(w, r(dst), r(reg), size),
                             .constval, .constref, .constptr => return error.FLIRError,
                         }
                     } else return error.NotImplemented;
