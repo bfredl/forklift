@@ -106,7 +106,7 @@ pub fn build(b: *std.Build) void {
     if (maybe_spec_dep) |spec_dep| {
         const upstream_specs = [_]struct { []const u8, u32, ?u32 }{
             .{ "i32", 0, 1 },
-            .{ "i64", 0, 0 },
+            .{ "i64", 0, 1 },
             .{ "f32", 2, null },
             .{ "f64", 2, null },
             .{ "f32_cmp", 0, null },

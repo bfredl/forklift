@@ -601,8 +601,8 @@ pub fn zero(self: *Self, dst: IPReg) !void {
 // TODO: not all IntUnOp:s are bitops!!
 pub fn bitunop(self: *Self, op: defs.IntUnOp, w: bool, dst: IPReg, src: IPReg) !void {
     try self.new_inst(@returnAddress());
-    try self.rex_wrxb(w, dst.ext(), false, src.ext());
     try self.wb(0xF3);
+    try self.rex_wrxb(w, dst.ext(), false, src.ext());
     try self.wb(0x0F);
     try self.wb(switch (op) {
         .popcount => 0xb8, // POPCNT
