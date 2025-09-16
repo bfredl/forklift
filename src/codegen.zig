@@ -249,9 +249,19 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                 },
                 .arg => {
                     // TRICKY: should i.op1 actually be the specific register?
-                    const src = ABI.argregs[i.op1];
-                    const dst = i.ipval() orelse return error.FLIRError;
-                    try mcmovreg(&cfo, true, dst, src); // TODO: not always wide!!
+                    switch (i.mem_type()) {
+                        .intptr => |size| {
+                            const src = ABI.argregs[i.op1];
+                            const dst = i.ipval() orelse return error.FLIRError;
+                            try mcmovreg(&cfo, size == .quadword, dst, src);
+                        },
+                        .avxval => |fmode| {
+                            const reg = i.avxreg() orelse return error.FLIRError;
+                            if (i.op1 != reg) {
+                                try cfo.vmovf(fmode, 0, reg);
+                            }
+                        },
+                    }
                 },
                 // lea relative RBP when used
                 .alloc => {},

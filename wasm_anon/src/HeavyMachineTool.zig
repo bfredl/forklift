@@ -180,7 +180,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     var node = try ir.addNode();
     // I think FLIR can require all args to be first..
     for (0..f.n_params) |i| {
-        locals[i] = try ir.arg();
+        locals[i] = try ir.arg(specType(f.local_types[i]) orelse return error.NotImplemented);
     }
     if (f.args_mut != 0) {
         for (0..f.n_params) |i| {

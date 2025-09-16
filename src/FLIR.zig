@@ -568,9 +568,9 @@ pub fn addPhi(self: *Self, node: u16, vidx: u16, vspec: u8) !u16 {
 
 // TODO: maintain wf of block 0: first all args, then all vars.
 
-pub fn arg(self: *Self) !u16 {
+pub fn arg(self: *Self, typ: defs.SpecType) !u16 {
     if (self.n.items.len == 0) return error.FLIRError;
-    const inst = try self.addInst(0, .{ .tag = .arg, .op1 = self.narg, .op2 = 0, .spec = intspec(.dword).into() });
+    const inst = try self.addInst(0, .{ .tag = .arg, .op1 = self.narg, .op2 = 0, .spec = typ.into() });
     self.narg += 1;
     return inst;
 }
@@ -1444,6 +1444,11 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, i: *Inst, free_regs_ip: *[n_i
         if (usable_regs[i.mcidx]) {
             chosen_reg = i.mcidx;
         }
+    } else if (i.mckind == .unallocated_vfreghint) {
+        if (i.res_type() != .avxval) unreachable;
+        if (usable_regs[i.mcidx]) {
+            chosen_reg = i.mcidx;
+        }
     }
 
     if (chosen_reg == null) {
@@ -1525,11 +1530,17 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
                     last_call = call_info;
                 },
                 .arg => {
-                    if (i.op1 >= ABI.argregs.len) return error.ARA;
-                    // tricky: do we use this to encode that the arg came from there?
-                    // or should spec be changed to the reg number
-                    i.mckind = .unallocated_ipreghint;
-                    i.mcidx = ABI.argregs[i.op1].id();
+                    if (i.mem_type() == .intptr) {
+                        if (i.op1 >= ABI.argregs.len) return error.ARA;
+                        // tricky: do we use this to encode that the arg came from there?
+                        // or should spec be changed to the reg number
+                        i.mckind = .unallocated_ipreghint;
+                        i.mcidx = ABI.argregs[i.op1].id();
+                    } else {
+                        if (i.op1 >= 16) return error.ARA;
+                        i.mckind = .unallocated_vfreghint;
+                        i.mcidx = @intCast(i.op1);
+                    }
                 },
                 else => {
                     last_call = null; // gentlemen please
