@@ -246,7 +246,7 @@ pub fn print_inst(self: *FLIR, ref: u16, i: *FLIR.Inst) void {
     if (i.tag == .ibinop) name = "i";
     print("  %{} {c} {s}", .{ fake_ref(self, ref), chr, name });
 
-    if (i.tag == .variable) {
+    if (i.tag == .variable or i.tag == .ret) {
         print(" {s}", .{@tagName(i.mem_type())});
     }
 

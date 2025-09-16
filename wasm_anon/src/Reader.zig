@@ -42,6 +42,9 @@ pub fn readOpCode(r: *Reader) !defs.OpCode {
     return @enumFromInt(try r.readByte());
 }
 
+pub fn peekOpCode(r: *Reader) defs.OpCode {
+    return @enumFromInt(r.peekByte());
+}
 pub fn readOp(r: *Reader) !defs.Instruction {
     const opcode = try readOpCode();
     switch (opcode) {

@@ -159,6 +159,17 @@ fn sigHandler(sig: i32, info: *const std.posix.siginfo_t, ctx_ptr: ?*const anyop
     }
 }
 
+pub fn specType(typ: defs.ValType) ?forklift.defs.SpecType {
+    return switch (typ) {
+        .i32 => .{ .intptr = .dword },
+        .i64 => .{ .intptr = .quadword },
+        .f32 => .{ .avxval = .ss },
+        .f64 => .{ .avxval = .sd },
+        .funcref, .externref => .{ .intptr = .dword },
+        .void, .vec128, _ => null,
+    };
+}
+
 pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Function) !void {
     _ = id;
     const ir = &self.flir;
@@ -204,10 +215,10 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     // only a single node doing "ir.ret"
     const exit_node = try ir.addNode();
     if (f.n_res > 1) return error.NotImplemented;
-    const iret: forklift.defs.ISize = if (ret_type == .i64) .quadword else .dword;
-    const exit_var = try ir.variable(.{ .intptr = iret });
+    const tret: forklift.defs.SpecType = specType(ret_type orelse .i32) orelse .{ .intptr = .dword };
+    const exit_var = try ir.variable(tret);
     // TODO: ir.ret(VOID)
-    try ir.ret(exit_node, .{ .intptr = iret }, if (f.n_res > 0) exit_var else try ir.const_uint(0));
+    try ir.ret(exit_node, tret, if (f.n_res > 0) exit_var else try ir.const_uint(0));
     try label_stack.append(gpa, .{ .c_ip = 0, .ir_target = exit_node, .loop = false, .res_var = if (f.n_res > 0) exit_var else FLIR.NoRef, .value_stack_level = 0 });
 
     var c_ip: u32 = 0;
@@ -220,14 +231,10 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             const n_decl = try r.readu();
             const typ: defs.ValType = @enumFromInt(try r.readByte());
             const init_val = StackValue.default(typ) orelse return error.InvalidFormat;
-            const ftyp: forklift.defs.ISize = switch (typ) {
-                .i32 => .dword,
-                .i64 => .quadword,
-                else => return error.NotImplemented,
-            };
             for (0..n_decl) |_| {
-                locals[i] = try ir.variable(.{ .intptr = ftyp });
-                try ir.putvar(node, locals[i], try ir.const_uint(init_val.u32()));
+                const t = specType(typ) orelse return error.NotImplemented;
+                locals[i] = try ir.variable(t);
+                try ir.putvar(node, locals[i], try if (t == .avxval) ir.const_float(node, 0) else ir.const_uint(init_val.u32()));
                 i += 1;
             }
         }
@@ -372,13 +379,15 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     if (has_res) try value_stack.append(gpa, try ir.read_ref(node, label.res_var));
                 }
             },
-            .br_if => {
-                c_ip += 1;
-                if (c[c_ip].off != pos) @panic("FEAR ALL AROUND");
-                if (!cond_pending) {
-                    const val = value_stack.pop().?;
-                    _ = try ir.icmp(node, .dword, .neq, val, try ir.const_uint(0));
-                } else cond_pending = false;
+            .br, .br_if => {
+                if (inst == .br_if) {
+                    c_ip += 1;
+                    if (c[c_ip].off != pos) @panic("FEAR ALL AROUND");
+                    if (!cond_pending) {
+                        const val = value_stack.pop().?;
+                        _ = try ir.icmp(node, .dword, .neq, val, try ir.const_uint(0));
+                    } else cond_pending = false;
+                }
                 const label = try r.readu();
                 if (label > label_stack.items.len - 1) return error.InternalCompilerError;
                 const target = label_stack.items[label_stack.items.len - label - 1];
@@ -387,19 +396,23 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     // don't pop in case branch NOT taken
                     try ir.putvar(node, target.res_var, value_stack.items[value_stack.items.len - 1]);
                 }
-                try ir.addLink(node, 1, target.ir_target); // branch taken
-                node = try ir.addNodeAfter(node);
+                try ir.addLink(node, if (inst == .br_if) 1 else 0, target.ir_target); // branch taken
+                if (inst == .br_if) {
+                    node = try ir.addNodeAfter(node);
+                } else {
+                    if (r.peekOpCode() != .end) return error.NotImplemented;
+                    dead_end = true; // TODO: as below
+                }
             },
             .ret => {
                 try ir.addLink(node, 0, exit_node);
                 if (f.n_res > 0) {
-                    if (f.n_res > 1) return error.Notimplemented;
+                    if (f.n_res > 1) return error.NotImplemented;
                     try ir.putvar(node, exit_var, value_stack.pop().?);
                 }
-                const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
                 // TODO: dead code is weird in WASM, need to skip over as the stack might not exist
                 // TODO: or else I guess
-                if (peekinst != .end) return error.NotImplemented;
+                if (r.peekOpCode() != .end) return error.NotImplemented;
                 dead_end = true;
             },
             .i32_eqz, .i64_eqz => {
@@ -562,22 +575,21 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     const ireg: [max_args]IPReg = .{ .rdi, .rsi };
 
     for (local_types, 0..) |t, i| {
-        const w = switch (t) {
-            .i32 => false,
-            .i64 => true,
+        const wher: X86Asm.EAddr = X86Asm.a(.rdx).o(@intCast(@sizeOf(defs.StackValue) * i));
+        switch (t) {
+            .i32, .i64 => try cfo.movrm(t == .i64, ireg[i], wher),
+            .f32, .f64 => try cfo.vmovurm(if (t == .f64) .sd else .ss, @intCast(i), wher),
             else => return error.NotImplemented,
-        };
-        try cfo.movrm(w, ireg[i], X86Asm.a(.rdx).o(@intCast(@sizeOf(defs.StackValue) * i)));
+        }
     }
     try cfo.call_rel(target);
     if (ret_type) |typ| {
         try cfo.pop(.rcx);
-        const w = switch (typ) {
-            .i32 => false,
-            .i64 => true,
+        switch (typ) {
+            .i32, .i64 => try cfo.movmr(typ == .i64, X86Asm.a(.rcx), .rax), // only one,
+            .f32, .f64 => try cfo.vmovumr(if (typ == .f64) .sd else .ss, X86Asm.a(.rcx), 0),
             else => return error.NotImplemented,
-        };
-        try cfo.movmr(w, X86Asm.a(.rcx), .rax); // only one
+        }
     }
     try cfo.zero(.rax); // non-error exit
     // as a silly trick, setjmp target here? nice for debugging
