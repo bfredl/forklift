@@ -12,6 +12,7 @@ const params_def = clap.parseParamsComptime(
     \\-h, --help             Display this help and exit.
     \\-f, --specname <str>   name
     \\-e, --errors <str>     expected number of errors
+    \\-f, --filter <str>     filter (by function name, exact match)
     \\-m, --heavy            Compile entire module using HeavyMachineTool
     \\--stdin <str>          override wasi stdin
     \\<str>
@@ -106,7 +107,7 @@ pub fn main() !u8 {
 
             if (machine_tool) {
                 if (did_mod) return error.NotImplemented; // need to reinit HMT for new module.
-                try tool.compileInstance(&in);
+                try tool.compileInstance(&in, p.args.filter);
             }
 
             did_mod = true;
@@ -204,6 +205,13 @@ pub fn main() !u8 {
             failures += 1;
             dbg("TODO: exhaust\n", .{});
             continue;
+        }
+
+        if (p.args.filter) |filter| {
+            if (!std.mem.eql(u8, filter, name)) {
+                unapplicable += 1;
+                continue;
+            }
         }
 
         var res: [max_res]StackValue = undefined;

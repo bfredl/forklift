@@ -69,7 +69,7 @@ pub fn main() !u8 {
         var tool: wasm_shelf.HeavyMachineTool = try .init(allocator);
         var in: Instance = try .init(&mod, null);
         defer in.deinit();
-        try tool.compileInstance(&in);
+        try tool.compileInstance(&in, null);
         return 0;
     }
 

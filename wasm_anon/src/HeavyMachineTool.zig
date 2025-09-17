@@ -40,11 +40,22 @@ fn simple_symbol(allocator: std.mem.Allocator, address: usize) ![]u8 {
 }
 
 // why an Instance instead of a module? why not? why ask?
-pub fn compileInstance(self: *HeavyMachineTool, in: *Instance) !void {
+pub fn compileInstance(self: *HeavyMachineTool, in: *Instance, filter: ?[]const u8) !void {
     const mod = in.mod;
     try mod.mark_exports(); // or already??
     try self.build_longjmp();
     for (0.., mod.funcs_internal) |i, *f| {
+        var selekted = false;
+        if (filter) |fname| {
+            // luring: if not exported it is likely a helper we might need
+            // ta den med ändån.
+            if (f.exported) |ename| {
+                if (!std.mem.eql(u8, fname, ename)) {
+                    continue;
+                }
+                selekted = true;
+            }
+        }
         self.compileFunc(in, i, f) catch |e| switch (e) {
             error.NotImplemented => {
                 if (f.hmt_error == null) {
@@ -57,7 +68,7 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance) !void {
                         }
                     }
                 }
-                continue; // ok, note the error
+                if (selekted) return e else continue; // ok, note the error, unless selekted (NOT OK)
             },
             else => return e,
         };
@@ -181,7 +192,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     // I think FLIR can require all args to be first..
     const mem_base = try ir.arg(.{ .intptr = .quadword });
     const mem_size = try ir.arg(.{ .intptr = .quadword });
-    _ = mem_base;
     _ = mem_size;
     for (0..f.n_params) |i| {
         locals[i] = try ir.arg(specType(f.local_types[i]) orelse return error.NotImplemented);
@@ -248,9 +258,11 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
 
     if (true) {
         if (f.name) |nam| {
-            std.debug.print("FOR \"{s}\":\n", .{nam});
+            std.debug.print("\nFOR \"{s}\":\n", .{nam});
         } else if (f.exported) |nam| {
-            std.debug.print("FOR export \"{s}\":\n", .{nam});
+            std.debug.print("\nFOR export \"{s}\":\n", .{nam});
+        } else {
+            std.debug.print("\nFOR ?????\n", .{});
         }
     }
 
@@ -283,6 +295,19 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const idx = try r.readu();
                 const val = try ir.read_ref(node, locals[idx]); // idempodent if locals[idx] is argument
                 try value_stack.append(gpa, val);
+            },
+            .i32_load => {
+                const alignas = try r.readu();
+                dbg("WAHT IS {}\n", .{alignas});
+                // _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
+                const offset = try r.readu();
+                var addr = value_stack.pop().?;
+                if (offset > 0) {
+                    // WIDE because u33
+                    addr = try ir.ibinop(node, .quadword, .add, addr, try ir.const_uint(offset));
+                }
+                const load = try ir.load(node, false, .{ .intptr = .dword }, mem_base, addr, 0);
+                try value_stack.append(gpa, load);
             },
             .loop => {
                 const typ = try r.blocktype();
@@ -434,7 +459,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     try value_stack.append(gpa, res);
                 }
             },
-            .i32_load => {},
             .call => {
                 const idx = try r.readu();
                 if (idx < in.mod.n_funcs_import) return error.NotImplemented;

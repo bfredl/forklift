@@ -125,7 +125,7 @@ pub fn expr_0(self: *Self, type_ctx: SpecType) !?u16 {
             const scale = try self.maybe_scale() orelse 0;
             try self.t.expect_char(']');
 
-            return try self.ir.load(self.curnode, memtype, addr, idx, scale);
+            return try self.ir.load(self.curnode, true, memtype, addr, idx, scale);
         },
         '~' => { // int to float (vector bcast??)
             self.t.pos += 1;

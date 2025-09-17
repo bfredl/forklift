@@ -72,6 +72,7 @@ vregs: ArrayList(struct { ref: u16, def_node: u16, live_in: u64 = 0, conflicts: 
 // 8-byte slots in stack frame
 nslots: u8 = 0,
 nsave: u8 = 0,
+codegen_has_call: bool = false, // .call remaining after analysis
 ndf: u16 = 0,
 call_clobber_mask: u16 = undefined,
 abi_tag: ABITag = undefined,
@@ -433,12 +434,8 @@ pub fn const_float(self: *Self, node: u16, val: f64) !u16 {
     return self.addInst(node, .{ .tag = .fconst, .op1 = constref, .op2 = NoRef, .spec = sphigh(@intFromEnum(FMode.sd), 0) });
 }
 
-pub fn binop(self: *Self, node: u16, tag: Inst.Tag, op1: u16, op2: u16) !u16 {
-    return self.addInst(node, .{ .tag = tag, .op1 = op1, .op2 = op2 });
-}
-
-pub fn load(self: *Self, node: u16, kind: defs.SpecType, base: u16, idx: u16, scale: u2) !u16 {
-    return self.addInst(node, .{ .tag = .load, .op1 = base, .op2 = idx, .spec = sphigh(scale, kind.into()) });
+pub fn load(self: *Self, node: u16, wide: bool, kind: defs.SpecType, base: u16, idx: u16, scale: u2) !u16 {
+    return self.addInst(node, .{ .tag = .load, .op1 = base, .op2 = idx, .spec = sphigh(scale, kind.into()), .f = .{ .wide = wide } });
 }
 pub fn store(self: *Self, node: u16, kind: defs.SpecType, base: u16, idx: u16, scale: u2, val: u16) !u16 {
     // FUBBIT: all possible instances of fusing should be detected in analysis anyway
@@ -1529,6 +1526,7 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
                     i.mckind = .ipreg;
                     i.mcidx = @intFromEnum(call_info.ret);
                     last_call = call_info;
+                    self.codegen_has_call = true;
                 },
                 .arg => {
                     if (i.mem_type() == .intptr) {

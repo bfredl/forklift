@@ -196,11 +196,13 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
         try cfo.trap();
     }
 
-    try cfo.enter();
+    const stacksize = 8 * @as(i32, self.nslots);
+    const do_prelude = self.n.items.len > 2 or stacksize > 0 or self.codegen_has_call; // PÅ ETT UNGEFÄR
+
+    if (do_prelude) try cfo.enter();
     for (ABI.callee_saved[0..self.nsave]) |reg| {
         try cfo.push(r(reg));
     }
-    const stacksize = 8 * @as(i32, self.nslots);
     if (stacksize > 0) {
         const padding = (-stacksize) & 0xF;
         // print("size: {}, extrasize: {}\n", .{ stacksize, padding });
@@ -628,7 +630,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
         isave -= 1;
         try cfo.pop(r(ABI.callee_saved[isave]));
     }
-    try cfo.leave();
+    if (do_prelude) try cfo.leave();
     try cfo.ret();
 
     if (cfo.code.relocations.items.len > 0) {
