@@ -45,7 +45,7 @@ blkorder: ArrayList(u16) = .empty,
 constvals: ArrayList(u64), // raw data for constants, can contain embedded data
 // This is only used for preds currently, but use it for more stuff??
 refs: ArrayList(u16),
-narg: u16 = 0,
+narg: [2]u16 = .{ 0, 0 },
 
 // free list for blocks. single linked, only use b.items[b_free].pred !
 b_free: u16 = NoRef,
@@ -570,8 +570,9 @@ pub fn addPhi(self: *Self, node: u16, vidx: u16, vspec: u8) !u16 {
 
 pub fn arg(self: *Self, typ: defs.SpecType) !u16 {
     if (self.n.items.len == 0) return error.FLIRError;
-    const inst = try self.addInst(0, .{ .tag = .arg, .op1 = self.narg, .op2 = 0, .spec = typ.into() });
-    self.narg += 1;
+    const counter: u1 = if (typ == .avxval) 1 else 0; // COUNTER FOR SMALL CYLINDRICAL OBJECTS
+    const inst = try self.addInst(0, .{ .tag = .arg, .op1 = self.narg[counter], .op2 = 0, .spec = typ.into() });
+    self.narg[counter] += 1;
     return inst;
 }
 

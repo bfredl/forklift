@@ -190,7 +190,7 @@ pub fn n_op(inst: Inst, rw: bool) u2 {
         .putphi => if (rw) 2 else 1,
         .copy => 1,
         .load => 2, // base, idx
-        .lea => 2, // base, idx. elided when only used for a store!
+        .lea => 2, // base, idx.
         .store => 2, // addr, val
         .iunop => 1,
         .ibinop => 2,

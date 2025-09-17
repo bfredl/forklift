@@ -179,6 +179,10 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     var locals = try gpa.alloc(u16, f.local_types.len);
     var node = try ir.addNode();
     // I think FLIR can require all args to be first..
+    const mem_base = try ir.arg(.{ .intptr = .quadword });
+    const mem_size = try ir.arg(.{ .intptr = .quadword });
+    _ = mem_base;
+    _ = mem_size;
     for (0..f.n_params) |i| {
         locals[i] = try ir.arg(specType(f.local_types[i]) orelse return error.NotImplemented);
     }
@@ -204,7 +208,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     var label_stack: std.ArrayList(struct { c_ip: u32, ir_target: u16, else_target: u16 = FLIR.NoRef, loop: bool, res_var: u16, value_stack_level: usize }) = .empty;
     defer label_stack.deinit(gpa);
 
-    const max_args = 2;
+    const max_args = 4;
     if (f.n_params > max_args) return error.NotImplemented;
 
     var local_types_buf: [max_args]defs.ValType = undefined;
@@ -430,6 +434,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     try value_stack.append(gpa, res);
                 }
             },
+            .i32_load => {},
             .call => {
                 const idx = try r.readu();
                 if (idx < in.mod.n_funcs_import) return error.NotImplemented;
@@ -571,11 +576,12 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     try cfo.lea(.rax, X86Asm.rel(error_exit_target));
     try cfo.movmr(true, b.o(56), .rax);
 
-    // TODO: offset with mem when we start using it
-    const ireg: [max_args]IPReg = .{ .rdi, .rsi };
+    // rdi, rsi kept for memory
+    const ireg: [max_args]IPReg = .{ .rdx, .rcx, .r8, .r9 };
+    try cfo.mov(true, .r10, .rdx);
 
     for (local_types, 0..) |t, i| {
-        const wher: X86Asm.EAddr = X86Asm.a(.rdx).o(@intCast(@sizeOf(defs.StackValue) * i));
+        const wher: X86Asm.EAddr = X86Asm.a(.r10).o(@intCast(@sizeOf(defs.StackValue) * i));
         switch (t) {
             .i32, .i64 => try cfo.movrm(t == .i64, ireg[i], wher),
             .f32, .f64 => try cfo.vmovurm(if (t == .f64) .sd else .ss, @intCast(i), wher),
