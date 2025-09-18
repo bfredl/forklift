@@ -453,8 +453,9 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                             const dst = i.ipreg() orelse return error.SpillError;
                             switch (size) {
                                 .byte => {
-                                    try cfo.movrm_byte(false, r(dst), eaddr);
+                                    try cfo.movrm_byte(i.f.wide, r(dst), eaddr);
                                 },
+                                .dword => try cfo.movrm(if (!i.f.wide) false else return error.NotImplemented, r(dst), eaddr),
                                 .quadword => try cfo.movrm(true, r(dst), eaddr),
                                 else => return error.NotImplemented,
                             }

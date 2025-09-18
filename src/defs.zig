@@ -213,6 +213,22 @@ pub const IntCond = enum(u4) {
             .nb => .b,
         };
     }
+
+    // after peeping "cmp X, Y" into "cmp Y, X"
+    pub fn argswap(self: IntCond) IntCond {
+        return switch (self) {
+            .eq => .eq,
+            .neq => .neq,
+            .gt => .lt,
+            .lt => .gt,
+            .ge => .le,
+            .le => .ge,
+            .a => .b,
+            .b => .a,
+            .na => .nb,
+            .nb => .na,
+        };
+    }
 };
 
 pub const MemoryIntrinsic = enum(u8) {

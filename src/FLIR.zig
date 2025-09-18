@@ -505,7 +505,7 @@ pub fn icmp(self: *Self, node: u16, size: defs.ISize, cond: IntCond, op1: u16, o
 
 pub fn icmpset(self: *Self, node: u16, size: defs.ISize, cond: IntCond, op1: u16, op2: u16) !u16 {
     if (self.construction_peep) {
-        if (self.peep_icmp(cond, try wsize(size), op1, op2)) |res| {
+        if (self.peep_icmp_const(cond, try wsize(size), op1, op2)) |res| {
             return self.const_uint(if (res) 1 else 0);
         }
     }
@@ -808,7 +808,7 @@ pub fn const_fold_legalize(self: *Self) !void {
         while (it.next()) |item| {
             const i = item.i;
             if (i.tag == .icmp) {
-                if (self.peep_icmp(i.intcond(), i.f.wide, i.op1, i.op2)) |res| {
+                if (self.peep_icmp_const(i.intcond(), i.f.wide, i.op1, i.op2)) |res| {
                     const deleted = if (res) n.s[0] else n.s[1];
                     if (res) n.s[0] = n.s[1];
                     n.s[1] = 0;
@@ -826,13 +826,25 @@ pub fn const_fold_legalize(self: *Self) !void {
                             }
                         }
                     }
+                } else {
+                    self.peep_icmp_swap(i);
                 }
+            } else if (i.tag == .icmpset) {
+                self.peep_icmp_swap(i);
             }
         }
     }
 }
 
-pub fn peep_icmp(self: *Self, cond: IntCond, wide: bool, op1: u16, op2: u16) ?bool {
+// assumes double const already folded!
+fn peep_icmp_swap(self: *Self, i: *Inst) void {
+    if (self.constval(i.op1)) |_| {
+        std.mem.swap(u16, &i.op1, &i.op2);
+        i.spec = i.intcond().argswap().off();
+    }
+}
+
+pub fn peep_icmp_const(self: *Self, cond: IntCond, wide: bool, op1: u16, op2: u16) ?bool {
     if (self.constval(op1)) |lhs| {
         if (self.constval(op2)) |rhs| {
             // TODO: haha, 64-bit signed comp??
