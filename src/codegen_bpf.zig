@@ -308,7 +308,7 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
                         try movmcs(mod, dest, src);
                     }
                 },
-                .load => {
+                .load, .load_signext => {
                     // TODO: spill spall supllit?
                     const addr = self.iref(i.op1).?.*;
                     const off = off_val: {

@@ -125,7 +125,7 @@ pub fn expr_0(self: *Self, type_ctx: SpecType) !?u16 {
             const scale = try self.maybe_scale() orelse 0;
             try self.t.expect_char(']');
 
-            return try self.ir.load(self.curnode, true, memtype, addr, idx, scale);
+            return try self.ir.load(self.curnode, true, false, memtype, addr, idx, scale);
         },
         '~' => { // int to float (vector bcast??)
             self.t.pos += 1;
@@ -581,7 +581,7 @@ fn do_parse(self: *Self) !bool {
     try self.t.expect_char('(');
     while (self.t.keyword()) |name| {
         const item = try nonexisting(&self.vars, name, "argument");
-        const val = try self.ir.arg();
+        const val = try self.ir.arg(.{ .intptr = .quadword });
         item.* = .{ .ref = val, .is_mut = false };
         if (self.t.nonws() == ',') {
             self.t.pos += 1;

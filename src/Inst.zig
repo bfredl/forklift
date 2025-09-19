@@ -11,6 +11,7 @@ pub const Tag = enum(u8) {
     putphi,
     copy,
     load,
+    load_signext,
     lea,
     store,
     iunop,
@@ -151,7 +152,7 @@ pub fn res_type(inst: Inst) ?defs.ValType {
         .putphi => null, // stated in the phi instruction
         .alloc => .intptr, // the type of .alloc is a pointer to it
         .copy => inst.mem_type(),
-        .load => inst.mem_type(),
+        .load, .load_signext => inst.mem_type(),
         .lea => .intptr, // Lea? Who's Lea??
         .store => null,
         .iunop => .intptr,
@@ -189,7 +190,7 @@ pub fn n_op(inst: Inst, rw: bool) u2 {
         .phi => 0,
         .putphi => if (rw) 2 else 1,
         .copy => 1,
-        .load => 2, // base, idx
+        .load, .load_signext => 2, // base, idx
         .lea => 2, // base, idx.
         .store => 2, // addr, val
         .iunop => 1,

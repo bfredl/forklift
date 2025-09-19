@@ -296,19 +296,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const val = try ir.read_ref(node, locals[idx]); // idempodent if locals[idx] is argument
                 try value_stack.append(gpa, val);
             },
-            .i32_load => {
-                const alignas = try r.readu();
-                dbg("WAHT IS {}\n", .{alignas});
-                // _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
-                const offset = try r.readu();
-                var addr = value_stack.pop().?;
-                if (offset > 0) {
-                    // WIDE because u33
-                    addr = try ir.ibinop(node, .quadword, .add, addr, try ir.const_uint(offset));
-                }
-                const load = try ir.load(node, false, .{ .intptr = .dword }, mem_base, addr, 0);
-                try value_stack.append(gpa, load);
-            },
             .loop => {
                 const typ = try r.blocktype();
                 const n_args, const n_results = try typ.arity(in.mod);
@@ -470,6 +457,34 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const off = self.mod.get_func_off(obj) orelse return error.TypeError;
                 const callwhat = try ir.const_uint(off);
                 _ = try ir.call(node, .near, callwhat, 0);
+            },
+            .i32_load,
+            .i64_load,
+
+            .i32_load8_s,
+            .i32_load8_u,
+            .i32_load16_s,
+            .i32_load16_u,
+            .i64_load8_s,
+            .i64_load8_u,
+            .i64_load16_s,
+            .i64_load16_u,
+            .i64_load32_s,
+            .i64_load32_u,
+            => {
+                const alignas = try r.readu();
+                dbg("WAHT IS {}\n", .{alignas});
+                // _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
+                const offset = try r.readu();
+                var addr = value_stack.pop().?;
+                if (offset > 0) {
+                    // WIDE because u33
+                    addr = try ir.ibinop(node, .quadword, .add, addr, try ir.const_uint(offset));
+                }
+                const wide = inst == .i64_load or @intFromEnum(inst) >= 30;
+                const memsize, const signext = defs.memsize(inst);
+                const load = try ir.load(node, wide, signext, .{ .intptr = memsize }, mem_base, addr, 0);
+                try value_stack.append(gpa, load);
             },
             // TODO: this leads to some bloat - some things like binops could be done as a bulk
             inline else => |tag| {

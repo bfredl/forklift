@@ -417,7 +417,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     } else {
                         const dst = i.ipreg() orelse return error.SpillError;
                         try cfo.set(r(dst), xcond orelse return error.FLIRError);
-                        try cfo.movzx(r(dst), r(dst)); // SILLY!
+                        try cfo.movzx_byte(r(dst), r(dst)); // SILLY!
                     }
                 },
                 // parallel move family
@@ -444,20 +444,18 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                         }
                     }
                 },
-                .load => {
+                .load, .load_signext => {
                     const eaddr = try get_eaddr_load_or_lea(self, i.*);
                     const mem_type = i.mem_type();
                     switch (mem_type) {
                         .intptr => |size| {
                             // tbh, loading from memory into a spill slot is bit stupid
                             const dst = i.ipreg() orelse return error.SpillError;
-                            switch (size) {
-                                .byte => {
-                                    try cfo.movrm_byte(i.f.wide, r(dst), eaddr);
-                                },
-                                .dword => try cfo.movrm(if (!i.f.wide) false else return error.NotImplemented, r(dst), eaddr),
-                                .quadword => try cfo.movrm(true, r(dst), eaddr),
-                                else => return error.NotImplemented,
+                            if (i.tag == .load_signext) {
+                                try cfo.movrm_sx(i.f.wide, r(dst), eaddr, size);
+                            } else {
+                                // always zeroextends to 64-bit, with no extra cost, i.f.wide ignored + cringe + didn't ask
+                                try cfo.movrm_zx(r(dst), eaddr, size);
                             }
                         },
                         .avxval => |fmode| {

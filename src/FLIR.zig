@@ -434,8 +434,8 @@ pub fn const_float(self: *Self, node: u16, val: f64) !u16 {
     return self.addInst(node, .{ .tag = .fconst, .op1 = constref, .op2 = NoRef, .spec = sphigh(@intFromEnum(FMode.sd), 0) });
 }
 
-pub fn load(self: *Self, node: u16, wide: bool, kind: defs.SpecType, base: u16, idx: u16, scale: u2) !u16 {
-    return self.addInst(node, .{ .tag = .load, .op1 = base, .op2 = idx, .spec = sphigh(scale, kind.into()), .f = .{ .wide = wide } });
+pub fn load(self: *Self, node: u16, wide: bool, signext: bool, kind: defs.SpecType, base: u16, idx: u16, scale: u2) !u16 {
+    return self.addInst(node, .{ .tag = if (signext) .load_signext else .load, .op1 = base, .op2 = idx, .spec = sphigh(scale, kind.into()), .f = .{ .wide = wide } });
 }
 pub fn store(self: *Self, node: u16, kind: defs.SpecType, base: u16, idx: u16, scale: u2, val: u16) !u16 {
     // FUBBIT: all possible instances of fusing should be detected in analysis anyway

@@ -284,7 +284,7 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !LightningTrac
                 _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
                 const offset = try r.readu();
                 // TODO: baaaunds checking
-                try cfo.movrm_byte(false, dst, X86Asm.bi(mem_start, dst).o(@intCast(offset)));
+                try cfo.movrm_zx(dst, X86Asm.bi(mem_start, dst).o(@intCast(offset)), .byte);
                 self.virt_wide[self.num_tracked - 1] = true;
             },
             .i64_store => {

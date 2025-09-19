@@ -629,19 +629,29 @@ pub fn movrm(self: *Self, w: bool, dst: IPReg, src: EAddr) !void {
     try self.op_rm(0x8b, w, dst, src); // MOV reg, \rm
 }
 
-// FIXME: all IPReg ops should take size!
-pub fn movrm_byte(self: *Self, w: bool, dst: IPReg, src: EAddr) !void {
+// always zero extends to 64-bit, no w flag needed
+// uses MOV automatically if it can encode the operation
+pub fn movrm_zx(self: *Self, dst: IPReg, src: EAddr, size: ISize) !void {
+    // 32-bit MOV is implicitly zero extended to 64-bit
+    if (size == .dword or size == .quadword) return self.movrm(size == .quadword, dst, src);
     try self.new_inst(@returnAddress());
-    const reg = dst;
-    const ea = src;
-    try self.rex_wrxb(w, reg.ext(), ea.x(), ea.b());
-    // MOVZX. TODO: indicate zero vs sign explicitly!
+    try self.rex_wrxb(false, dst.ext(), src.x(), src.b());
     try self.wb(0x0F);
     try self.wb(0xB6);
-    try self.modRmEA(reg.lowId(), ea);
+    try self.modRmEA(dst.lowId(), src);
 }
 
-pub fn movzx(self: *Self, dst: IPReg, src: IPReg) !void {
+// uses MOV automatically if no sign extension was needed
+pub fn movrm_sx(self: *Self, w: bool, dst: IPReg, src: EAddr, size: ISize) !void {
+    if (size == .quadword and !w) return error.Invalid; // DO NOT DO THAT
+    if (size == .quadword or (size == .dword and !w)) return self.movrm(size == .quadword, dst, src);
+    try self.new_inst(@returnAddress());
+    try self.rex_wrxb(w, dst.ext(), src.x(), src.b());
+    try self.op_sx(size);
+    try self.modRmEA(dst.lowId(), src);
+}
+
+pub fn movzx_byte(self: *Self, dst: IPReg, src: IPReg) !void {
     try self.new_inst(@returnAddress());
     try self.rex_wrxb_force(false, dst.ext(), false, src.ext(), src.highlike());
     try self.wb(0x0F);
@@ -653,6 +663,11 @@ pub fn movsx(self: *Self, w: bool, dst: IPReg, src: IPReg, src_size: ISize) !voi
     try self.new_inst(@returnAddress());
     const highlike_byte = src_size == .byte and src.highlike();
     try self.rex_wrxb_force(w, dst.ext(), false, src.ext(), highlike_byte);
+    try self.op_sx(src_size);
+    try self.modRm(0b11, dst.lowId(), src.lowId());
+}
+
+pub fn op_sx(self: *Self, src_size: ISize) !void {
     switch (src_size) {
         .byte => {
             try self.wb(0x0F);
@@ -665,7 +680,6 @@ pub fn movsx(self: *Self, w: bool, dst: IPReg, src: IPReg, src_size: ISize) !voi
         .dword => try self.wb(0x63),
         else => return error.Invalid,
     }
-    try self.modRm(0b11, dst.lowId(), src.lowId());
 }
 
 pub fn movmr(self: *Self, w: bool, dst: EAddr, src: IPReg) !void {

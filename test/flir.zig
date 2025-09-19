@@ -53,8 +53,8 @@ test "diamond cfg" {
     defer self.deinit();
 
     const start = try self.addNode();
-    const arg1 = try self.arg();
-    const arg2 = try self.arg();
+    const arg1 = try self.arg(.{ .intptr = .quadword });
+    const arg2 = try self.arg(.{ .intptr = .quadword });
     const v = try self.variable(.{ .intptr = .quadword });
 
     // const const_0 = try self.const_int(0);

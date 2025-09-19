@@ -342,6 +342,38 @@ pub fn memtype(comptime op: OpCode) type {
     };
 }
 
+// TODO: these two could go into a fancy reader.readInstrucion() union think
+pub fn memsize_load(op: OpCode) struct { @import("forklift").defs.ISize, bool } {
+    return switch (op) {
+        .i32_load => .{ .dword, false },
+        .i64_load => .{ .quadword, false },
+        .i32_load8_s => .{ .byte, true },
+        .i32_load8_u => .{ .byte, false },
+        .i32_load16_s => .{ .word, true },
+        .i32_load16_u => .{ .word, false },
+        .i64_load8_s => .{ .byte, true },
+        .i64_load8_u => .{ .byte, false },
+        .i64_load16_s => .{ .word, true },
+        .i64_load16_u => .{ .word, false },
+        .i64_load32_s => .{ .dword, true },
+        .i64_load32_u => .{ .dword, false },
+        else => @panic("only valid for integer loads:D"),
+    };
+}
+
+pub fn memsize_store(op: OpCode) struct { @import("forklift").defs.ISize, bool } {
+    return switch (op) {
+        .i32_store => .dword,
+        .i64_store => .quadword,
+        .i32_store8_u => .byte,
+        .i32_store16_u => .word,
+        .i64_store8_u => .byte,
+        .i64_store16_u => .word,
+        .i64_store32_u => .dword,
+        else => @panic("only valid for integer stores:D"),
+    };
+}
+
 pub const Category = enum {
     i32_unop,
     i32_binop,
