@@ -460,7 +460,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             },
             .i32_load,
             .i64_load,
-
             .i32_load8_s,
             .i32_load8_u,
             .i32_load16_s,
@@ -482,9 +481,30 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     addr = try ir.ibinop(node, .quadword, .add, addr, try ir.const_uint(offset));
                 }
                 const wide = inst == .i64_load or @intFromEnum(inst) >= 30;
-                const memsize, const signext = defs.memsize(inst);
+                const memsize, const signext = defs.memsize_load(inst);
                 const load = try ir.load(node, wide, signext, .{ .intptr = memsize }, mem_base, addr, 0);
                 try value_stack.append(gpa, load);
+            },
+            .i32_store,
+            .i64_store,
+            .i32_store8,
+            .i32_store16,
+            .i64_store8,
+            .i64_store16,
+            .i64_store32,
+            => {
+                const alignas = try r.readu();
+                dbg("WAHT IS {}\n", .{alignas});
+                // _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
+                const offset = try r.readu();
+                const val = value_stack.pop().?;
+                var addr = value_stack.pop().?;
+                if (offset > 0) {
+                    // WIDE because u33
+                    addr = try ir.ibinop(node, .quadword, .add, addr, try ir.const_uint(offset));
+                }
+                const memsize = defs.memsize_store(inst);
+                _ = try ir.store(node, .{ .intptr = memsize }, mem_base, addr, 0, val);
             },
             // TODO: this leads to some bloat - some things like binops could be done as a bulk
             inline else => |tag| {

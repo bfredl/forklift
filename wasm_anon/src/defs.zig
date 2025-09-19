@@ -361,15 +361,15 @@ pub fn memsize_load(op: OpCode) struct { @import("forklift").defs.ISize, bool } 
     };
 }
 
-pub fn memsize_store(op: OpCode) struct { @import("forklift").defs.ISize, bool } {
+pub fn memsize_store(op: OpCode) @import("forklift").defs.ISize {
     return switch (op) {
         .i32_store => .dword,
         .i64_store => .quadword,
-        .i32_store8_u => .byte,
-        .i32_store16_u => .word,
-        .i64_store8_u => .byte,
-        .i64_store16_u => .word,
-        .i64_store32_u => .dword,
+        .i32_store8 => .byte,
+        .i32_store16 => .word,
+        .i64_store8 => .byte,
+        .i64_store16 => .word,
+        .i64_store32 => .dword,
         else => @panic("only valid for integer stores:D"),
     };
 }
