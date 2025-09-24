@@ -19,6 +19,11 @@ pub fn wb(self: *Self, opcode: u8) !void {
     try self.code.buf_append(opcode);
 }
 
+pub fn wb2(self: *Self, byte1: u8, byte2: u8) !void {
+    try self.wb(byte1);
+    try self.wb(byte2);
+}
+
 pub fn wbi(self: *Self, imm: i8) !void {
     try self.wb(@as(u8, @bitCast(imm)));
 }
@@ -624,6 +629,15 @@ pub inline fn op_rm(self: *Self, opcode: u8, w: bool, reg: IPReg, ea: EAddr) !vo
     try self.modRmEA(reg.lowId(), ea);
 }
 
+// Safe before any self.movrm* or self.movmr* instruction (TODO: verify that:p)
+pub fn fs_select(self: *Self) !void {
+    try self.wb(0x64);
+}
+
+pub fn gs_select(self: *Self) !void {
+    try self.wb(0x65);
+}
+
 // TODO: not sure how best combine wide with memsize. like sign-extend into 8-bytes always "works" but might be superfluous
 pub fn movrm(self: *Self, w: bool, dst: IPReg, src: EAddr) !void {
     try self.op_rm(0x8b, w, dst, src); // MOV reg, \rm
@@ -669,14 +683,8 @@ pub fn movsx(self: *Self, w: bool, dst: IPReg, src: IPReg, src_size: ISize) !voi
 
 pub fn op_sx(self: *Self, src_size: ISize) !void {
     switch (src_size) {
-        .byte => {
-            try self.wb(0x0F);
-            try self.wb(0xBE);
-        },
-        .word => {
-            try self.wb(0x0F);
-            try self.wb(0xBF);
-        },
+        .byte => try self.wb2(0x0F, 0xBE),
+        .word => try self.wb2(0x0F, 0xBF),
         .dword => try self.wb(0x63),
         else => return error.Invalid,
     }
@@ -686,15 +694,16 @@ pub fn movmr(self: *Self, w: bool, dst: EAddr, src: IPReg) !void {
     try self.op_rm(0x89, w, src, dst); // MOV \rm, reg
 }
 
-// FIXME: all IPReg ops should take size!
-pub fn movmr_byte(self: *Self, dst: EAddr, src: IPReg) !void {
-    const ea = dst;
-    const reg = src;
+pub fn movmr_size(self: *Self, dst: EAddr, src: IPReg, size: ISize) !void {
     try self.new_inst(@returnAddress());
-    // REX prefix is only needed for r4-r7 to avoid AH/BH/CD/DH
-    try self.rex_wrxb_force(false, reg.ext(), ea.x(), ea.b(), reg.highlike());
-    try self.wb(0x88);
-    try self.modRmEA(reg.lowId(), ea);
+    // REX prefix should be forced for r4-r7 to avoid AH/BH/CD/DH
+    try self.rex_wrxb_force(size == .quadword, src.ext(), dst.x(), dst.b(), size == .byte and src.highlike());
+    switch (size) {
+        .quadword, .dword => try self.wb(0x89),
+        .word => try self.wb2(0x66, 0x89),
+        .byte => try self.wb(0x88),
+    }
+    try self.modRmEA(src.lowId(), dst);
 }
 
 pub fn xchg(self: *Self, w: bool, lhs: IPReg, rhs: IPReg) !void {

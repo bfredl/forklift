@@ -481,15 +481,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                         .intptr => |size| {
                             const val = self.ipval(i.op2) orelse return error.FLIRError;
                             switch (val) {
-                                .ipreg => |reg| {
-                                    switch (size) {
-                                        .byte => {
-                                            try cfo.movmr_byte(eaddr, r(reg));
-                                        },
-                                        .quadword => try cfo.movmr(true, eaddr, r(reg)),
-                                        else => return error.NotImplemented,
-                                    }
-                                },
+                                .ipreg => |reg| try cfo.movmr_size(eaddr, r(reg), size),
                                 .constval => |c| {
                                     switch (size) {
                                         .byte => {

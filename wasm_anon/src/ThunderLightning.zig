@@ -309,7 +309,7 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !LightningTrac
                 const dstaddr = X86Asm.bi(mem_start, dst).o(@intCast(offset));
                 try switch (src) {
                     .imm => |val| cfo.movmi_byte(dstaddr, @truncate(val.u32())),
-                    .reg => |reg| cfo.movmr_byte(dstaddr, reg),
+                    .reg => |reg| cfo.movmr_size(dstaddr, reg, .byte),
                     .local, .on_stack => unreachable, // TODO: separate type for reg/imm only?
                 };
             },

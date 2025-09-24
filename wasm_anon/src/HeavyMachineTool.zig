@@ -25,6 +25,12 @@ pub fn init(allocator: std.mem.Allocator) !HeavyMachineTool {
     };
 }
 
+pub fn reinit(self: *HeavyMachineTool, allocator: std.mem.Allocator) !void {
+    // TODO: besser
+    self.mod.deinit_mem();
+    self.mod = try .init(allocator);
+}
+
 fn simple_symbol(allocator: std.mem.Allocator, address: usize) ![]u8 {
     const debug_info = try std.debug.getSelfDebugInfo();
     const module = try debug_info.getModuleForAddress(address);

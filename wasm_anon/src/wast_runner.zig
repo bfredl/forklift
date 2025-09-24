@@ -106,7 +106,7 @@ pub fn main() !u8 {
             in = try .init(&mod, &imports);
 
             if (machine_tool) {
-                if (did_mod) return error.NotImplemented; // need to reinit HMT for new module.
+                if (did_mod) try tool.reinit(allocator);
                 try tool.compileInstance(&in, p.args.filter);
             }
 
