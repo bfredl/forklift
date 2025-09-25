@@ -107,7 +107,9 @@ pub fn main() !u8 {
 
             if (machine_tool) {
                 if (did_mod) try tool.reinit(allocator);
-                try tool.compileInstance(&in, p.args.filter);
+                if (mod.funcs_internal.len > 0) {
+                    try tool.compileInstance(&in, p.args.filter);
+                }
             }
 
             did_mod = true;

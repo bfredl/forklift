@@ -246,10 +246,6 @@ pub fn print_inst(self: *FLIR, ref: u16, i: *FLIR.Inst) void {
     if (i.tag == .ibinop) name = "i";
     print("  %{} {c} {s}", .{ fake_ref(self, ref), chr, name });
 
-    if (i.tag == .variable or i.tag == .ret) {
-        print(" {s}", .{@tagName(i.mem_type())});
-    }
-
     if (i.tag == .vmath) {
         print(".{s}", .{@tagName(i.vmathop())});
     } else if (i.tag == .vcmpf) {
@@ -267,6 +263,17 @@ pub fn print_inst(self: *FLIR, ref: u16, i: *FLIR.Inst) void {
     } else if (i.tag == .putphi) {
         print(" %{} <-", .{fake_ref(self, i.op2)});
     }
+    if (i.f.wide) {
+        print(" wide", .{});
+    }
+
+    if (i.tag == .load or i.tag == .load_signext or i.tag == .store or i.tag == .variable or i.tag == .ret) {
+        switch (i.mem_type()) {
+            .intptr => |size| print(" {s}", .{@tagName(size)}),
+            .avxval => |kind| print(" {s}", .{@tagName(kind)}),
+        }
+    }
+
     const nop = i.n_op(false);
     if (nop > 0) {
         print_op(self, " ", i.f.kill_op1, i.op1);

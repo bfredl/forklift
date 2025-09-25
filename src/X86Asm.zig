@@ -651,7 +651,7 @@ pub fn movrm_zx(self: *Self, dst: IPReg, src: EAddr, size: ISize) !void {
     try self.new_inst(@returnAddress());
     try self.rex_wrxb(false, dst.ext(), src.x(), src.b());
     try self.wb(0x0F);
-    try self.wb(0xB6);
+    try self.wb(if (size == .word) 0xB7 else 0xB6);
     try self.modRmEA(dst.lowId(), src);
 }
 

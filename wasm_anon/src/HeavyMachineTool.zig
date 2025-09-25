@@ -49,7 +49,9 @@ fn simple_symbol(allocator: std.mem.Allocator, address: usize) ![]u8 {
 pub fn compileInstance(self: *HeavyMachineTool, in: *Instance, filter: ?[]const u8) !void {
     const mod = in.mod;
     try mod.mark_exports(); // or already??
+    var any_compiled = false;
     try self.build_longjmp();
+    const very_verbose = filter != null; // SILLY GOOSE
     for (0.., mod.funcs_internal) |i, *f| {
         var selekted = false;
         if (filter) |fname| {
@@ -62,7 +64,7 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance, filter: ?[]const 
                 selekted = true;
             }
         }
-        self.compileFunc(in, i, f) catch |e| switch (e) {
+        self.compileFunc(in, i, f, very_verbose) catch |e| switch (e) {
             error.NotImplemented => {
                 if (f.hmt_error == null) {
                     f.hmt_error = "??UNKNOWN";
@@ -78,8 +80,9 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance, filter: ?[]const 
             },
             else => return e,
         };
+        any_compiled = true;
     }
-    try X86Asm.dbg_nasm(&.{ .code = &self.mod.code }, in.mod.allocator);
+    if (any_compiled and very_verbose) try X86Asm.dbg_nasm(&.{ .code = &self.mod.code }, in.mod.allocator);
     try self.mod.code.finalize();
     longjmp_f = try self.mod.get_func_ptr_id(self.longjmp_func, @TypeOf(longjmp_f));
 
@@ -187,7 +190,7 @@ pub fn specType(typ: defs.ValType) ?forklift.defs.SpecType {
     };
 }
 
-pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Function) !void {
+pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Function, verbose: bool) !void {
     _ = id;
     const ir = &self.flir;
     const gpa = in.mod.allocator;
@@ -198,7 +201,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     // I think FLIR can require all args to be first..
     const mem_base = try ir.arg(.{ .intptr = .quadword });
     const mem_size = try ir.arg(.{ .intptr = .quadword });
-    _ = mem_size;
     for (0..f.n_params) |i| {
         locals[i] = try ir.arg(specType(f.local_types[i]) orelse return error.NotImplemented);
     }
@@ -262,7 +264,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
 
     errdefer ir.debug_print(); // show what we got when it ends
 
-    if (true) {
+    if (verbose) {
         if (f.name) |nam| {
             std.debug.print("\nFOR \"{s}\":\n", .{nam});
         } else if (f.exported) |nam| {
@@ -478,15 +480,14 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             .i64_load32_u,
             => {
                 const alignas = try r.readu();
-                dbg("WAHT IS {}\n", .{alignas});
-                // _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
+                _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
                 const offset = try r.readu();
                 var addr = value_stack.pop().?;
                 if (offset > 0) {
                     // WIDE because u33
                     addr = try ir.ibinop(node, .quadword, .add, addr, try ir.const_uint(offset));
                 }
-                const wide = inst == .i64_load or @intFromEnum(inst) >= 30;
+                const wide = inst == .i64_load or @intFromEnum(inst) >= 0x30;
                 const memsize, const signext = defs.memsize_load(inst);
                 const load = try ir.load(node, wide, signext, .{ .intptr = memsize }, mem_base, addr, 0);
                 try value_stack.append(gpa, load);
@@ -500,8 +501,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             .i64_store32,
             => {
                 const alignas = try r.readu();
-                dbg("WAHT IS {}\n", .{alignas});
-                // _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
+                _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
                 const offset = try r.readu();
                 const val = value_stack.pop().?;
                 var addr = value_stack.pop().?;
@@ -511,6 +511,13 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 }
                 const memsize = defs.memsize_store(inst);
                 _ = try ir.store(node, .{ .intptr = memsize }, mem_base, addr, 0, val);
+            },
+            .memory_size => {
+                if (try r.readByte() != 0) return error.InvalidFormat;
+                // const size: i32 = @intCast(in.mem.items.len / 0x10000);
+                // TODO: if we use guard pages, mem_size=ir.arg() could just be the page count
+                const calc = try ir.ibinop(node, .dword, .shr, mem_size, try ir.const_uint(16));
+                try value_stack.append(gpa, calc);
             },
             // TODO: this leads to some bloat - some things like binops could be done as a bulk
             inline else => |tag| {
@@ -596,11 +603,11 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             },
         }
     }
-    ir.debug_print();
+    if (verbose) ir.debug_print();
 
     try ir.test_analysis(FLIR.X86ABI, true);
-    ir.print_intervals();
-    ir.debug_print();
+    if (verbose) ir.print_intervals();
+    if (verbose) ir.debug_print();
 
     // TODO: abstraction
     const target = try forklift.codegen_x86_64(ir, &self.mod.code, false);
