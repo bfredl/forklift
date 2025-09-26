@@ -147,7 +147,7 @@ pub fn check_vregs(self: *FLIR) !void {
                     }
                 }
             }
-            print("\n", .{});
+            // print("\n", .{});
         }
     }
     if (err) return error.DoYouEvenLoopAnalysis;

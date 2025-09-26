@@ -118,7 +118,7 @@ pub fn build(b: *std.Build) void {
             .{ "br_if", 0, 39 },
             // .{ "loop", 0, null },
             .{ "conversions", 6, null },
-            .{ "memory", 0, null },
+            .{ "memory", 0, 1 },
             .{ "memory_copy", 0, null },
             .{ "memory_fill", 0, null },
             .{ "load", 0, null },
