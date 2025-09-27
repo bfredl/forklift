@@ -594,6 +594,23 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                             try value_stack.append(gpa, res);
                         }
                     },
+                    .f32_binop, .f64_binop => {
+                        const rhs = value_stack.pop().?;
+                        const lhs = value_stack.pop().?;
+                        const tag_op: defs.FBinOp = @enumFromInt(unwide(inst, category == .f64_binop, .f32_add, .f64_add));
+                        const theop: forklift.X86Asm.VMathOp = switch (tag_op) {
+                            .add => .add,
+                            .sub => .sub,
+                            .mul => .mul,
+                            .div => .div,
+                            .min => .min,
+                            .max => .max,
+                            .copysign => return error.NotImplemented,
+                        };
+                        const fmode: forklift.X86Asm.FMode = if (category == .f64_binop) .sd else .ss;
+                        const val = try ir.vmath(node, theop, fmode, lhs, rhs);
+                        try value_stack.append(gpa, val);
+                    },
                     else => |cat| {
                         dbg("inst {s} as {s} TBD, aborting!\n", .{ @tagName(tag), @tagName(cat) });
                         f.hmt_error = @tagName(tag);

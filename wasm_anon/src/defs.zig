@@ -312,6 +312,16 @@ pub const RelOp = enum(u8) {
     ge_u,
 };
 
+pub const FBinOp = enum(u8) {
+    add,
+    sub,
+    mul,
+    div,
+    min,
+    max,
+    copysign,
+};
+
 pub fn memtype(comptime op: OpCode) type {
     return switch (op) {
         .i32_load => i32,
