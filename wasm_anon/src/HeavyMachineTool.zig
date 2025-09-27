@@ -280,32 +280,9 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
 
     while (true) {
         const pos = r.pos;
-        const inst = try r.readOpCode();
+        const inst = try r.readInst();
         switch (inst) {
-            .drop => {
-                _ = value_stack.pop().?;
-            },
-            .i32_const => {
-                const val = try r.readLeb(i32);
-                try value_stack.append(gpa, try ir.const_uint(@bitCast(@as(i64, val))));
-            },
-            .local_set => {
-                const idx = try r.readu();
-                const src = value_stack.pop().?;
-                try ir.putvar(node, locals[idx], src);
-            },
-            .local_tee => {
-                const idx = try r.readu();
-                const src = value_stack.items[value_stack.items.len - 1];
-                try ir.putvar(node, locals[idx], src);
-            },
-            .local_get => {
-                const idx = try r.readu();
-                const val = try ir.read_ref(node, locals[idx]); // idempodent if locals[idx] is argument
-                try value_stack.append(gpa, val);
-            },
-            .loop => {
-                const typ = try r.blocktype();
+            .loop => |typ| {
                 const n_args, const n_results = try typ.arity(in.mod);
                 if (n_args != 0 or n_results != 0) return error.NotImplemented;
                 c_ip += 1;
@@ -313,8 +290,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 node = entry;
                 try label_stack.append(gpa, .{ .c_ip = c_ip, .ir_target = entry, .loop = true, .res_var = FLIR.NoRef, .value_stack_level = value_stack.items.len });
             },
-            .block => {
-                const typ = try r.blocktype();
+            .block => |typ| {
                 const n_args, const n_results = try typ.arity(in.mod);
                 if (n_args > 0 or n_results > 1) return error.NotImplemented;
                 c_ip += 1;
@@ -326,8 +302,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 // TODO: with n_args, value_stack_level is without the args
                 try label_stack.append(gpa, .{ .c_ip = c_ip, .ir_target = exit, .loop = false, .res_var = res_var, .value_stack_level = value_stack.items.len });
             },
-            .if_ => {
-                const typ = try r.blocktype();
+            .if_ => |typ| {
                 const n_args, const n_results = try typ.arity(in.mod);
                 if (n_args > 0 or n_results > 1) return error.NotImplemented;
 
@@ -354,6 +329,99 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 try ir.addLink(node, 0, else_);
                 try ir.addLink(node, 1, then); // branch taken
                 node = then;
+            },
+            .i32_binop, .i64_binop => |tag| {
+                const rhs = value_stack.pop().?;
+                const lhs = value_stack.pop().?;
+                const wide = inst == .i64_binop;
+                // still bloated but preparing for category-wise debloat
+                const flir_op: FLIR.IntBinOp = switch (tag) {
+                    .add => .add,
+                    .sub => .sub,
+                    .mul => .mul,
+                    .div_s => .sdiv,
+                    .div_u => .udiv,
+                    .rem_s => .srem,
+                    .rem_u => .urem,
+                    .@"and" => .@"and",
+                    .@"or" => .@"or",
+                    .xor => .xor,
+                    .shl => .shl,
+                    .shr_s => .sar,
+                    .shr_u => .shr,
+                    .rotl => .rotl,
+                    .rotr => .rotr,
+                };
+                const res = try ir.ibinop(node, iSize(wide), flir_op, lhs, rhs);
+                try value_stack.append(gpa, res);
+            },
+            .i32_relop, .i64_relop => |tag| {
+                const rhs = value_stack.pop().?;
+                const lhs = value_stack.pop().?;
+                const wide = inst == .i64_relop;
+                const cmpop: FLIR.IntCond = switch (tag) {
+                    .eq => .eq,
+                    .ne => .neq,
+                    .lt_s => .lt,
+                    .le_s => .le,
+                    .gt_s => .gt,
+                    .ge_s => .ge,
+                    .lt_u => .b,
+                    .le_u => .na,
+                    .gt_u => .a,
+                    .ge_u => .nb,
+                };
+
+                const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
+                // NB: semi-copy in i32_eqz
+                if (peekinst == .br_if or peekinst == .if_) {
+                    _ = try ir.icmp(node, iSize(wide), cmpop, lhs, rhs);
+                    cond_pending = true;
+                } else {
+                    const res = try ir.icmpset(node, iSize(wide), cmpop, lhs, rhs);
+                    try value_stack.append(gpa, res);
+                }
+            },
+
+            .i32_unop, .i64_unop => |tag| {
+                const src = value_stack.pop().?;
+                const flir_op: FLIR.IntUnOp = switch (tag) {
+                    .clz => .clz,
+                    .ctz => .ctz,
+                    .popcount => .popcount,
+                };
+                const res = try ir.iunop(node, iSize(inst == .i64_unop), flir_op, src);
+                try value_stack.append(gpa, res);
+            },
+            .other__fixme => {},
+        }
+
+        // KONVERTERINGSKOPPLING
+        if (inst != .other__fixme) continue;
+        const inst_other = inst.other__fixme;
+
+        switch (inst_other) {
+            .drop => {
+                _ = value_stack.pop().?;
+            },
+            .i32_const => {
+                const val = try r.readLeb(i32);
+                try value_stack.append(gpa, try ir.const_uint(@bitCast(@as(i64, val))));
+            },
+            .local_set => {
+                const idx = try r.readu();
+                const src = value_stack.pop().?;
+                try ir.putvar(node, locals[idx], src);
+            },
+            .local_tee => {
+                const idx = try r.readu();
+                const src = value_stack.items[value_stack.items.len - 1];
+                try ir.putvar(node, locals[idx], src);
+            },
+            .local_get => {
+                const idx = try r.readu();
+                const val = try ir.read_ref(node, locals[idx]); // idempodent if locals[idx] is argument
+                try value_stack.append(gpa, val);
             },
             .else_ => {
                 c_ip += 1;
@@ -404,7 +472,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 }
             },
             .br, .br_if => {
-                if (inst == .br_if) {
+                if (inst_other == .br_if) {
                     c_ip += 1;
                     if (c[c_ip].off != pos) @panic("FEAR ALL AROUND");
                     if (!cond_pending) {
@@ -420,8 +488,8 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     // don't pop in case branch NOT taken
                     try ir.putvar(node, target.res_var, value_stack.items[value_stack.items.len - 1]);
                 }
-                try ir.addLink(node, if (inst == .br_if) 1 else 0, target.ir_target); // branch taken
-                if (inst == .br_if) {
+                try ir.addLink(node, if (inst_other == .br_if) 1 else 0, target.ir_target); // branch taken
+                if (inst_other == .br_if) {
                     node = try ir.addNodeAfter(node);
                 } else {
                     if (r.peekOpCode() != .end) return error.NotImplemented;
@@ -442,7 +510,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             .i32_eqz, .i64_eqz => {
                 const val = value_stack.pop().?;
                 const zero = try ir.const_uint(0);
-                const wide = (inst == .i64_eqz);
+                const wide = (inst_other == .i64_eqz);
 
                 // NB: semi-copy in i32_relop
                 const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
@@ -487,8 +555,8 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     // WIDE because u33
                     addr = try ir.ibinop(node, .quadword, .add, addr, try ir.const_uint(offset));
                 }
-                const wide = inst == .i64_load or @intFromEnum(inst) >= 0x30;
-                const memsize, const signext = defs.memsize_load(inst);
+                const wide = inst_other == .i64_load or @intFromEnum(inst_other) >= 0x30;
+                const memsize, const signext = defs.memsize_load(inst_other);
                 const load = try ir.load(node, wide, signext, .{ .intptr = memsize }, mem_base, addr, 0);
                 try value_stack.append(gpa, load);
             },
@@ -509,7 +577,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     // WIDE because u33
                     addr = try ir.ibinop(node, .quadword, .add, addr, try ir.const_uint(offset));
                 }
-                const memsize = defs.memsize_store(inst);
+                const memsize = defs.memsize_store(inst_other);
                 _ = try ir.store(node, .{ .intptr = memsize }, mem_base, addr, 0, val);
             },
             .memory_size => {
@@ -526,9 +594,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     .i32_unop, .i64_unop => {
                         const src = value_stack.pop().?;
                         const flir_op: FLIR.IntUnOp = switch (tag) {
-                            .i32_popcnt, .i64_popcnt => .popcount,
-                            .i32_ctz, .i64_ctz => .ctz,
-                            .i32_clz, .i64_clz => .clz,
                             .i32_extend8_s, .i64_extend8_s => .sign_extend8,
                             .i32_extend16_s, .i64_extend16_s => .sign_extend16,
                             .i64_extend32_s => .sign_extend32,
@@ -540,64 +605,10 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                         const res = try ir.iunop(node, iSize(category == .i64_unop), flir_op, src);
                         try value_stack.append(gpa, res);
                     },
-                    .i32_binop, .i64_binop => {
-                        const rhs = value_stack.pop().?;
-                        const lhs = value_stack.pop().?;
-                        const wide = category == .i64_binop;
-                        // still bloated but preparing for category-wise debloat
-                        const tag_reduced: defs.BinOp = @enumFromInt(unwide(inst, wide, .i32_add, .i64_add));
-                        const flir_op: FLIR.IntBinOp = switch (tag_reduced) {
-                            .add => .add,
-                            .sub => .sub,
-                            .mul => .mul,
-                            .div_s => .sdiv,
-                            .div_u => .udiv,
-                            .rem_s => .srem,
-                            .rem_u => .urem,
-                            .@"and" => .@"and",
-                            .@"or" => .@"or",
-                            .xor => .xor,
-                            .shl => .shl,
-                            .shr_s => .sar,
-                            .shr_u => .shr,
-                            .rotl => .rotl,
-                            .rotr => .rotr,
-                        };
-                        const res = try ir.ibinop(node, iSize(wide), flir_op, lhs, rhs);
-                        try value_stack.append(gpa, res);
-                    },
-                    .i32_relop, .i64_relop => {
-                        const rhs = value_stack.pop().?;
-                        const lhs = value_stack.pop().?;
-                        const wide = category == .i64_relop;
-                        const tag_op: defs.RelOp = @enumFromInt(unwide(inst, wide, .i32_eq, .i64_eq));
-                        const cmpop: FLIR.IntCond = switch (tag_op) {
-                            .eq => .eq,
-                            .ne => .neq,
-                            .lt_s => .lt,
-                            .le_s => .le,
-                            .gt_s => .gt,
-                            .ge_s => .ge,
-                            .lt_u => .b,
-                            .le_u => .na,
-                            .gt_u => .a,
-                            .ge_u => .nb,
-                        };
-
-                        const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
-                        // NB: semi-copy in i32_eqz
-                        if (peekinst == .br_if or peekinst == .if_) {
-                            _ = try ir.icmp(node, iSize(wide), cmpop, lhs, rhs);
-                            cond_pending = true;
-                        } else {
-                            const res = try ir.icmpset(node, iSize(wide), cmpop, lhs, rhs);
-                            try value_stack.append(gpa, res);
-                        }
-                    },
                     .f32_binop, .f64_binop => {
                         const rhs = value_stack.pop().?;
                         const lhs = value_stack.pop().?;
-                        const tag_op: defs.FBinOp = @enumFromInt(unwide(inst, category == .f64_binop, .f32_add, .f64_add));
+                        const tag_op: defs.FBinOp = @enumFromInt(unwide(inst_other, category == .f64_binop, .f32_add, .f64_add));
                         const theop: forklift.X86Asm.VMathOp = switch (tag_op) {
                             .add => .add,
                             .sub => .sub,

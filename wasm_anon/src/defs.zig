@@ -65,6 +65,14 @@ pub const BlockType = union(enum) {
     simple: ValType,
     complex_idx: u32,
 
+    // args, results
+    pub fn arity(self: BlockType, mod: *const @import("./Module.zig")) !struct { u16, u16 } {
+        return switch (self) {
+            .simple => |vt| .{ 0, if (vt == .void) 0 else 1 },
+            .complex_idx => |idx| mod.type_arity(idx),
+        };
+    }
+
     pub fn results(self: BlockType) !u16 {
         return switch (self) {
             .simple => |vt| if (vt == .void) 0 else 1,
@@ -281,6 +289,12 @@ pub const OpCode = enum(u8) {
     prefixed = 0xFC,
 };
 
+pub const UnOp = enum(u8) {
+    clz,
+    ctz,
+    popcount,
+};
+
 pub const BinOp = enum(u8) {
     add,
     sub,
@@ -466,6 +480,13 @@ pub const Instruction = union(enum) {
     block: BlockType,
     loop: BlockType,
     if_: BlockType,
+
+    i32_binop: BinOp,
+    i64_binop: BinOp,
+    i32_relop: RelOp,
+    i64_relop: RelOp,
+    i32_unop: UnOp,
+    i64_unop: UnOp,
 
     other__fixme: OpCode, // not yet converted
 };

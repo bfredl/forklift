@@ -45,16 +45,29 @@ pub fn readOpCode(r: *Reader) !defs.OpCode {
 pub fn peekOpCode(r: *Reader) defs.OpCode {
     return @enumFromInt(r.peekByte());
 }
-pub fn readOp(r: *Reader) !defs.Instruction {
-    const opcode = try readOpCode();
-    switch (opcode) {
-        .block => return .{ .block = try r.blocktype() },
-        .loop => return .{ .loop = try r.blocktype() },
-        .if_ => return .{ .if_ = try r.blocktype() },
+
+fn i(op: defs.OpCode) u8 {
+    return @intFromEnum(op);
+}
+
+pub fn readInst(r: *Reader) !defs.Instruction {
+    // const opcode = try readOpCode();
+    const byte = try r.readByte();
+    return switch (byte) {
+        i(.block) => .{ .block = try r.blocktype() },
+        i(.loop) => .{ .loop = try r.blocktype() },
+        i(.if_) => .{ .if_ = try r.blocktype() },
+        i(.i32_add)...i(.i32_rotr) => .{ .i32_binop = @enumFromInt(byte - i(.i32_add)) },
+        i(.i64_add)...i(.i64_rotr) => .{ .i64_binop = @enumFromInt(byte - i(.i64_add)) },
+        i(.i32_clz)...i(.i32_popcnt) => .{ .i32_unop = @enumFromInt(byte - i(.i32_clz)) },
+        i(.i64_clz)...i(.i64_popcnt) => .{ .i64_unop = @enumFromInt(byte - i(.i64_clz)) },
+        // TODO: likely eqz as well as a treat:
+        i(.i32_eq)...i(.i32_ge_u) => .{ .i32_relop = @enumFromInt(byte - i(.i32_eq)) },
+        i(.i64_eq)...i(.i64_ge_u) => .{ .i64_relop = @enumFromInt(byte - i(.i64_eq)) },
         else => {
-            return .{ .other__fixme = opcode };
+            return .{ .other__fixme = @enumFromInt(byte) };
         },
-    }
+    };
 }
 
 pub fn readBytes(r: *Reader, len: u32) ![]const u8 {
@@ -69,20 +82,7 @@ pub inline fn readInt(self: *Reader, comptime T: type, endian: std.builtin.Endia
     return std.mem.readInt(T, @ptrCast(try self.readBytes(len)), endian);
 }
 
-pub const BlockType = union(enum) {
-    simple: defs.ValType,
-    complex_idx: u32,
-
-    // args, results
-    pub fn arity(self: BlockType, mod: *const Module) !struct { u16, u16 } {
-        return switch (self) {
-            .simple => |vt| .{ 0, if (vt == .void) 0 else 1 },
-            .complex_idx => |idx| mod.type_arity(idx),
-        };
-    }
-};
-
-pub fn blocktype(r: *Reader) !BlockType {
+pub fn blocktype(r: *Reader) !defs.BlockType {
     // TODO: just readLeb(r, i33) directly and "interpret" negative values might be simpler?
     const nextByte = r.peekByte();
     if ((nextByte & 0xc0) == 0x40) {
