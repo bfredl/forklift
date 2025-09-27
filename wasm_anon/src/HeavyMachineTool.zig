@@ -393,6 +393,17 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const res = try ir.iunop(node, iSize(inst == .i64_unop), flir_op, src);
                 try value_stack.append(gpa, res);
             },
+            .i32_sext, .i64_sext => |size| {
+                const src = value_stack.pop().?;
+                const flir_op: FLIR.IntUnOp = switch (size) {
+                    .byte => .sign_extend8,
+                    .word => .sign_extend16,
+                    .dword => .sign_extend32,
+                    .quadword => unreachable,
+                };
+                const res = try ir.iunop(node, iSize(inst == .i64_sext), flir_op, src);
+                try value_stack.append(gpa, res);
+            },
             .other__fixme => {},
         }
 
@@ -591,20 +602,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             inline else => |tag| {
                 const category = comptime defs.category(tag);
                 switch (category) {
-                    .i32_unop, .i64_unop => {
-                        const src = value_stack.pop().?;
-                        const flir_op: FLIR.IntUnOp = switch (tag) {
-                            .i32_extend8_s, .i64_extend8_s => .sign_extend8,
-                            .i32_extend16_s, .i64_extend16_s => .sign_extend16,
-                            .i64_extend32_s => .sign_extend32,
-                            else => {
-                                f.hmt_error = try std.fmt.allocPrint(in.mod.allocator, "inst {s} in the {s} impl TBD, aborting!", .{ @tagName(tag), @tagName(category) });
-                                return error.NotImplemented;
-                            },
-                        };
-                        const res = try ir.iunop(node, iSize(category == .i64_unop), flir_op, src);
-                        try value_stack.append(gpa, res);
-                    },
                     .f32_binop, .f64_binop => {
                         const rhs = value_stack.pop().?;
                         const lhs = value_stack.pop().?;

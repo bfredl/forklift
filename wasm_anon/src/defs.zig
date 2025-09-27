@@ -366,8 +366,10 @@ pub fn memtype(comptime op: OpCode) type {
     };
 }
 
+pub const ISize = @import("forklift").defs.ISize;
+
 // TODO: these two could go into a fancy reader.readInstrucion() union think
-pub fn memsize_load(op: OpCode) struct { @import("forklift").defs.ISize, bool } {
+pub fn memsize_load(op: OpCode) struct { ISize, bool } {
     return switch (op) {
         .i32_load => .{ .dword, false },
         .i64_load => .{ .quadword, false },
@@ -385,7 +387,7 @@ pub fn memsize_load(op: OpCode) struct { @import("forklift").defs.ISize, bool } 
     };
 }
 
-pub fn memsize_store(op: OpCode) @import("forklift").defs.ISize {
+pub fn memsize_store(op: OpCode) ISize {
     return switch (op) {
         .i32_store => .dword,
         .i64_store => .quadword,
@@ -474,19 +476,4 @@ pub const HostFunc = struct {
     data: *anyopaque = undefined,
     n_args: u16,
     n_res: u16,
-};
-
-pub const Instruction = union(enum) {
-    block: BlockType,
-    loop: BlockType,
-    if_: BlockType,
-
-    i32_binop: BinOp,
-    i64_binop: BinOp,
-    i32_relop: RelOp,
-    i64_relop: RelOp,
-    i32_unop: UnOp,
-    i64_unop: UnOp,
-
-    other__fixme: OpCode, // not yet converted
 };

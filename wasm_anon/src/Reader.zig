@@ -50,7 +50,25 @@ fn i(op: defs.OpCode) u8 {
     return @intFromEnum(op);
 }
 
-pub fn readInst(r: *Reader) !defs.Instruction {
+// kinda a def but just the return type of readInst so eh
+pub const Instruction = union(enum) {
+    block: defs.BlockType,
+    loop: defs.BlockType,
+    if_: defs.BlockType,
+
+    i32_binop: defs.BinOp,
+    i64_binop: defs.BinOp,
+    i32_relop: defs.RelOp,
+    i64_relop: defs.RelOp,
+    i32_unop: defs.UnOp,
+    i64_unop: defs.UnOp,
+
+    i32_sext: defs.ISize,
+    i64_sext: defs.ISize,
+
+    other__fixme: defs.OpCode, // not yet converted
+};
+pub fn readInst(r: *Reader) !Instruction {
     // const opcode = try readOpCode();
     const byte = try r.readByte();
     return switch (byte) {
@@ -67,6 +85,8 @@ pub fn readInst(r: *Reader) !defs.Instruction {
         else => {
             return .{ .other__fixme = @enumFromInt(byte) };
         },
+        i(.i32_extend8_s), i(.i32_extend16_s) => .{ .i32_sext = @enumFromInt(byte - i(.i32_extend8_s)) },
+        i(.i64_extend8_s)...i(.i64_extend32_s) => .{ .i64_sext = @enumFromInt(byte - i(.i64_extend8_s)) },
     };
 }
 
