@@ -84,6 +84,9 @@ pub const Instruction = union(enum) {
     i_load: MemInst,
     i_store: MemInst,
 
+    f32_binop: defs.FBinOp,
+    f64_binop: defs.FBinOp,
+
     other__fixme: defs.OpCode, // not yet converted
 };
 
@@ -114,6 +117,10 @@ pub fn readInst(r: *Reader) !Instruction {
         i(.i64_store) => .{ .i_store = try r.mem(true, false, .quadword) },
         i(.i32_store8)...i(.i32_store16) => .{ .i_store = try r.mem(false, false, @enumFromInt(byte & 1)) },
         i(.i64_store8)...i(.i64_store32) => .{ .i_store = try r.mem(true, false, @enumFromInt(byte & 3)) },
+
+        // floaty
+        i(.f32_add)...i(.f32_copysign) => .{ .f32_binop = @enumFromInt(byte - i(.f32_add)) },
+        i(.f64_add)...i(.f64_copysign) => .{ .f64_binop = @enumFromInt(byte - i(.f64_add)) },
     };
 }
 

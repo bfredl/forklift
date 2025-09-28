@@ -119,18 +119,6 @@ pub fn execute(self: *HeavyMachineTool, in: *Instance, idx: u32, params: []const
     return func.n_res;
 }
 
-fn is_wide(typ: defs.ValType) !bool {
-    return switch (typ) {
-        .i32 => false,
-        .i64 => true,
-        else => error.NotImplemented,
-    };
-}
-
-inline fn unwide(inst: defs.OpCode, wide: bool, narrow_start: defs.OpCode, wide_start: defs.OpCode) u8 {
-    return @intFromEnum(inst) - @intFromEnum(@as(defs.OpCode, if (wide) wide_start else narrow_start));
-}
-
 fn iSize(wide: bool) forklift.defs.ISize {
     // a little weak. just like wasm, QBE does, forklift cares about wide vs non-wide for ops
     // 1,2,4 vs 8 bytes enter the picture when memory:p
@@ -424,6 +412,22 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 _ = try ir.store(node, .{ .intptr = i.memsize }, mem_base, addr, 0, val);
             },
 
+            .f32_binop, .f64_binop => |tag| {
+                const rhs = value_stack.pop().?;
+                const lhs = value_stack.pop().?;
+                const theop: forklift.X86Asm.VMathOp = switch (tag) {
+                    .add => .add,
+                    .sub => .sub,
+                    .mul => .mul,
+                    .div => .div,
+                    .min => .min,
+                    .max => .max,
+                    .copysign => return error.NotImplemented,
+                };
+                const fmode: forklift.X86Asm.FMode = if (inst == .f64_binop) .sd else .ss;
+                const val = try ir.vmath(node, theop, fmode, lhs, rhs);
+                try value_stack.append(gpa, val);
+            },
             .other__fixme => {},
         }
 
@@ -572,33 +576,10 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const calc = try ir.ibinop(node, .dword, .shr, mem_size, try ir.const_uint(16));
                 try value_stack.append(gpa, calc);
             },
-            // TODO: this leads to some bloat - some things like binops could be done as a bulk
-            inline else => |tag| {
-                const category = comptime defs.category(tag);
-                switch (category) {
-                    .f32_binop, .f64_binop => {
-                        const rhs = value_stack.pop().?;
-                        const lhs = value_stack.pop().?;
-                        const tag_op: defs.FBinOp = @enumFromInt(unwide(inst_other, category == .f64_binop, .f32_add, .f64_add));
-                        const theop: forklift.X86Asm.VMathOp = switch (tag_op) {
-                            .add => .add,
-                            .sub => .sub,
-                            .mul => .mul,
-                            .div => .div,
-                            .min => .min,
-                            .max => .max,
-                            .copysign => return error.NotImplemented,
-                        };
-                        const fmode: forklift.X86Asm.FMode = if (category == .f64_binop) .sd else .ss;
-                        const val = try ir.vmath(node, theop, fmode, lhs, rhs);
-                        try value_stack.append(gpa, val);
-                    },
-                    else => |cat| {
-                        dbg("inst {s} as {s} TBD, aborting!\n", .{ @tagName(tag), @tagName(cat) });
-                        f.hmt_error = @tagName(tag);
-                        return error.NotImplemented;
-                    },
-                }
+            else => |tag| {
+                dbg("inst {s} as \"other__fixme\" (lol, laaame) TBD, aborting!\n", .{@tagName(tag)});
+                f.hmt_error = @tagName(tag);
+                return error.NotImplemented;
             },
         }
     }
