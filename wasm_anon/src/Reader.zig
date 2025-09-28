@@ -79,6 +79,9 @@ pub const Instruction = union(enum) {
     else_: void,
     end: void,
 
+    br: u32,
+    br_if: u32,
+
     i32_const: i32,
     i64_const: i64,
 
@@ -114,6 +117,8 @@ pub fn readInst(r: *Reader) !Instruction {
         i(.if_) => .{ .if_ = try r.blocktype() },
         i(.else_) => .{ .else_ = {} },
         i(.end) => .{ .end = {} },
+        i(.br) => .{ .br = try r.readu() },
+        i(.br_if) => .{ .br_if = try r.readu() },
         i(.i32_const) => .{ .i32_const = try r.readLeb(i32) },
         i(.i64_const) => .{ .i64_const = try r.readLeb(i64) },
         i(.i32_add)...i(.i32_rotr) => .{ .i32_binop = @enumFromInt(byte - i(.i32_add)) },

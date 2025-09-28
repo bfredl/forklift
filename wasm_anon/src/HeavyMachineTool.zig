@@ -381,6 +381,31 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     if (has_res) try value_stack.append(gpa, try ir.read_ref(node, label.res_var));
                 }
             },
+            .br, .br_if => |label| {
+                if (inst == .br_if) {
+                    c_ip += 1;
+                    if (c[c_ip].off != pos) @panic("FEAR ALL AROUND");
+                    if (!cond_pending) {
+                        const val = value_stack.pop().?;
+                        _ = try ir.icmp(node, .dword, .neq, val, try ir.const_uint(0));
+                    } else cond_pending = false;
+                }
+                if (label > label_stack.items.len - 1) return error.InternalCompilerError;
+                const target = label_stack.items[label_stack.items.len - label - 1];
+                if (target.res_var != FLIR.NoRef) {
+                    if (value_stack.items.len == 0) return error.InternalCompilerError;
+                    // don't pop in case branch NOT taken
+                    try ir.putvar(node, target.res_var, value_stack.items[value_stack.items.len - 1]);
+                }
+                try ir.addLink(node, if (inst == .br_if) 1 else 0, target.ir_target); // branch taken
+                if (inst == .br_if) {
+                    node = try ir.addNodeAfter(node);
+                } else {
+                    if (r.peekOpCode() != .end) return error.NotImplemented;
+                    dead_end = true; // TODO: as below
+                }
+            },
+
             .i32_const => |val| try value_stack.append(gpa, try ir.const_uint(@bitCast(@as(i64, val)))),
             .i64_const => |val| try value_stack.append(gpa, try ir.const_uint(@bitCast(val))),
             .i32_binop, .i64_binop => |tag| {
@@ -501,31 +526,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
         const inst_other = inst.other__fixme;
 
         switch (inst_other) {
-            .br, .br_if => {
-                if (inst_other == .br_if) {
-                    c_ip += 1;
-                    if (c[c_ip].off != pos) @panic("FEAR ALL AROUND");
-                    if (!cond_pending) {
-                        const val = value_stack.pop().?;
-                        _ = try ir.icmp(node, .dword, .neq, val, try ir.const_uint(0));
-                    } else cond_pending = false;
-                }
-                const label = try r.readu();
-                if (label > label_stack.items.len - 1) return error.InternalCompilerError;
-                const target = label_stack.items[label_stack.items.len - label - 1];
-                if (target.res_var != FLIR.NoRef) {
-                    if (value_stack.items.len == 0) return error.InternalCompilerError;
-                    // don't pop in case branch NOT taken
-                    try ir.putvar(node, target.res_var, value_stack.items[value_stack.items.len - 1]);
-                }
-                try ir.addLink(node, if (inst_other == .br_if) 1 else 0, target.ir_target); // branch taken
-                if (inst_other == .br_if) {
-                    node = try ir.addNodeAfter(node);
-                } else {
-                    if (r.peekOpCode() != .end) return error.NotImplemented;
-                    dead_end = true; // TODO: as below
-                }
-            },
             .ret => {
                 try ir.addLink(node, 0, exit_node);
                 if (f.n_res > 0) {
