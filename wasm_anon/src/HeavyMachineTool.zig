@@ -404,6 +404,26 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const res = try ir.iunop(node, iSize(inst == .i64_sext), flir_op, src);
                 try value_stack.append(gpa, res);
             },
+
+            .i_load => |i| {
+                var addr = value_stack.pop().?;
+                if (i.offset > 0) {
+                    // WIDE because u33
+                    addr = try ir.ibinop(node, .quadword, .add, addr, try ir.const_uint(i.offset));
+                }
+                const load = try ir.load(node, i.wide, i.sext, .{ .intptr = i.memsize }, mem_base, addr, 0);
+                try value_stack.append(gpa, load);
+            },
+            .i_store => |i| {
+                const val = value_stack.pop().?;
+                var addr = value_stack.pop().?;
+                if (i.offset > 0) {
+                    // WIDE because u33
+                    addr = try ir.ibinop(node, .quadword, .add, addr, try ir.const_uint(i.offset));
+                }
+                _ = try ir.store(node, .{ .intptr = i.memsize }, mem_base, addr, 0, val);
+            },
+
             .other__fixme => {},
         }
 
@@ -544,52 +564,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const off = self.mod.get_func_off(obj) orelse return error.TypeError;
                 const callwhat = try ir.const_uint(off);
                 _ = try ir.call(node, .near, callwhat, 0);
-            },
-            .i32_load,
-            .i64_load,
-            .i32_load8_s,
-            .i32_load8_u,
-            .i32_load16_s,
-            .i32_load16_u,
-            .i64_load8_s,
-            .i64_load8_u,
-            .i64_load16_s,
-            .i64_load16_u,
-            .i64_load32_s,
-            .i64_load32_u,
-            => {
-                const alignas = try r.readu();
-                _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
-                const offset = try r.readu();
-                var addr = value_stack.pop().?;
-                if (offset > 0) {
-                    // WIDE because u33
-                    addr = try ir.ibinop(node, .quadword, .add, addr, try ir.const_uint(offset));
-                }
-                const wide = inst_other == .i64_load or @intFromEnum(inst_other) >= 0x30;
-                const memsize, const signext = defs.memsize_load(inst_other);
-                const load = try ir.load(node, wide, signext, .{ .intptr = memsize }, mem_base, addr, 0);
-                try value_stack.append(gpa, load);
-            },
-            .i32_store,
-            .i64_store,
-            .i32_store8,
-            .i32_store16,
-            .i64_store8,
-            .i64_store16,
-            .i64_store32,
-            => {
-                const alignas = try r.readu();
-                _ = alignas; // "The alignment in load and store instructions does not affect the semantics."
-                const offset = try r.readu();
-                const val = value_stack.pop().?;
-                var addr = value_stack.pop().?;
-                if (offset > 0) {
-                    // WIDE because u33
-                    addr = try ir.ibinop(node, .quadword, .add, addr, try ir.const_uint(offset));
-                }
-                const memsize = defs.memsize_store(inst_other);
-                _ = try ir.store(node, .{ .intptr = memsize }, mem_base, addr, 0, val);
             },
             .memory_size => {
                 if (try r.readByte() != 0) return error.InvalidFormat;

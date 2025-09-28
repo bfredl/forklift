@@ -50,6 +50,21 @@ fn i(op: defs.OpCode) u8 {
     return @intFromEnum(op);
 }
 
+const MemInst = struct {
+    wide: bool,
+    sext: bool,
+    memsize: defs.ISize,
+    alignas: u32,
+    offset: u32,
+};
+
+fn mem(r: *Reader, wide: bool, sext: bool, memsize: defs.ISize) !MemInst {
+    // NOTE: "The alignment in load and store instructions does not affect the semantics."
+    const alignas = try r.readu();
+    const offset = try r.readu();
+    return .{ .wide = wide, .sext = sext, .memsize = memsize, .alignas = alignas, .offset = offset };
+}
+
 // kinda a def but just the return type of readInst so eh
 pub const Instruction = union(enum) {
     block: defs.BlockType,
@@ -66,8 +81,12 @@ pub const Instruction = union(enum) {
     i32_sext: defs.ISize,
     i64_sext: defs.ISize,
 
+    i_load: MemInst,
+    i_store: MemInst,
+
     other__fixme: defs.OpCode, // not yet converted
 };
+
 pub fn readInst(r: *Reader) !Instruction {
     // const opcode = try readOpCode();
     const byte = try r.readByte();
@@ -87,6 +106,14 @@ pub fn readInst(r: *Reader) !Instruction {
         },
         i(.i32_extend8_s), i(.i32_extend16_s) => .{ .i32_sext = @enumFromInt(byte - i(.i32_extend8_s)) },
         i(.i64_extend8_s)...i(.i64_extend32_s) => .{ .i64_sext = @enumFromInt(byte - i(.i64_extend8_s)) },
+        i(.i32_load) => .{ .i_load = try r.mem(false, false, .dword) },
+        i(.i64_load) => .{ .i_load = try r.mem(true, false, .quadword) },
+        i(.i32_load8_s)...i(.i32_load16_u) => .{ .i_load = try r.mem(false, (byte % 2 == 0), @enumFromInt((byte & 2) >> 1)) },
+        i(.i64_load8_s)...i(.i64_load32_u) => .{ .i_load = try r.mem(true, (byte % 2 == 0), @enumFromInt((byte & 6) >> 1)) },
+        i(.i32_store) => .{ .i_store = try r.mem(false, false, .dword) },
+        i(.i64_store) => .{ .i_store = try r.mem(true, false, .quadword) },
+        i(.i32_store8)...i(.i32_store16) => .{ .i_store = try r.mem(false, false, @enumFromInt(byte & 1)) },
+        i(.i64_store8)...i(.i64_store32) => .{ .i_store = try r.mem(true, false, @enumFromInt(byte & 3)) },
     };
 }
 
