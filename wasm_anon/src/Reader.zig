@@ -125,9 +125,9 @@ pub fn readInst(r: *Reader) !Instruction {
         i(.i64_add)...i(.i64_rotr) => .{ .i64_binop = @enumFromInt(byte - i(.i64_add)) },
         i(.i32_clz)...i(.i32_popcnt) => .{ .i32_unop = @enumFromInt(byte - i(.i32_clz)) },
         i(.i64_clz)...i(.i64_popcnt) => .{ .i64_unop = @enumFromInt(byte - i(.i64_clz)) },
-        // TODO: likely eqz as well as a treat:
-        i(.i32_eq)...i(.i32_ge_u) => .{ .i32_relop = @enumFromInt(byte - i(.i32_eq)) },
-        i(.i64_eq)...i(.i64_ge_u) => .{ .i64_relop = @enumFromInt(byte - i(.i64_eq)) },
+        // note: eqz are not like the rest, but let the consumer deal with it LOL
+        i(.i32_eqz)...i(.i32_ge_u) => .{ .i32_relop = @enumFromInt(byte - i(.i32_eqz)) },
+        i(.i64_eqz)...i(.i64_ge_u) => .{ .i64_relop = @enumFromInt(byte - i(.i64_eqz)) },
         else => {
             return .{ .other__fixme = @enumFromInt(byte) };
         },

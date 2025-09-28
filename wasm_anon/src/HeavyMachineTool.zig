@@ -435,9 +435,11 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             },
             .i32_relop, .i64_relop => |tag| {
                 const rhs = value_stack.pop().?;
-                const lhs = value_stack.pop().?;
+                // careful now:
+                const lhs = if (tag == .eqz) try ir.const_uint(0) else value_stack.pop().?;
                 const wide = inst == .i64_relop;
                 const cmpop: FLIR.IntCond = switch (tag) {
+                    .eqz => .eq, // HAHAHAHA
                     .eq => .eq,
                     .ne => .neq,
                     .lt_s => .lt,
@@ -536,21 +538,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 // TODO: or else I guess
                 if (r.peekOpCode() != .end) return error.NotImplemented;
                 dead_end = true;
-            },
-            .i32_eqz, .i64_eqz => {
-                const val = value_stack.pop().?;
-                const zero = try ir.const_uint(0);
-                const wide = (inst_other == .i64_eqz);
-
-                // NB: semi-copy in i32_relop
-                const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
-                if (peekinst == .br_if or peekinst == .if_) {
-                    _ = try ir.icmp(node, iSize(wide), .eq, val, zero);
-                    cond_pending = true;
-                } else {
-                    const res = try ir.icmpset(node, iSize(wide), .eq, val, zero);
-                    try value_stack.append(gpa, res);
-                }
             },
             .call => {
                 const idx = try r.readu();

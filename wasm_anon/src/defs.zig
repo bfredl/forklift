@@ -314,6 +314,7 @@ pub const BinOp = enum(u8) {
 };
 
 pub const RelOp = enum(u8) {
+    eqz, // note: IMPLICIT rhs!!!
     eq,
     ne,
     lt_s,
