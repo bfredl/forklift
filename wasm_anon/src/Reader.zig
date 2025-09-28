@@ -78,6 +78,8 @@ pub const Instruction = union(enum) {
     if_: defs.BlockType,
     else_: void,
     end: void,
+    ret: void,
+    call: u32,
 
     br: u32,
     br_if: u32,
@@ -101,6 +103,9 @@ pub const Instruction = union(enum) {
     f32_binop: defs.FBinOp,
     f64_binop: defs.FBinOp,
 
+    // note: if implement multiple memories, also need to fix i_load/i_store..
+    memory_size: void,
+
     other__fixme: defs.OpCode, // not yet converted
 };
 
@@ -117,6 +122,8 @@ pub fn readInst(r: *Reader) !Instruction {
         i(.if_) => .{ .if_ = try r.blocktype() },
         i(.else_) => .{ .else_ = {} },
         i(.end) => .{ .end = {} },
+        i(.ret) => .{ .ret = {} },
+        i(.call) => .{ .call = try r.readu() },
         i(.br) => .{ .br = try r.readu() },
         i(.br_if) => .{ .br_if = try r.readu() },
         i(.i32_const) => .{ .i32_const = try r.readLeb(i32) },
@@ -145,6 +152,8 @@ pub fn readInst(r: *Reader) !Instruction {
         // floaty
         i(.f32_add)...i(.f32_copysign) => .{ .f32_binop = @enumFromInt(byte - i(.f32_add)) },
         i(.f64_add)...i(.f64_copysign) => .{ .f64_binop = @enumFromInt(byte - i(.f64_add)) },
+
+        i(.memory_size) => .{ .memory_size = if (try r.readu() != 0) return error.InvalidFormat else {} },
     };
 }
 

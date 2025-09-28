@@ -381,6 +381,17 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     if (has_res) try value_stack.append(gpa, try ir.read_ref(node, label.res_var));
                 }
             },
+            .ret => {
+                try ir.addLink(node, 0, exit_node);
+                if (f.n_res > 0) {
+                    if (f.n_res > 1) return error.NotImplemented;
+                    try ir.putvar(node, exit_var, value_stack.pop().?);
+                }
+                // TODO: dead code is weird in WASM, need to skip over as the stack might not exist
+                // TODO: or else I guess
+                if (r.peekOpCode() != .end) return error.NotImplemented;
+                dead_end = true;
+            },
             .br, .br_if => |label| {
                 if (inst == .br_if) {
                     c_ip += 1;
@@ -453,7 +464,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 };
 
                 const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
-                // NB: semi-copy in i32_eqz
                 if (peekinst == .br_if or peekinst == .if_) {
                     _ = try ir.icmp(node, iSize(wide), cmpop, lhs, rhs);
                     cond_pending = true;
@@ -520,27 +530,8 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const val = try ir.vmath(node, theop, fmode, lhs, rhs);
                 try value_stack.append(gpa, val);
             },
-            .other__fixme => {},
-        }
 
-        // KONVERTERINGSKOPPLING
-        if (inst != .other__fixme) continue;
-        const inst_other = inst.other__fixme;
-
-        switch (inst_other) {
-            .ret => {
-                try ir.addLink(node, 0, exit_node);
-                if (f.n_res > 0) {
-                    if (f.n_res > 1) return error.NotImplemented;
-                    try ir.putvar(node, exit_var, value_stack.pop().?);
-                }
-                // TODO: dead code is weird in WASM, need to skip over as the stack might not exist
-                // TODO: or else I guess
-                if (r.peekOpCode() != .end) return error.NotImplemented;
-                dead_end = true;
-            },
-            .call => {
-                const idx = try r.readu();
+            .call => |idx| {
                 if (idx < in.mod.n_funcs_import) return error.NotImplemented;
                 if (idx >= in.mod.n_funcs_import + in.mod.funcs_internal.len) return error.InvalidFormat;
                 const func = &in.mod.funcs_internal[idx - in.mod.n_funcs_import];
@@ -552,14 +543,13 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 _ = try ir.call(node, .near, callwhat, 0);
             },
             .memory_size => {
-                if (try r.readByte() != 0) return error.InvalidFormat;
                 // const size: i32 = @intCast(in.mem.items.len / 0x10000);
                 // TODO: if we use guard pages, mem_size=ir.arg() could just be the page count
                 const calc = try ir.ibinop(node, .dword, .shr, mem_size, try ir.const_uint(16));
                 try value_stack.append(gpa, calc);
             },
-            else => |tag| {
-                dbg("inst {s} as \"other__fixme\" (lol, laaame) TBD, aborting!\n", .{@tagName(tag)});
+            .other__fixme => |tag| {
+                dbg("inst {s} TBD, aborting!\n", .{@tagName(tag)});
                 f.hmt_error = @tagName(tag);
                 return error.NotImplemented;
             },
