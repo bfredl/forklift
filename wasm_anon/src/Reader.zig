@@ -67,9 +67,20 @@ fn mem(r: *Reader, wide: bool, sext: bool, memsize: defs.ISize) !MemInst {
 
 // kinda a def but just the return type of readInst so eh
 pub const Instruction = union(enum) {
+    drop: void,
+
+    local_set: u32,
+    local_get: u32,
+    local_tee: u32,
+
     block: defs.BlockType,
     loop: defs.BlockType,
     if_: defs.BlockType,
+    else_: void,
+    end: void,
+
+    i32_const: i32,
+    i64_const: i64,
 
     i32_binop: defs.BinOp,
     i64_binop: defs.BinOp,
@@ -94,9 +105,17 @@ pub fn readInst(r: *Reader) !Instruction {
     // const opcode = try readOpCode();
     const byte = try r.readByte();
     return switch (byte) {
+        i(.drop) => .{ .drop = {} },
+        i(.local_set) => .{ .local_set = try r.readu() },
+        i(.local_get) => .{ .local_get = try r.readu() },
+        i(.local_tee) => .{ .local_tee = try r.readu() },
         i(.block) => .{ .block = try r.blocktype() },
         i(.loop) => .{ .loop = try r.blocktype() },
         i(.if_) => .{ .if_ = try r.blocktype() },
+        i(.else_) => .{ .else_ = {} },
+        i(.end) => .{ .end = {} },
+        i(.i32_const) => .{ .i32_const = try r.readLeb(i32) },
+        i(.i64_const) => .{ .i64_const = try r.readLeb(i64) },
         i(.i32_add)...i(.i32_rotr) => .{ .i32_binop = @enumFromInt(byte - i(.i32_add)) },
         i(.i64_add)...i(.i64_rotr) => .{ .i64_binop = @enumFromInt(byte - i(.i64_add)) },
         i(.i32_clz)...i(.i32_popcnt) => .{ .i32_unop = @enumFromInt(byte - i(.i32_clz)) },

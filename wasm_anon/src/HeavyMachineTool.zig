@@ -270,6 +270,21 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
         const pos = r.pos;
         const inst = try r.readInst();
         switch (inst) {
+            .drop => {
+                _ = value_stack.pop().?;
+            },
+            .local_set => |idx| {
+                const src = value_stack.pop().?;
+                try ir.putvar(node, locals[idx], src);
+            },
+            .local_tee => |idx| {
+                const src = value_stack.items[value_stack.items.len - 1];
+                try ir.putvar(node, locals[idx], src);
+            },
+            .local_get => |idx| {
+                const val = try ir.read_ref(node, locals[idx]); // idempodent if locals[idx] is (non-mutable) argument
+                try value_stack.append(gpa, val);
+            },
             .loop => |typ| {
                 const n_args, const n_results = try typ.arity(in.mod);
                 if (n_args != 0 or n_results != 0) return error.NotImplemented;
@@ -318,6 +333,56 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 try ir.addLink(node, 1, then); // branch taken
                 node = then;
             },
+            .else_ => {
+                c_ip += 1;
+                if (c[c_ip].off != pos) @panic("FEAR OF DESICIONS");
+                if (label_stack.items.len == 0) @panic("WAVES OF FEAR");
+                // reuse same label in the else body
+                const label = label_stack.items[label_stack.items.len - 1];
+
+                const has_res = label.res_var != FLIR.NoRef;
+                if (has_res) {
+                    try ir.putvar(node, label.res_var, value_stack.pop().?);
+                }
+                try ir.addLink(node, 0, label.ir_target);
+
+                node = label.else_target;
+            },
+            .end => {
+                c_ip += 1;
+                if (c[c_ip].off != pos) @panic("UNSEEN FEAR");
+                const label = label_stack.pop() orelse @panic("FEAR OF LIMBO");
+                const has_res = label.res_var != FLIR.NoRef;
+                if (!label.loop) {
+                    if (!dead_end) {
+                        if (has_res) {
+                            try ir.putvar(node, label.res_var, value_stack.pop().?);
+                        }
+                        try ir.addLink(node, 0, label.ir_target);
+                    } else {
+                        if (value_stack.items.len < label.value_stack_level) return error.InternalCompilerError;
+                        value_stack.items.len = label.value_stack_level;
+                    }
+                    node = label.ir_target;
+                    dead_end = false; // back to lyf
+                } else {
+                    if (dead_end) {
+                        const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
+                        // dead code just right after a loop, bleh!
+                        if (peekinst != .end) return error.NotImplemented;
+                    }
+                }
+
+                if (label_stack.items.len == 0) {
+                    if (value_stack.items.len != 0) return error.InternalCompilerError;
+                    break;
+                } else {
+                    // if this was the only exit it will be simplified back to the old tip value
+                    if (has_res) try value_stack.append(gpa, try ir.read_ref(node, label.res_var));
+                }
+            },
+            .i32_const => |val| try value_stack.append(gpa, try ir.const_uint(@bitCast(@as(i64, val)))),
+            .i64_const => |val| try value_stack.append(gpa, try ir.const_uint(@bitCast(val))),
             .i32_binop, .i64_binop => |tag| {
                 const rhs = value_stack.pop().?;
                 const lhs = value_stack.pop().?;
@@ -436,76 +501,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
         const inst_other = inst.other__fixme;
 
         switch (inst_other) {
-            .drop => {
-                _ = value_stack.pop().?;
-            },
-            .i32_const => {
-                const val = try r.readLeb(i32);
-                try value_stack.append(gpa, try ir.const_uint(@bitCast(@as(i64, val))));
-            },
-            .local_set => {
-                const idx = try r.readu();
-                const src = value_stack.pop().?;
-                try ir.putvar(node, locals[idx], src);
-            },
-            .local_tee => {
-                const idx = try r.readu();
-                const src = value_stack.items[value_stack.items.len - 1];
-                try ir.putvar(node, locals[idx], src);
-            },
-            .local_get => {
-                const idx = try r.readu();
-                const val = try ir.read_ref(node, locals[idx]); // idempodent if locals[idx] is argument
-                try value_stack.append(gpa, val);
-            },
-            .else_ => {
-                c_ip += 1;
-                if (c[c_ip].off != pos) @panic("FEAR OF DESICIONS");
-                if (label_stack.items.len == 0) @panic("WAVES OF FEAR");
-                // reuse same label in the else body
-                const label = label_stack.items[label_stack.items.len - 1];
-
-                const has_res = label.res_var != FLIR.NoRef;
-                if (has_res) {
-                    try ir.putvar(node, label.res_var, value_stack.pop().?);
-                }
-                try ir.addLink(node, 0, label.ir_target);
-
-                node = label.else_target;
-            },
-            .end => {
-                c_ip += 1;
-                if (c[c_ip].off != pos) @panic("UNSEEN FEAR");
-                const label = label_stack.pop() orelse @panic("FEAR OF LIMBO");
-                const has_res = label.res_var != FLIR.NoRef;
-                if (!label.loop) {
-                    if (!dead_end) {
-                        if (has_res) {
-                            try ir.putvar(node, label.res_var, value_stack.pop().?);
-                        }
-                        try ir.addLink(node, 0, label.ir_target);
-                    } else {
-                        if (value_stack.items.len < label.value_stack_level) return error.InternalCompilerError;
-                        value_stack.items.len = label.value_stack_level;
-                    }
-                    node = label.ir_target;
-                    dead_end = false; // back to lyf
-                } else {
-                    if (dead_end) {
-                        const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
-                        // dead code just right after a loop, bleh!
-                        if (peekinst != .end) return error.NotImplemented;
-                    }
-                }
-
-                if (label_stack.items.len == 0) {
-                    if (value_stack.items.len != 0) return error.InternalCompilerError;
-                    break;
-                } else {
-                    // if this was the only exit it will be simplified back to the old tip value
-                    if (has_res) try value_stack.append(gpa, try ir.read_ref(node, label.res_var));
-                }
-            },
             .br, .br_if => {
                 if (inst_other == .br_if) {
                     c_ip += 1;
