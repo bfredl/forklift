@@ -423,25 +423,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const rhs = value_stack.pop().?;
                 const lhs = value_stack.pop().?;
                 const wide = inst == .i64_binop;
-                // still bloated but preparing for category-wise debloat
-                const flir_op: FLIR.IntBinOp = switch (tag) {
-                    .add => .add,
-                    .sub => .sub,
-                    .mul => .mul,
-                    .div_s => .sdiv,
-                    .div_u => .udiv,
-                    .rem_s => .srem,
-                    .rem_u => .urem,
-                    .@"and" => .@"and",
-                    .@"or" => .@"or",
-                    .xor => .xor,
-                    .shl => .shl,
-                    .shr_s => .sar,
-                    .shr_u => .shr,
-                    .rotl => .rotl,
-                    .rotr => .rotr,
-                };
-                const res = try ir.ibinop(node, iSize(wide), flir_op, lhs, rhs);
+                const res = try ir.ibinop(node, iSize(wide), tag.into(), lhs, rhs);
                 try value_stack.append(gpa, res);
             },
             .i32_relop, .i64_relop => |tag| {
@@ -449,19 +431,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 // careful now:
                 const lhs = if (tag == .eqz) try ir.const_uint(0) else value_stack.pop().?;
                 const wide = inst == .i64_relop;
-                const cmpop: FLIR.IntCond = switch (tag) {
-                    .eqz => .eq, // HAHAHAHA
-                    .eq => .eq,
-                    .ne => .neq,
-                    .lt_s => .lt,
-                    .le_s => .le,
-                    .gt_s => .gt,
-                    .ge_s => .ge,
-                    .lt_u => .b,
-                    .le_u => .na,
-                    .gt_u => .a,
-                    .ge_u => .nb,
-                };
+                const cmpop: FLIR.IntCond = tag.into() orelse .eq; // AHAHHAHAHA
 
                 const peekinst: defs.OpCode = @enumFromInt(r.peekByte());
                 if (peekinst == .br_if or peekinst == .if_) {

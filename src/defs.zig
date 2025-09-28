@@ -95,21 +95,23 @@ pub const IntUnOp = enum(u5) {
 
 // could be u6 but then we need special spec packing (2+6)
 pub const IntBinOp = enum(u5) {
+    // SILLY: these must have the same order as the 15 basic WASM int binops:
     add,
     sub,
-    @"or",
-    @"and", // det finns en and
-    xor,
     mul,
     sdiv, // signed division
     udiv, // unsigned division
     srem, // signed reminder
     urem, // unsigned reminder
+    @"and", // det finns en and
+    @"or",
+    xor,
     shl,
     sar,
     shr,
     rotl,
     rotr,
+    // but afterwards we can add more (IF WE HAD ANY):
 
     pub fn symmetric(self: IntBinOp) bool {
         return switch (self) {
@@ -157,16 +159,17 @@ pub const IntBinOp = enum(u5) {
 };
 
 pub const IntCond = enum(u4) {
+    // same here: very wasm (except eqz)
     eq,
     neq,
-    gt,
-    ge,
     lt,
-    le,
-    a, // above: unsigned greather than
-    na,
     b, // beloved: unsigned less than
-    nb,
+    gt,
+    a, // abode: unsigned greather than
+    le,
+    na, // uN-Atainable: unsigned less-equal
+    ge,
+    nb, // non-bidenary: unsigned greater-equal
 
     pub fn asX86Cond(self: IntCond) ?X86Asm.Cond {
         return switch (self) {

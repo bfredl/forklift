@@ -311,6 +311,10 @@ pub const BinOp = enum(u8) {
     shr_u,
     rotl,
     rotr,
+
+    pub fn into(self: BinOp) forklift.defs.IntBinOp {
+        return @enumFromInt(@intFromEnum(self)); // such a silly bean :3
+    }
 };
 
 pub const RelOp = enum(u8) {
@@ -325,6 +329,10 @@ pub const RelOp = enum(u8) {
     le_u,
     ge_s,
     ge_u,
+
+    pub fn into(self: RelOp) ?forklift.defs.IntCond {
+        return if (self != .eqz) @enumFromInt(@intFromEnum(self) - 1) else null;
+    }
 };
 
 pub const FBinOp = enum(u8) {
@@ -367,7 +375,8 @@ pub fn memtype(comptime op: OpCode) type {
     };
 }
 
-pub const ISize = @import("forklift").defs.ISize;
+const forklift = @import("forklift");
+pub const ISize = forklift.defs.ISize;
 
 // TODO: these two could go into a fancy reader.readInstrucion() union think
 pub fn memsize_load(op: OpCode) struct { ISize, bool } {
