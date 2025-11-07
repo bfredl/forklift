@@ -659,27 +659,50 @@ fn run_vm(stack: *Interpreter, in: *Instance, r: *Reader) !void {
     }
 }
 
-pub fn eval_constant_expr(r: *Reader, typ: defs.ValType, preglobals: []const StackValue) !StackValue {
+pub fn eval_constant_expr(r: *Reader, typ: defs.ValType, preglobals: []const StackValue, gpa: std.mem.Allocator) !StackValue {
     // shortcut: `expr` is just "i??.const VAL end"
-    const eval = try r.readByte();
-    const init_typ: defs.OpCode = @enumFromInt(eval);
     _ = typ;
-    const val: StackValue = val: switch (init_typ) {
-        .i32_const => .{ .i32 = try r.readLeb(i32) },
-        .i64_const => .{ .i64 = try r.readLeb(i64) },
-        .f32_const => .{ .f32 = try r.readf(f32) },
-        .f64_const => .{ .f64 = try r.readf(f64) },
-        .ref_null => {
+
+    var stack: std.ArrayList(StackValue) = .empty;
+
+    while (true) {
+        const eval = try r.readByte();
+        const init_typ: defs.OpCode = @enumFromInt(eval);
+        const val: StackValue = val: switch (init_typ) {
+            .i32_const => .{ .i32 = try r.readLeb(i32) },
+            .i64_const => .{ .i64 = try r.readLeb(i64) },
+            .f32_const => .{ .f32 = try r.readf(f32) },
+            .f64_const => .{ .f64 = try r.readf(f64) },
+            .ref_null => {
+                _ = try r.readByte();
+                break :val .{ .ref = 0 };
+            },
+            .global_get => {
+                const idx = try r.readu();
+                if (idx >= preglobals.len) return error.InvalidFormat;
+                break :val preglobals[idx].indir.*;
+            },
+            .i32_add, .i32_sub, .i32_mul, .i64_add, .i64_sub, .i64_mul => {
+                const rhs = stack.pop() orelse return error.InvalidFormat;
+                const lhs = stack.pop() orelse return error.InvalidFormat;
+                break :val switch (init_typ) {
+                    .i32_add => .{ .i32 = lhs.i32 + rhs.i32 },
+                    .i32_sub => .{ .i32 = lhs.i32 - rhs.i32 },
+                    .i32_mul => .{ .i32 = lhs.i32 * rhs.i32 },
+                    .i64_add => .{ .i64 = lhs.i64 + rhs.i64 },
+                    .i64_sub => .{ .i64 = lhs.i64 - rhs.i64 },
+                    .i64_mul => .{ .i64 = lhs.i64 * rhs.i64 },
+                    else => unreachable,
+                };
+            },
+            else => return error.InvalidFormat,
+        };
+        if (r.peekByte() == 0x0b) {
             _ = try r.readByte();
-            break :val .{ .ref = 0 };
-        },
-        .global_get => {
-            const idx = try r.readu();
-            if (idx >= preglobals.len) return error.InvalidFormat;
-            break :val preglobals[idx].indir.*;
-        },
-        else => return error.InvalidFormat,
-    };
-    if (try r.readByte() != 0x0b) return error.InvalidFormat;
-    return val;
+            if (stack.items.len > 0) return error.InvalidFormat;
+            return val;
+        } else {
+            try stack.append(gpa, val);
+        }
+    }
 }

@@ -324,7 +324,7 @@ pub fn init_data(self: *Module, mem: []u8, preglobals: []const defs.StackValue) 
         const memidx = if (typ == 0) 0 else try r.readu();
         if (memidx > 0) return error.NotImplemented;
 
-        const offset: usize = @intCast((try Interpreter.eval_constant_expr(&r, .i32, preglobals)).i32);
+        const offset: usize = @intCast((try Interpreter.eval_constant_expr(&r, .i32, preglobals, self.allocator)).i32);
         const lenna = try r.readu();
         dbg("offsetta: {}, len: {}\n", .{ offset, lenna });
 
@@ -398,7 +398,7 @@ pub fn init_imports(self: *Module, in: *Instance, imports: ?*ImportTable) !void 
         const typ: defs.ValType = @enumFromInt(try r.readByte());
         _ = try r.readByte(); // WHO FUCKING CARES IF IT IS MUTABLE OR NOT
 
-        in.globals_maybe_indir[self.n_globals_import + i] = try Interpreter.eval_constant_expr(&r, typ, in.preglobals());
+        in.globals_maybe_indir[self.n_globals_import + i] = try Interpreter.eval_constant_expr(&r, typ, in.preglobals(), self.allocator);
     }
 }
 
@@ -448,7 +448,7 @@ pub fn element_section(self: *Module, in: *Instance) !void {
     for (0..len) |_| {
         const kinda = try r.readu();
         if (kinda == 0) {
-            const offset: usize = @intCast((try Interpreter.eval_constant_expr(&r, .i32, in.preglobals())).i32);
+            const offset: usize = @intCast((try Interpreter.eval_constant_expr(&r, .i32, in.preglobals(), self.allocator)).i32);
             const elen = try r.readu();
             if (offset + len > in.funcref_table.len) {
                 return error.InvalidFormat;
