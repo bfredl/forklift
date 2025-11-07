@@ -15,8 +15,8 @@
     // internet connectivity.
     .dependencies = .{
         .spec = .{
-            .url = "git+https://github.com/WebAssembly/spec#f3a0e06235d2d84bb0f3b5014da4370613886965",
-            .hash = "N-V-__8AADKJRwGjeuQmyPCcft4e84_b43dq6zxhUnK1VP7Q",
+            .url = "git+https://github.com/WebAssembly/spec#a5f4a85c8a4fa2239fdc4bb2c7226ed13d25dd2e",
+            .hash = "N-V-__8AABAkxQL8SB0rd9lQ_1EMmWG8w4v_rCdgI6bNDOvi",
             .lazy = true,
         },
         .clap = .{

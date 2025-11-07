@@ -153,5 +153,7 @@ fn add_spectest(b: *std.Build, test_step: *std.Build.Step, wast_exe: *std.Build.
         spec_step.addArgs(&.{ "--errors", b.fmt("{}", .{fail}) });
     }
     if (heavy) spec_step.addArg("--heavy");
+    spec_step.setName(b.fmt("spectest \"{s}\"{s}", .{ name, if (heavy) " (HEAVY)" else "" }));
+
     test_step.dependOn(&spec_step.step);
 }
