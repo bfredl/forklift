@@ -97,8 +97,16 @@ pub fn main() !u8 {
                 in.deinit();
                 mod.deinit();
             }
+
+            const tok = try t.peek() orelse return error.ParseError;
+            const is_def = std.mem.eql(u8, t.rawtext(tok), "definition");
+
             try t.skip(1);
 
+            if (is_def) {
+                did_mod = false; // "module definition", don't instantiate
+                continue;
+            }
             const mod_source = buf[start_pos..t.pos];
             const mod_code = try wat2wasm(mod_source, allocator);
 
