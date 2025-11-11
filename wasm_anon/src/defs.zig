@@ -49,6 +49,7 @@ pub const ImportExportKind = enum(u8) {
     global = 3,
 };
 
+// actually storagetype but eh
 pub const ValType = enum(u8) {
     void = 0x40,
     i32 = 0x7F,
@@ -56,8 +57,15 @@ pub const ValType = enum(u8) {
     f32 = 0x7D,
     f64 = 0x7C,
     vec128 = 0x7B,
+    // NB: all unprefixed reftypes are nullable
     funcref = 0x70,
-    externref = 0x6f,
+    i31ref = 0x6C,
+    anyref = 0x6E,
+    externref = 0x6F,
+    prefix_refnull = 0x63,
+    prefix_ref = 0x64,
+    i16 = 0x77,
+    i8 = 0x78,
     _,
 };
 

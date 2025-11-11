@@ -2,7 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 
 //pub const dbg = std.debug.print;
-pub const dbg = nodbg;
+pub const dbg = severe;
 pub fn nodbg(str: anytype, vals: anytype) void {
     _ = str;
     _ = vals;
@@ -118,6 +118,18 @@ pub fn deinit(self: *Module) void {
     }
 }
 
+pub fn skip_type(self: *Module, r: *Reader) !void {
+    _ = self;
+    const byttan = try r.readByte();
+    const typ: defs.ValType = @enumFromInt(byttan);
+    dbg("{s}", .{@tagName(typ)});
+    if (typ == .prefix_refnull or typ == .prefix_ref) {
+        const tvobyttan = try r.readByte();
+        if (tvobyttan >= 0x80) @panic("aaaa");
+        dbg(" ${}", .{tvobyttan});
+    }
+}
+
 pub fn type_section(self: *Module, r: *Reader) !void {
     const len = try r.readu();
     dbg("TYPES: {}\n", .{len});
@@ -125,20 +137,29 @@ pub fn type_section(self: *Module, r: *Reader) !void {
     for (0..len) |i| {
         self.types[i] = r.pos;
         const tag = try r.readByte();
-        if (tag != 0x60) return error.InvalidFormat;
-        const n_params = try r.readu();
-        dbg("(", .{});
-        for (0..n_params) |_| {
-            const typ: defs.ValType = @enumFromInt(try r.readByte());
-            dbg("{s}, ", .{@tagName(typ)});
+        // severe("TEG: {}\n", .{tag});
+        if (tag == 0x60) {
+            if (tag != 0x60) return error.InvalidFormat;
+            const n_params = try r.readu();
+            dbg("(", .{});
+            for (0..n_params) |jj| {
+                if (jj > 0) dbg(", ", .{});
+                try self.skip_type(r);
+            }
+            dbg("): (", .{});
+            const n_res = try r.readu();
+            for (0..n_res) |jj| {
+                if (jj > 0) dbg(", ", .{});
+                try self.skip_type(r);
+            }
+            dbg(")\n", .{});
+        } else if (tag == 0x5E) {
+            dbg("array ", .{});
+            try self.skip_type(r);
+            const is_mut = try r.readu();
+            if (is_mut != 0 and is_mut != 1) return error.InvalidFormat;
+            dbg("{s}\n", .{if (is_mut == 1) " mut" else ""});
         }
-        dbg("): (", .{});
-        const n_res = try r.readu();
-        for (0..n_res) |_| {
-            const typ: defs.ValType = @enumFromInt(try r.readByte());
-            dbg("{s}, ", .{@tagName(typ)});
-        }
-        dbg(")\n", .{});
     }
 }
 

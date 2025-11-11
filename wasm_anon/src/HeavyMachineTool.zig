@@ -174,7 +174,7 @@ pub fn specType(typ: defs.ValType) ?forklift.defs.SpecType {
         .f32 => .{ .avxval = .ss },
         .f64 => .{ .avxval = .sd },
         .funcref, .externref => .{ .intptr = .dword },
-        .void, .vec128, _ => null,
+        else => null,
     };
 }
 
