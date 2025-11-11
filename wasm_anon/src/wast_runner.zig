@@ -93,9 +93,11 @@ pub fn main() !u8 {
         _ = try t.expect(.LeftParen);
         const kind = try t.expectAtomChoice(Toplevel);
         if (kind == .module) {
+            const past_mod = did_mod;
             if (did_mod) {
                 in.deinit();
                 mod.deinit();
+                did_mod = false;
             }
 
             const tok = try t.peek() orelse return error.ParseError;
@@ -104,8 +106,7 @@ pub fn main() !u8 {
             try t.skip(1);
 
             if (is_def) {
-                did_mod = false; // "module definition", don't instantiate
-                continue;
+                continue; // "module definition", don't instantiate
             }
             const mod_source = buf[start_pos..t.pos];
             const mod_code = try wat2wasm(mod_source, allocator);
@@ -114,7 +115,7 @@ pub fn main() !u8 {
             in = try .init(&mod, &imports);
 
             if (machine_tool) {
-                if (did_mod) try tool.reinit(allocator);
+                if (past_mod) try tool.reinit(allocator);
                 if (mod.funcs_internal.len > 0) {
                     try tool.compileInstance(&in, p.args.filter);
                 }
