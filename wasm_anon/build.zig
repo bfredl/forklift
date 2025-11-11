@@ -125,6 +125,7 @@ pub fn build(b: *std.Build) void {
             .{ "store", 0, null },
             .{ "call", 2, null },
             .{ "global", 0, null },
+            .{ "gc/array", 0, null },
         };
         for (upstream_specs) |item| {
             const name, const fail, const heavy = item;

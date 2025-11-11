@@ -558,7 +558,7 @@ const Tokenizer = struct {
 };
 
 fn wat2wasm(source: []const u8, allocator: std.mem.Allocator) ![]u8 {
-    const argv = &[_][]const u8{ "wat2wasm", "--enable-all", "-", "--output=-" };
+    const argv = &[_][]const u8{ "wat2wasm", "--enable-extended-const", "--enable-gc", "-", "--output=-" };
 
     const Child = std.process.Child;
     var child: Child = .init(argv, allocator);
