@@ -10,7 +10,8 @@ const std = @import("std");
 const X86Asm = forklift.X86Asm;
 const IPReg = X86Asm.IPReg;
 const FLIR = forklift.FLIR;
-const dbg = std.debug.print;
+const severe = std.debug.print;
+const dbg = severe;
 const defs = @import("./defs.zig");
 
 const HeavyMachineTool = @This();
@@ -197,12 +198,15 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             const mut = (f.args_mut & (@as(u64, 1) << @as(u6, @intCast((i & 63))))) != 0;
             if (mut) {
                 const src = locals[i];
-                const typ: forklift.defs.ISize = switch (f.local_types[i]) {
-                    .i32 => .dword,
-                    .i64 => .quadword,
+                severe("TYP: {}\n", .{f.local_types[i]});
+                const typ: forklift.defs.SpecType = switch (f.local_types[i]) {
+                    .i32 => .{ .intptr = .dword },
+                    .i64 => .{ .intptr = .quadword },
+                    .f32 => .{ .avxval = .ss },
+                    .f64 => .{ .avxval = .sd },
                     else => return error.NotImplemented,
                 };
-                locals[i] = try ir.variable(.{ .intptr = typ });
+                locals[i] = try ir.variable(typ);
                 try ir.putvar(node, locals[i], src);
             }
         }
@@ -244,7 +248,12 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             for (0..n_decl) |_| {
                 const t = specType(typ) orelse return error.NotImplemented;
                 locals[i] = try ir.variable(t);
-                try ir.putvar(node, locals[i], try if (t == .avxval) ir.const_float(node, 0) else ir.const_uint(init_val.u32()));
+                // JÄMMER: maybe just ir.zero(spectype) ??
+                const initv = try switch (t) {
+                    .avxval => |k| if (k == .sd) ir.const_f64(node, 0) else ir.const_f32(node, 0),
+                    .intptr => ir.const_uint(init_val.u32()),
+                };
+                try ir.putvar(node, locals[i], initv);
                 i += 1;
             }
         }
@@ -323,7 +332,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
 
                 const then = try ir.addNode();
                 const exit = try ir.addNode();
-                std.debug.print("INSTRUCTIVE FEAR: {}\n", .{c_inst});
                 const else_ = if (c_inst == .else_) try ir.addNode() else exit;
 
                 const res_var = if (n_results > 0) try ir.variable(.{ .intptr = .dword }) else FLIR.NoRef;
@@ -419,6 +427,8 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
 
             .i32_const => |val| try value_stack.append(gpa, try ir.const_uint(@bitCast(@as(i64, val)))),
             .i64_const => |val| try value_stack.append(gpa, try ir.const_uint(@bitCast(val))),
+            .f32_const => |val| try value_stack.append(gpa, try ir.const_f32(node, val)),
+            .f64_const => |val| try value_stack.append(gpa, try ir.const_f64(node, val)),
             .i32_binop, .i64_binop => |tag| {
                 const rhs = value_stack.pop().?;
                 const lhs = value_stack.pop().?;

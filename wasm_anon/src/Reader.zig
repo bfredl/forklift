@@ -86,6 +86,8 @@ pub const Instruction = union(enum) {
 
     i32_const: i32,
     i64_const: i64,
+    f32_const: f32,
+    f64_const: f64,
 
     i32_binop: defs.BinOp,
     i64_binop: defs.BinOp,
@@ -128,6 +130,8 @@ pub fn readInst(r: *Reader) !Instruction {
         i(.br_if) => .{ .br_if = try r.readu() },
         i(.i32_const) => .{ .i32_const = try r.readLeb(i32) },
         i(.i64_const) => .{ .i64_const = try r.readLeb(i64) },
+        i(.f32_const) => .{ .f32_const = try r.readf(f32) },
+        i(.f64_const) => .{ .f64_const = try r.readf(f64) },
         i(.i32_add)...i(.i32_rotr) => .{ .i32_binop = @enumFromInt(byte - i(.i32_add)) },
         i(.i64_add)...i(.i64_rotr) => .{ .i64_binop = @enumFromInt(byte - i(.i64_add)) },
         i(.i32_clz)...i(.i32_popcnt) => .{ .i32_unop = @enumFromInt(byte - i(.i32_clz)) },
@@ -185,6 +189,13 @@ pub fn blocktype(r: *Reader) !defs.BlockType {
 pub fn prefix(r: *Reader) !defs.Prefixed {
     const inst = try r.readu();
     if (inst > defs.max_prefixed) return error.NotImplemented;
+    return @enumFromInt(inst);
+}
+
+// throws on unknown prefix
+pub fn ref_prefix(r: *Reader) !defs.RefPrefixed {
+    const inst = try r.readu();
+    if (inst > defs.max_ref_prefixed) return error.NotImplemented;
     return @enumFromInt(inst);
 }
 

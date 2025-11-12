@@ -416,7 +416,9 @@ pub fn init_imports(self: *Module, in: *Instance, imports: ?*ImportTable) !void 
 
     r.pos = self.globals_off;
     for (0..self.n_globals_internal) |i| {
-        const typ: defs.ValType = @enumFromInt(try r.readByte());
+        const typ: defs.ValType = @enumFromInt(r.peekByte());
+        try self.skip_type(&r);
+        dbg("\n", .{});
         _ = try r.readByte(); // WHO FUCKING CARES IF IT IS MUTABLE OR NOT
 
         in.globals_maybe_indir[self.n_globals_import + i] = try Interpreter.eval_constant_expr(&r, typ, in.preglobals(), self.allocator);

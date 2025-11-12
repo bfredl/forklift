@@ -48,14 +48,14 @@ fn regmovmc(cfo: *X86Asm, w: bool, dst: IPReg, src: IPMCVal) !void {
             } else {
                 try cfo.movrm(w, r(dst), X86Asm.rel_placeholder());
             }
-            try cfo.code.relocations.append(cfo.code.gpa, .{ .pos = cfo.code.get_target() - 4, .idx = idx });
+            try cfo.code.func_constants.append(cfo.code.gpa, .{ .pos = cfo.code.get_target() - 4, .idx = idx });
         },
     }
 }
 
 fn avxmovconst(cfo: *X86Asm, fmode: FMode, dst: u4, const_idx: u16) !void {
     try cfo.vmovurm(fmode, dst, X86Asm.rel_placeholder());
-    try cfo.code.relocations.append(cfo.code.gpa, .{ .pos = cfo.code.get_target() - 4, .idx = const_idx });
+    try cfo.code.func_constants.append(cfo.code.gpa, .{ .pos = cfo.code.get_target() - 4, .idx = const_idx });
 }
 
 fn regaritmc(cfo: *X86Asm, w: bool, op: AOp, dst: IPReg, src: IPMCVal) !void {
@@ -502,8 +502,8 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                 },
                 .fconst => {
                     const dst = i.avxreg() orelse return error.FLIRError;
-                    const fval: f64 = @bitCast(self.constval(i.op1) orelse return error.FLIRError);
-                    if (fval == 0.0) {
+                    const uconst = self.constval(i.op1) orelse return error.FLIRError;
+                    if (uconst == 0) { // also "good enough" for f64 -0.0 and f32 -0.0 ????
                         // scalar xor doesn't exist, this seems to be the standard messaround
                         const fmode_adj: FMode = switch (i.fmode_op()) {
                             .sd => .pd2,
@@ -624,7 +624,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
     if (do_prelude) try cfo.leave();
     try cfo.ret();
 
-    if (cfo.code.relocations.items.len > 0) {
+    if (cfo.code.func_constants.items.len > 0) {
         // TODO: have this as scratch space already in FLIR.constvals
         var const_targets = try self.gpa.alloc(?u32, self.constvals.items.len);
         defer self.gpa.free(const_targets);
@@ -634,7 +634,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
             try cfo.wb(0);
         }
 
-        for (cfo.code.relocations.items) |reloc| {
+        for (cfo.code.func_constants.items) |reloc| {
             const target = found_target: {
                 if (const_targets[reloc.idx]) |t| {
                     break :found_target t;
@@ -647,6 +647,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
             };
             cfo.set_target_32(reloc.pos, target);
         }
+        code.func_constants.items.len = 0; // private to function
     }
     if (options.dbg_disasm) try cfo.dbg_nasm(self.gpa);
     return entry;

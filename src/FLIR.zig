@@ -426,12 +426,15 @@ pub fn const_int(self: *Self, val: i32) !u16 {
 }
 
 const sphigh = Inst.sphigh;
-// TODO: f64 vs f32
 // TODO: special case zero, one, mayhaps?
 // TODO: tricky with vectors, we might both simple broadcast and vector constants.
-pub fn const_float(self: *Self, node: u16, val: f64) !u16 {
+pub fn const_f64(self: *Self, node: u16, val: f64) !u16 {
     const constref = try self.const_uint(@bitCast(val));
     return self.addInst(node, .{ .tag = .fconst, .op1 = constref, .op2 = NoRef, .spec = sphigh(@intFromEnum(FMode.sd), 0) });
+}
+pub fn const_f32(self: *Self, node: u16, val: f32) !u16 {
+    const constref = try self.const_uint(@as(u32, @bitCast(val)));
+    return self.addInst(node, .{ .tag = .fconst, .op1 = constref, .op2 = NoRef, .spec = sphigh(@intFromEnum(FMode.ss), 0) });
 }
 
 pub fn load(self: *Self, node: u16, wide: bool, signext: bool, kind: defs.SpecType, base: u16, idx: u16, scale: u2) !u16 {

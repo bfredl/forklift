@@ -95,7 +95,10 @@ pub fn expr_0(self: *Self, type_ctx: SpecType) !?u16 {
         '0'...'9' => {
             const i = self.t.num() orelse return error.SyntaxError;
             return switch (type_ctx) {
-                .avxval => |_| try self.ir.const_float(self.curnode, @floatFromInt(i)),
+                .avxval => |x| switch (x) {
+                    .sd => try self.ir.const_f64(self.curnode, @floatFromInt(i)),
+                    else => @panic("HAIII"),
+                },
                 .intptr => |_| try self.ir.const_uint(@intCast(i)),
             };
         },

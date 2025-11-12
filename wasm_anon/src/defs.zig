@@ -294,6 +294,7 @@ pub const OpCode = enum(u8) {
 
     ref_null = 0xD0,
 
+    ref_prefixed = 0xFB,
     prefixed = 0xFC,
 };
 
@@ -484,6 +485,42 @@ pub const Prefixed = enum(u32) {
     table_fill = 17,
 };
 pub const max_prefixed = 17;
+
+// don't use _ to not blow up dispatch tables
+pub const RefPrefixed = enum(u32) {
+    struct_new = 0,
+    struct_new_default = 1,
+    struct_get = 2,
+    struct_get_s = 3,
+    struct_get_u = 4,
+    struct_set = 5,
+    array_new = 6,
+    array_new_default = 7,
+    array_new_fixed = 8,
+    array_new_data = 9,
+    array_new_elem = 10,
+    array_get = 11,
+    array_get_s = 12,
+    array_get_u = 13,
+    array_set = 14,
+    array_len = 15,
+    array_fill = 16,
+    array_copy = 17,
+    array_init_data = 18,
+    array_init_elem = 19,
+    ref_test = 20,
+    ref_test_null = 21,
+    ref_cast = 22,
+    ref_cast_null = 23,
+    br_on_cast = 24,
+    br_on_cast_fail = 25,
+    any_convert_extern = 26,
+    extern_convert_any = 27,
+    ref_i31 = 28,
+    i31_get_s = 29,
+    i31_get_u = 30,
+};
+pub const max_ref_prefixed = 30;
 
 pub const funcref_nil: u32 = 0xffffffff;
 

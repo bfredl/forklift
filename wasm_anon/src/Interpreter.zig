@@ -695,7 +695,15 @@ pub fn eval_constant_expr(r: *Reader, typ: defs.ValType, preglobals: []const Sta
                     else => unreachable,
                 };
             },
-            else => return error.InvalidFormat,
+            .ref_prefixed => {
+                const code = try r.ref_prefix();
+                severe("boll {s}", .{@tagName(code)});
+                return error.InvalidFormat;
+            },
+            else => {
+                severe("INIT with {}???\n", .{eval});
+                return error.InvalidFormat;
+            },
         };
         if (r.peekByte() == 0x0b) {
             _ = try r.readByte();

@@ -113,7 +113,7 @@ pub fn build(b: *std.Build) void {
             .{ "f64_cmp", 0, null },
             .{ "labels", 0, null },
             .{ "local_get", 0, 4 },
-            .{ "local_set", 0, null },
+            .{ "local_set", 0, 3 },
             .{ "local_tee", 0, null },
             .{ "br_if", 0, 39 },
             // .{ "loop", 0, null },
@@ -125,7 +125,7 @@ pub fn build(b: *std.Build) void {
             .{ "store", 0, null },
             .{ "call", 2, null },
             .{ "global", 0, null },
-            .{ "gc/array", 0, null },
+            // .{ "gc/array", 0, null },  // NOT YET
         };
         for (upstream_specs) |item| {
             const name, const fail, const heavy = item;
