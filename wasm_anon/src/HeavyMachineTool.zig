@@ -218,13 +218,13 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     var label_stack: std.ArrayList(struct { c_ip: u32, ir_target: u16, else_target: u16 = FLIR.NoRef, loop: bool, res_var: u16, value_stack_level: usize }) = .empty;
     defer label_stack.deinit(gpa);
 
-    const max_args = 4;
+    const max_args = 5;
     if (f.n_params > max_args) return error.NotImplemented;
 
     var local_types_buf: [max_args]defs.ValType = undefined;
     const ret_type = try in.mod.type_params(f.typeidx, &local_types_buf);
     // TODO: redundant with f.local_types??????????????????
-    const local_types = local_types_buf[0..f.n_params];
+    const arg_types = local_types_buf[0..f.n_params];
 
     // only a single node doing "ir.ret"
     const exit_node = try ir.addNode();
@@ -581,14 +581,24 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     try cfo.movmr(true, b.o(56), .rax);
 
     // rdi, rsi kept for memory
-    const ireg: [max_args]IPReg = .{ .rdx, .rcx, .r8, .r9 };
+    const ireg: [max_args]IPReg = .{ .rdx, .rcx, .r8, .r9, undefined };
     try cfo.mov(true, .r10, .rdx);
 
-    for (local_types, 0..) |t, i| {
+    var i_count: u32 = 0;
+    var f_count: u32 = 0;
+
+    for (arg_types, 0..) |t, i| {
         const wher: X86Asm.EAddr = X86Asm.a(.r10).o(@intCast(@sizeOf(defs.StackValue) * i));
         switch (t) {
-            .i32, .i64 => try cfo.movrm(t == .i64, ireg[i], wher),
-            .f32, .f64 => try cfo.vmovurm(if (t == .f64) .sd else .ss, @intCast(i), wher),
+            .i32, .i64 => {
+                if (i_count >= 4) return error.NotImplemented;
+                try cfo.movrm(t == .i64, ireg[i_count], wher);
+                i_count += 1;
+            },
+            .f32, .f64 => {
+                try cfo.vmovurm(if (t == .f64) .sd else .ss, @intCast(f_count), wher);
+                f_count += 1;
+            },
             else => return error.NotImplemented,
         }
     }
