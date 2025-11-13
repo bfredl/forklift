@@ -462,6 +462,10 @@ pub fn vcmpf(self: *Self, node: u16, vop: X86Asm.VCmpOp, fmode: FMode, op1: u16,
     return self.addInst(node, .{ .tag = .vcmpf, .spec = Inst.vcmpfspec(vop, fmode), .op1 = op1, .op2 = op2 });
 }
 
+pub fn vblendf(self: *Self, node: u16, fmode: FMode, op1: u16, op2: u16, op3: u16) !u16 {
+    return self.addInst(node, .{ .tag = .vblendf, .spec = sphigh(@intFromEnum(fmode), 0), .op1 = op1, .op2 = op2, .next = op3 });
+}
+
 // TODO: a bit contradictory naming with IntCond
 pub fn fcmp(self: *Self, node: u16, cond: IntCond, fmode: FMode, op1: u16, op2: u16) !u16 {
     if (!fmode.scalar()) return error.FLIRError;

@@ -23,6 +23,7 @@ pub const Tag = enum(u8) {
     fconst, // op1 is a constref, opspec for type
     vmath, // binops specifically
     vcmpf,
+    vblendf, // perhaps tri-ops more generally??
     fcmp,
     int2vf,
     vf2int,
@@ -39,6 +40,9 @@ tag: Tag,
 spec: u8 = 0,
 op1: u16,
 op2: u16,
+// only var, phi and putphi currently use this. other types can assign other meaning:
+// vblendf uses is as op3 (SKANDAL)
+next: u16 = FLIR.NoRef,
 
 // use_first: u16,
 // use_op1_first: u16,
@@ -49,8 +53,6 @@ mcidx: u8 = undefined,
 vreg_scratch: u16 = FLIR.NoRef,
 // can share space with vreg_scratch later?
 node_delete_this: u16 = FLIR.NoRef,
-// only var, phi and putphi currently use this. other types can assign other meaning:
-next: u16 = FLIR.NoRef,
 f: packed struct {
     // note: if the reference is a vreg, it might
     // be alive in an other branch processed later
@@ -161,6 +163,7 @@ pub fn res_type(inst: Inst) ?defs.ValType {
         .icmpset => .intptr,
         .vmath => .avxval,
         .vcmpf => .avxval,
+        .vblendf => .avxval,
         .fcmp => null, // matching icmp
         .int2vf => .avxval, // convert int to float, or move int from gp to vector reg
         .fconst => .avxval,
@@ -199,6 +202,7 @@ pub fn n_op(inst: Inst, rw: bool) u2 {
         .icmpset => 2,
         .vmath => 2,
         .vcmpf => 2,
+        .vblendf => 3, // HAIII
         .fcmp => 2,
         .int2vf => 1,
         .fconst => 1, // but note: always a constval

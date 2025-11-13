@@ -508,7 +508,13 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 };
                 const fmode: forklift.X86Asm.FMode = if (inst == .f64_binop) .sd else .ss;
                 const val = try ir.vmath(node, theop, fmode, lhs, rhs);
-                try value_stack.append(gpa, val);
+                if (theop == .min or theop == .max) {
+                    const lhs_isnan = try ir.vcmpf(node, .unord, fmode, lhs, lhs);
+                    const nanblend = try ir.vblendf(node, fmode, val, lhs, lhs_isnan);
+                    try value_stack.append(gpa, nanblend);
+                } else {
+                    try value_stack.append(gpa, val);
+                }
             },
 
             .call => |idx| {

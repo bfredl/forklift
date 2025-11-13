@@ -114,7 +114,7 @@ pub fn build(b: *std.Build) void {
             .{ "labels", 0, null },
             .{ "local_get", 0, 4 },
             .{ "local_set", 0, 2 },
-            .{ "local_tee", 0, null },
+            .{ "local_tee", 0, 0 },
             .{ "br_if", 0, 39 },
             // .{ "loop", 0, null },
             .{ "conversions", 6, null },

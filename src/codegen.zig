@@ -528,12 +528,24 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     const y = self.avxreg(i.op2) orelse return error.FLIRError;
                     const dst = i.avxreg() orelse return error.FLIRError;
                     try cfo.vcmpf(i.vcmpop(), i.fmode_op(), dst, x, y);
-                    cond = @as(defs.IntCond, @enumFromInt(i.spec)).asX86Cond();
                 },
                 .fcmp => {
                     const x = self.avxreg(i.op1) orelse return error.FLIRError;
                     const y = self.avxreg(i.op2) orelse return error.FLIRError;
                     try cfo.fcmp(i.fmode_op(), x, y);
+                    cond = i.fcmpop().asX86Cond();
+                },
+                .vblendf => {
+                    const x = self.avxreg(i.op1) orelse return error.FLIRError;
+                    const y = self.avxreg(i.op2) orelse return error.FLIRError;
+                    const z = self.avxreg(i.next) orelse return error.FLIRError;
+                    const dst = i.avxreg() orelse return error.FLIRError;
+                    const mode = switch (i.fmode_op()) {
+                        .ss => .ps4, // cannot blend scalars, so expand a little
+                        .sd => .pd2,
+                        else => |m| m,
+                    };
+                    try cfo.vblendv(mode, dst, x, y, z);
                     cond = i.fcmpop().asX86Cond();
                 },
                 .int2vf => {
