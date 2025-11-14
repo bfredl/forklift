@@ -235,8 +235,10 @@ pub const IntCond = enum(u4) {
 };
 
 pub const VUnOp = enum(u5) {
-    floor,
     ceil,
+    floor,
+    trunc,
+    nearest,
 };
 
 pub const MemoryIntrinsic = enum(u8) {

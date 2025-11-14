@@ -522,6 +522,8 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const theop: forklift.defs.VUnOp = switch (tag) {
                     .floor => .floor,
                     .ceil => .ceil,
+                    .trunc => .trunc,
+                    .nearest => .nearest,
                     else => return error.NotImplemented,
                 };
                 const fmode: forklift.X86Asm.FMode = if (inst == .f64_unop) .sd else .ss;

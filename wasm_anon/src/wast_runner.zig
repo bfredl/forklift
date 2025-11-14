@@ -265,6 +265,8 @@ pub fn main() !u8 {
                             } else if (actual != expected) {
                                 dbg("{s}(...): actual: {}, expected: {}\n", .{ name, actual, expected });
                                 failures += 1;
+                                // } else if (ctyp == .@"f64.const") {
+                                //     dbg("NIIICE: {s}(...): actual: {e}, expected: {e}\n", .{ name, actual, expected });
                             }
                         },
                     }

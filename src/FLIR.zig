@@ -456,19 +456,19 @@ const FMode = X86Asm.FMode;
 const vspec = Inst.vspec;
 pub fn vmath(self: *Self, node: u16, vop: X86Asm.VMathOp, fmode: FMode, op1: u16, op2: u16) !u16 {
     // TODO: somewhere, typecheck that FMode matches fmode of args..
-    return self.addInst(node, .{ .tag = .vmath, .spec = Inst.vspec(@intCast(vop.off()), fmode), .op1 = op1, .op2 = op2 });
+    return self.addInst(node, .{ .tag = .vmath, .spec = vspec(@intCast(vop.off()), fmode), .op1 = op1, .op2 = op2 });
 }
 
 pub fn vcmpf(self: *Self, node: u16, vop: X86Asm.VCmpOp, fmode: FMode, op1: u16, op2: u16) !u16 {
-    return self.addInst(node, .{ .tag = .vcmpf, .spec = Inst.vspec(vop.val(), fmode), .op1 = op1, .op2 = op2 });
+    return self.addInst(node, .{ .tag = .vcmpf, .spec = vspec(vop.val(), fmode), .op1 = op1, .op2 = op2 });
 }
 
 pub fn vblendf(self: *Self, node: u16, fmode: FMode, op1: u16, op2: u16, op3: u16) !u16 {
-    return self.addInst(node, .{ .tag = .vblendf, .spec = Inst.vspec(0, fmode), .op1 = op1, .op2 = op2, .next = op3 });
+    return self.addInst(node, .{ .tag = .vblendf, .spec = vspec(0, fmode), .op1 = op1, .op2 = op2, .next = op3 });
 }
 
 pub fn vunop(self: *Self, node: u16, vop: defs.VUnOp, fmode: FMode, op1: u16) !u16 {
-    return self.addInst(node, .{ .tag = .vunop, .spec = Inst.vspec(@intFromEnum(vop), fmode), .op1 = op1, .op2 = 0 });
+    return self.addInst(node, .{ .tag = .vunop, .spec = vspec(@intFromEnum(vop), fmode), .op1 = op1, .op2 = 0 });
 }
 
 // TODO: a bit contradictory naming with IntCond

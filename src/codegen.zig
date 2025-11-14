@@ -553,6 +553,8 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     const imm: u8 = switch (i.vunop()) {
                         .floor => 9,
                         .ceil => 10,
+                        .trunc => 11,
+                        .nearest => 11,
                         // else => return error.NotImplemented,
                     };
                     try cfo.vround(imm, i.fmode_op(), dst, x, x);
