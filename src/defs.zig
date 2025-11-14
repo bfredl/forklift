@@ -234,6 +234,11 @@ pub const IntCond = enum(u4) {
     }
 };
 
+pub const VUnOp = enum(u5) {
+    floor,
+    ceil,
+};
+
 pub const MemoryIntrinsic = enum(u8) {
     memset, // dest [rsi], what [rax], count [rcx]
 };

@@ -24,6 +24,7 @@ pub const Tag = enum(u8) {
     vmath, // binops specifically
     vcmpf,
     vblendf, // perhaps tri-ops more generally??
+    vunop,
     fcmp,
     int2vf,
     vf2int,
@@ -132,6 +133,10 @@ pub fn fmode_op(self: Inst) X86Asm.FMode {
     return @enumFromInt(self.high_spec());
 }
 
+pub fn vunop(self: Inst) defs.VUnOp {
+    return @enumFromInt(self.low_spec());
+}
+
 pub fn intcond(self: *Inst) defs.IntCond {
     return @enumFromInt(self.low_spec());
 }
@@ -164,6 +169,7 @@ pub fn res_type(inst: Inst) ?defs.ValType {
         .vmath => .avxval,
         .vcmpf => .avxval,
         .vblendf => .avxval,
+        .vunop => .avxval,
         .fcmp => null, // matching icmp
         .int2vf => .avxval, // convert int to float, or move int from gp to vector reg
         .fconst => .avxval,
@@ -203,6 +209,7 @@ pub fn n_op(inst: Inst, rw: bool) u2 {
         .vmath => 2,
         .vcmpf => 2,
         .vblendf => 3, // HAIII
+        .vunop => 1,
         .fcmp => 2,
         .int2vf => 1,
         .fconst => 1, // but note: always a constval
@@ -239,21 +246,13 @@ pub fn sphigh(high: u3, low: u5) u8 {
     return @as(u8, high) << 5 | low;
 }
 
-pub fn vmathspec(vop: X86Asm.VMathOp, fmode: X86Asm.FMode) u8 {
-    return sphigh(@intFromEnum(fmode), @intCast(vop.off()));
-}
-
-pub fn vcmpfspec(vcmp: X86Asm.VCmpOp, fmode: X86Asm.FMode) u8 {
-    return sphigh(@intFromEnum(fmode), vcmp.val());
-}
-
-pub fn fcmpspec(cond: defs.IntCond, fmode: X86Asm.FMode) u8 {
-    return sphigh(@intFromEnum(fmode), cond.off());
+pub fn vspec(lowop: u5, fmode: X86Asm.FMode) u8 {
+    return sphigh(@intFromEnum(fmode), lowop);
 }
 
 // TODO: will generalize
 pub fn vcvtspec(fmode: X86Asm.FMode) u8 {
-    return sphigh(@intFromEnum(fmode), 0);
+    return vspec(0, fmode);
 }
 
 const defs = @import("./defs.zig");

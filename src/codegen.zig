@@ -546,7 +546,16 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                         else => |m| m,
                     };
                     try cfo.vblendv(mode, dst, x, y, z);
-                    cond = i.fcmpop().asX86Cond();
+                },
+                .vunop => {
+                    const x = self.avxreg(i.op1) orelse return error.FLIRError;
+                    const dst = i.avxreg() orelse return error.FLIRError;
+                    const imm: u8 = switch (i.vunop()) {
+                        .floor => 9,
+                        .ceil => 10,
+                        // else => return error.NotImplemented,
+                    };
+                    try cfo.vround(imm, i.fmode_op(), dst, x, x);
                 },
                 .int2vf => {
                     const val = self.ipval(i.op1) orelse return error.FLIRError;

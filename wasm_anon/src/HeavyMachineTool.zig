@@ -517,6 +517,18 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 }
             },
 
+            .f32_unop, .f64_unop => |tag| {
+                const ival = value_stack.pop().?;
+                const theop: forklift.defs.VUnOp = switch (tag) {
+                    .floor => .floor,
+                    .ceil => .ceil,
+                    else => return error.NotImplemented,
+                };
+                const fmode: forklift.X86Asm.FMode = if (inst == .f64_unop) .sd else .ss;
+                const val = try ir.vunop(node, theop, fmode, ival);
+                try value_stack.append(gpa, val);
+            },
+
             .call => |idx| {
                 if (idx < in.mod.n_funcs_import) return error.NotImplemented;
                 if (idx >= in.mod.n_funcs_import + in.mod.funcs_internal.len) return error.InvalidFormat;

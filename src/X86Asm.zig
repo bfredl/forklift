@@ -973,6 +973,14 @@ pub fn vblendv(self: *Self, fmode: FMode, dst: u4, src1: u4, src2: u4, src3: u4)
     try self.wb(@as(u8, src3) << 4);
 }
 
+pub fn vround(self: *Self, imm: u8, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
+    if (!fmode.scalar()) return error.NotImplemented; // ????
+    try self.vex3(false, dst > 7, false, src2 > 7, .h0F3A, src1, fmode.l(), .h66);
+    try self.wb(if (fmode.double()) 0x0b else 0x0a);
+    try self.modRm(0b11, @truncate(dst), @truncate(src2));
+    try self.wb(imm);
+}
+
 pub fn fcmp(self: *Self, fmode: FMode, src1: u4, src2: u4) !void {
     // tricky, p field must be 0/1 even though it is normally 2/3 for a scalar
     try self.vex0fwig(src1 > 7, false, src2 > 7, 0, false, fmode.pp_1bit());

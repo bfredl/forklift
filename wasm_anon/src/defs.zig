@@ -354,6 +354,16 @@ pub const FBinOp = enum(u8) {
     copysign,
 };
 
+pub const FUnOp = enum(u8) {
+    abs,
+    neg,
+    ceil,
+    floor,
+    trunc,
+    nearest,
+    sqrt,
+};
+
 pub fn memtype(comptime op: OpCode) type {
     return switch (op) {
         .i32_load => i32,

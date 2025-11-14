@@ -453,23 +453,28 @@ pub fn bpf_load_map(self: *Self, node: u16, map_idx: u32, is_value: bool) !u16 {
 }
 
 const FMode = X86Asm.FMode;
+const vspec = Inst.vspec;
 pub fn vmath(self: *Self, node: u16, vop: X86Asm.VMathOp, fmode: FMode, op1: u16, op2: u16) !u16 {
     // TODO: somewhere, typecheck that FMode matches fmode of args..
-    return self.addInst(node, .{ .tag = .vmath, .spec = Inst.vmathspec(vop, fmode), .op1 = op1, .op2 = op2 });
+    return self.addInst(node, .{ .tag = .vmath, .spec = Inst.vspec(@intCast(vop.off()), fmode), .op1 = op1, .op2 = op2 });
 }
 
 pub fn vcmpf(self: *Self, node: u16, vop: X86Asm.VCmpOp, fmode: FMode, op1: u16, op2: u16) !u16 {
-    return self.addInst(node, .{ .tag = .vcmpf, .spec = Inst.vcmpfspec(vop, fmode), .op1 = op1, .op2 = op2 });
+    return self.addInst(node, .{ .tag = .vcmpf, .spec = Inst.vspec(vop.val(), fmode), .op1 = op1, .op2 = op2 });
 }
 
 pub fn vblendf(self: *Self, node: u16, fmode: FMode, op1: u16, op2: u16, op3: u16) !u16 {
-    return self.addInst(node, .{ .tag = .vblendf, .spec = sphigh(@intFromEnum(fmode), 0), .op1 = op1, .op2 = op2, .next = op3 });
+    return self.addInst(node, .{ .tag = .vblendf, .spec = Inst.vspec(0, fmode), .op1 = op1, .op2 = op2, .next = op3 });
+}
+
+pub fn vunop(self: *Self, node: u16, vop: defs.VUnOp, fmode: FMode, op1: u16) !u16 {
+    return self.addInst(node, .{ .tag = .vunop, .spec = Inst.vspec(@intFromEnum(vop), fmode), .op1 = op1, .op2 = 0 });
 }
 
 // TODO: a bit contradictory naming with IntCond
 pub fn fcmp(self: *Self, node: u16, cond: IntCond, fmode: FMode, op1: u16, op2: u16) !u16 {
     if (!fmode.scalar()) return error.FLIRError;
-    return self.addInst(node, .{ .tag = .fcmp, .spec = Inst.fcmpspec(cond, fmode), .op1 = op1, .op2 = op2 });
+    return self.addInst(node, .{ .tag = .fcmp, .spec = Inst.vspec(cond.off(), fmode), .op1 = op1, .op2 = op2 });
 }
 
 pub fn int2float(self: *Self, node: u16, fmode: FMode, op1: u16) !u16 {
@@ -563,9 +568,9 @@ pub fn call(self: *Self, node: u16, kind: defs.CallKind, num: u16, extra: u16) !
     return self.addInst(node, .{ .tag = .copy, .spec = intspec(.dword).into(), .op1 = c, .op2 = NoRef });
 }
 
-pub fn addPhi(self: *Self, node: u16, vidx: u16, vspec: u8) !u16 {
+pub fn addPhi(self: *Self, node: u16, vidx: u16, valspec: u8) !u16 {
     const n = &self.n.items[node];
-    const ref = try self.addRawInst(.{ .tag = .phi, .op1 = vidx, .op2 = NoRef, .spec = vspec, .f = .{ .kill_op1 = true }, .next = n.phi_list, .node_delete_this = node });
+    const ref = try self.addRawInst(.{ .tag = .phi, .op1 = vidx, .op2 = NoRef, .spec = valspec, .f = .{ .kill_op1 = true }, .next = n.phi_list, .node_delete_this = node });
     n.phi_list = ref;
     return ref;
 }
