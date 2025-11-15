@@ -241,6 +241,11 @@ pub const VUnOp = enum(u5) {
     nearest,
 };
 
+pub const Int2VOp = enum(u5) {
+    convert, // signed or unsigned tho??
+    bitcast,
+};
+
 pub const MemoryIntrinsic = enum(u8) {
     memset, // dest [rsi], what [rax], count [rcx]
 };

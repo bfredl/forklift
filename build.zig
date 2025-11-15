@@ -30,6 +30,22 @@ pub fn build(b: *std.Build) void {
         b.installArtifact(exe_bpf);
     }
 
+    if (true) {
+        const cfo_scratch = b.step("scratch", "DUB SIREN SOUND");
+        const exe_scratch = b.addExecutable(.{
+            .name = "run",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/scratch.zig"),
+                .optimize = opt,
+                .target = t,
+            }),
+        });
+        b.installArtifact(exe_scratch);
+        exe_scratch.root_module.addImport("forklift", forklift);
+        const run_exe_scratch = b.addRunArtifact(exe_scratch);
+        cfo_scratch.dependOn(&run_exe_scratch.step);
+    }
+
     const bpf_helper_module = b.createModule(.{
         .root_source_file = b.path("test/bpf_helper.zig"),
         .optimize = opt,

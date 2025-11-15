@@ -1042,6 +1042,13 @@ pub fn vmovdqumr(self: *Self, wide: bool, dst: EAddr, src: u4) !void {
     try self.vop_i_rm(0x7f, wide, .F3, src, 0, dst);
 }
 
+pub fn vmovdq_iv(self: *Self, wide: bool, dst: IPReg, src: u4) !void {
+    try self.new_inst(@returnAddress());
+    try self.vex0f(wide, src > 7, false, dst.ext(), 0, false, .h66);
+    try self.wb(0x7e);
+    try self.modRm(0b11, @truncate(src), dst.lowId());
+}
+
 pub fn vaddi(self: *Self, wide: bool, imode: ISize, dst: u4, src1: u4, src2: u4) !void {
     const op = if (imode == .quadword) 0xD4 else (0xFC + @as(u8, @intFromEnum(imode)));
     try self.vop_i_rr(op, wide, .h66, dst, src1, src2);

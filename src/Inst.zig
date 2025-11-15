@@ -250,11 +250,6 @@ pub fn vspec(lowop: u5, fmode: X86Asm.FMode) u8 {
     return sphigh(@intFromEnum(fmode), lowop);
 }
 
-// TODO: will generalize
-pub fn vcvtspec(fmode: X86Asm.FMode) u8 {
-    return vspec(0, fmode);
-}
-
 const defs = @import("./defs.zig");
 const X86Asm = @import("./X86Asm.zig");
 const FLIR = @import("./FLIR.zig");

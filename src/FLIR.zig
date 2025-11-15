@@ -477,15 +477,15 @@ pub fn fcmp(self: *Self, node: u16, cond: IntCond, fmode: FMode, op1: u16, op2: 
     return self.addInst(node, .{ .tag = .fcmp, .spec = Inst.vspec(cond.off(), fmode), .op1 = op1, .op2 = op2 });
 }
 
-pub fn int2float(self: *Self, node: u16, fmode: FMode, op1: u16) !u16 {
-    // maybe a packed should implicitly convert and then broadcast?
+pub fn int2float(self: *Self, node: u16, op: defs.Int2VOp, fmode: FMode, op1: u16) !u16 {
+    // TODO: maybe a packed should implicitly convert and then broadcast?
     if (!fmode.scalar()) return error.FLIRError;
-    return self.addInst(node, .{ .tag = .int2vf, .spec = Inst.vcvtspec(fmode), .op1 = op1, .op2 = NoRef });
+    return self.addInst(node, .{ .tag = .int2vf, .spec = Inst.vspec(@intFromEnum(op), fmode), .op1 = op1, .op2 = NoRef });
 }
 
 pub fn float2int(self: *Self, node: u16, fmode: FMode, op1: u16) !u16 {
     if (!fmode.scalar()) return error.FLIRError;
-    return self.addInst(node, .{ .tag = .vf2int, .spec = Inst.vcvtspec(fmode), .op1 = op1, .op2 = NoRef });
+    return self.addInst(node, .{ .tag = .vf2int, .spec = Inst.vspec(fmode), .op1 = op1, .op2 = NoRef });
 }
 
 fn wsize(size: defs.ISize) !bool {

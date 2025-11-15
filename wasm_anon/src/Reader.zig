@@ -107,6 +107,9 @@ pub const Instruction = union(enum) {
     f32_unop: defs.FUnOp,
     f64_unop: defs.FUnOp,
 
+    int_reinterpret_float: bool, // if WIDE
+    float_reinterpret_int: bool, // if WIDE
+
     // note: if implement multiple memories, also need to fix i_load/i_store..
     memory_size: void,
 
@@ -160,6 +163,13 @@ pub fn readInst(r: *Reader) !Instruction {
         i(.f64_add)...i(.f64_copysign) => .{ .f64_binop = @enumFromInt(byte - i(.f64_add)) },
         i(.f32_abs)...i(.f32_sqrt) => .{ .f32_unop = @enumFromInt(byte - i(.f32_abs)) },
         i(.f64_abs)...i(.f64_sqrt) => .{ .f64_unop = @enumFromInt(byte - i(.f64_abs)) },
+
+        // reinterpret
+        .i32_reinterpret_f32 => .{ .int_reinterpret_float = false },
+        .i64_reinterpret_f64 => .{ .int_reinterpret_float = true },
+        .f32_reinterpret_i32 => .{ .float_reinterpret_int = false },
+        .f64_reinterpret_i64 => .{ .float_reinterpret_int = true },
+
         i(.memory_size) => .{ .memory_size = if (try r.readu() != 0) return error.InvalidFormat else {} },
     };
 }

@@ -281,6 +281,7 @@ pub const OpCode = enum(u8) {
     f64_convert_i64_s = 0xB9,
     f64_convert_i64_u = 0xBA,
     f64_promote_f32 = 0xBB,
+
     i32_reinterpret_f32 = 0xBC,
     i64_reinterpret_f64 = 0xBD,
     f32_reinterpret_i32 = 0xBE,
