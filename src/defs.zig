@@ -246,6 +246,11 @@ pub const Int2VOp = enum(u5) {
     bitcast,
 };
 
+pub const V2IntOp = enum(u5) {
+    convert, // signed or unsigned tho??
+    bitcast,
+};
+
 pub const MemoryIntrinsic = enum(u8) {
     memset, // dest [rsi], what [rax], count [rcx]
 };

@@ -562,20 +562,31 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                 .int2vf => {
                     const val = self.ipval(i.op1) orelse return error.FLIRError;
                     const dst = i.avxreg() orelse return error.FLIRError;
-                    // TODO: more ops than sitosd/sitoss
-                    switch (val) {
-                        // TODO:
-                        // .frameslot => |f| try cfo.movrm(w, r(dst), X86Asm.a(.rbp).o(slotoff(f))),
-                        .frameslot => return error.NotImplemented,
-                        .ipreg => |reg| try cfo.vcvtsi2s_rr(i.fmode_op(), dst, true, r(reg)),
-                        .constval, .constref, .constptr => return error.FLIRError, // mandatory cfold for things like this?
+                    const ispec: defs.Int2VOp = @enumFromInt(i.low_spec());
+                    switch (ispec) {
+                        .convert => switch (val) {
+                            // TODO:
+                            // .frameslot => |f| try cfo.movrm(w, r(dst), X86Asm.a(.rbp).o(slotoff(f))),
+                            .frameslot => return error.NotImplemented,
+                            .ipreg => |reg| try cfo.vcvtsi2s_rr(i.fmode_op(), dst, true, r(reg)),
+                            .constval, .constref, .constptr => return error.FLIRError, // mandatory cfold for things like this?
+                        },
+                        .bitcast => {
+                            return error.NotImplemented;
+                        },
                     }
                 },
                 .vf2int => {
                     const src = self.avxreg(i.op1) orelse return error.FLIRError;
                     const dst = i.ipreg() orelse return error.FLIRError;
+                    const ispec: defs.V2IntOp = @enumFromInt(i.low_spec());
                     // TODO: more ops than sitosd/sitoss
-                    try cfo.vcvtsx2si_rr(i.fmode_op(), true, r(dst), src);
+                    switch (ispec) {
+                        .convert => try cfo.vcvtsx2si_rr(i.fmode_op(), true, r(dst), src),
+                        .bitcast => {
+                            return error.NotImplemented;
+                        },
+                    }
                 },
                 .call => {
                     const kind: defs.CallKind = @enumFromInt(i.spec);

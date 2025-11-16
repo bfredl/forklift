@@ -112,7 +112,7 @@ fn high_spec(self: Inst) u3 {
     return @intCast((self.spec & HIGH_MASK) >> 5);
 }
 
-fn low_spec(self: Inst) u5 {
+pub fn low_spec(self: Inst) u5 {
     return @intCast(self.spec & LOW_MASK);
 }
 

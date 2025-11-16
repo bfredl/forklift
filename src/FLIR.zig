@@ -483,9 +483,9 @@ pub fn int2float(self: *Self, node: u16, op: defs.Int2VOp, fmode: FMode, op1: u1
     return self.addInst(node, .{ .tag = .int2vf, .spec = Inst.vspec(@intFromEnum(op), fmode), .op1 = op1, .op2 = NoRef });
 }
 
-pub fn float2int(self: *Self, node: u16, fmode: FMode, op1: u16) !u16 {
+pub fn float2int(self: *Self, node: u16, op: defs.Int2VOp, fmode: FMode, op1: u16) !u16 {
     if (!fmode.scalar()) return error.FLIRError;
-    return self.addInst(node, .{ .tag = .vf2int, .spec = Inst.vspec(fmode), .op1 = op1, .op2 = NoRef });
+    return self.addInst(node, .{ .tag = .vf2int, .spec = Inst.vspec(@intFromEnum(op), fmode), .op1 = op1, .op2 = NoRef });
 }
 
 fn wsize(size: defs.ISize) !bool {

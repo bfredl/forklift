@@ -377,7 +377,7 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
                     try mcmovreg(mod, i.ipval().?, @enumFromInt(1));
                 },
                 .fconst => {},
-                .vmath, .vcmpf, .int2vf, .vf2int, .fcmp => {
+                .vmath, .vcmpf, .int2vf, .vf2int, .fcmp, .vblendf, .vunop => {
                     print("platform unsupported: {}\n", .{i.tag});
                     return error.FLIRError;
                 },
