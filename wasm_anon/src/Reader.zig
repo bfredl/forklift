@@ -165,10 +165,10 @@ pub fn readInst(r: *Reader) !Instruction {
         i(.f64_abs)...i(.f64_sqrt) => .{ .f64_unop = @enumFromInt(byte - i(.f64_abs)) },
 
         // reinterpret
-        .i32_reinterpret_f32 => .{ .int_reinterpret_float = false },
-        .i64_reinterpret_f64 => .{ .int_reinterpret_float = true },
-        .f32_reinterpret_i32 => .{ .float_reinterpret_int = false },
-        .f64_reinterpret_i64 => .{ .float_reinterpret_int = true },
+        i(.i32_reinterpret_f32) => .{ .int_reinterpret_float = false },
+        i(.i64_reinterpret_f64) => .{ .int_reinterpret_float = true },
+        i(.f32_reinterpret_i32) => .{ .float_reinterpret_int = false },
+        i(.f64_reinterpret_i64) => .{ .float_reinterpret_int = true },
 
         i(.memory_size) => .{ .memory_size = if (try r.readu() != 0) return error.InvalidFormat else {} },
     };

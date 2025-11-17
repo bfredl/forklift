@@ -530,7 +530,15 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const val = try ir.vunop(node, theop, fmode, ival);
                 try value_stack.append(gpa, val);
             },
-
+            .int_reinterpret_float => |wide| {
+                const fval = value_stack.pop().?;
+                const val = try ir.float2int(node, .bitcast, if (wide) .sd else .ss, fval);
+                try value_stack.append(gpa, val);
+            },
+            .float_reinterpret_int => |wide| {
+                _ = wide;
+                return error.NotImplemented;
+            },
             .call => |idx| {
                 if (idx < in.mod.n_funcs_import) return error.NotImplemented;
                 if (idx >= in.mod.n_funcs_import + in.mod.funcs_internal.len) return error.InvalidFormat;

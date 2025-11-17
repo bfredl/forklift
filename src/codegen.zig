@@ -580,12 +580,9 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     const src = self.avxreg(i.op1) orelse return error.FLIRError;
                     const dst = i.ipreg() orelse return error.FLIRError;
                     const ispec: defs.V2IntOp = @enumFromInt(i.low_spec());
-                    // TODO: more ops than sitosd/sitoss
                     switch (ispec) {
                         .convert => try cfo.vcvtsx2si_rr(i.fmode_op(), true, r(dst), src),
-                        .bitcast => {
-                            return error.NotImplemented;
-                        },
+                        .bitcast => try cfo.vmovdq_iv(i.fmode_op().double(), r(dst), src),
                     }
                 },
                 .call => {

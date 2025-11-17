@@ -230,7 +230,7 @@ pub const FMode = enum(u3) {
         return self == @This().ss or self == @This().sd;
     }
 
-    fn double(self: @This()) bool {
+    pub fn double(self: @This()) bool {
         return @as(u1, @truncate(@intFromEnum(self))) == 1;
     }
 };
