@@ -981,6 +981,16 @@ pub fn vround(self: *Self, imm: u8, fmode: FMode, dst: u4, src1: u4, src2: u4) !
     try self.wb(imm);
 }
 
+// a bit of a pseudo op, scalar srqt is sqrt + fill in values from second source
+pub fn vsqrt(self: *Self, fmode: FMode, dst: u4, src: u4, asrc: ?u4) !void {
+    if (fmode.scalar()) {
+        try self.vop_rr(0x51, fmode, dst, src, asrc orelse src);
+    } else {
+        if (asrc) |_| return error.Invalid;
+        try self.vop_rr(0x51, fmode, dst, 15, src);
+    }
+}
+
 pub fn fcmp(self: *Self, fmode: FMode, src1: u4, src2: u4) !void {
     // tricky, p field must be 0/1 even though it is normally 2/3 for a scalar
     try self.vex0fwig(src1 > 7, false, src2 > 7, 0, false, fmode.pp_1bit());

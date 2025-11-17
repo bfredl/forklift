@@ -239,6 +239,7 @@ pub const VUnOp = enum(u5) {
     floor,
     trunc,
     nearest,
+    sqrt,
 };
 
 pub const Int2VOp = enum(u5) {

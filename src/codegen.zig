@@ -550,14 +550,14 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                 .vunop => {
                     const x = self.avxreg(i.op1) orelse return error.FLIRError;
                     const dst = i.avxreg() orelse return error.FLIRError;
-                    const imm: u8 = switch (i.vunop()) {
-                        .floor => 9,
-                        .ceil => 10,
-                        .trunc => 11,
-                        .nearest => 11,
-                        // else => return error.NotImplemented,
-                    };
-                    try cfo.vround(imm, i.fmode_op(), dst, x, x);
+
+                    switch (i.vunop()) {
+                        .floor => try cfo.vround(9, i.fmode_op(), dst, x, x),
+                        .ceil => try cfo.vround(10, i.fmode_op(), dst, x, x),
+                        .trunc => try cfo.vround(11, i.fmode_op(), dst, x, x),
+                        .nearest => try cfo.vround(11, i.fmode_op(), dst, x, x), // HAHAHAHA, yes!
+                        .sqrt => try cfo.vsqrt(i.fmode_op(), dst, x, null),
+                    }
                 },
                 .int2vf => {
                     const val = self.ipval(i.op1) orelse return error.FLIRError;

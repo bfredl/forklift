@@ -524,6 +524,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     .ceil => .ceil,
                     .trunc => .trunc,
                     .nearest => .nearest,
+                    .sqrt => .sqrt,
                     else => return error.NotImplemented,
                 };
                 const fmode: forklift.X86Asm.FMode = if (inst == .f64_unop) .sd else .ss;
