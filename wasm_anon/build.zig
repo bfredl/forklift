@@ -114,7 +114,7 @@ pub fn build(b: *std.Build) void {
             .{ "float_literals", 0, 0 },
             .{ "float_exprs", 0, null },
             .{ "float_misc", 4, null },
-            .{ "labels", 0, null },
+            .{ "labels", 0, 9 },
             .{ "local_get", 0, 4 },
             .{ "local_set", 0, 2 },
             .{ "local_tee", 0, null },

@@ -65,7 +65,7 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance, filter: ?[]const 
                 selekted = true;
             }
         }
-        self.compileFunc(in, i, f, very_verbose) catch |e| switch (e) {
+        self.compileFunc(in, i, f, true) catch |e| switch (e) {
             error.NotImplemented => {
                 if (f.hmt_error == null) {
                     f.hmt_error = "??UNKNOWN";
@@ -296,7 +296,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             },
             .loop => |typ| {
                 const n_args, const n_results = try typ.arity(in.mod);
-                if (n_args != 0 or n_results != 0) return error.NotImplemented;
+                if (n_args != 0 or n_results > 1) return error.NotImplemented;
                 c_ip += 1;
                 const entry = try ir.addNodeAfter(node);
                 node = entry;
@@ -348,11 +348,17 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 // reuse same label in the else body
                 const label = label_stack.items[label_stack.items.len - 1];
 
-                const has_res = label.res_var != FLIR.NoRef;
-                if (has_res) {
-                    try ir.putvar(node, label.res_var, value_stack.pop().?);
+                if (!dead_end) {
+                    const has_res = label.res_var != FLIR.NoRef;
+                    if (has_res) {
+                        try ir.putvar(node, label.res_var, value_stack.pop().?);
+                    }
+                    try ir.addLink(node, 0, label.ir_target);
+                } else {
+                    dead_end = false;
+                    if (value_stack.items.len < label.value_stack_level) return error.InternalCompilerError;
+                    value_stack.items.len = label.value_stack_level;
                 }
-                try ir.addLink(node, 0, label.ir_target);
 
                 node = label.else_target;
             },
@@ -420,7 +426,22 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 if (inst == .br_if) {
                     node = try ir.addNodeAfter(node);
                 } else {
-                    if (r.peekOpCode() != .end) return error.NotImplemented;
+                    if (r.peekOpCode() != .end and r.peekOpCode() != .else_) {
+                        const exit_from = label_stack.items[label_stack.items.len - 1].c_ip;
+                        const jump_to = c[exit_from].jmp_t;
+                        const old_pos = r.pos;
+                        r.pos = c[jump_to].off; // don't skip it, execute end or else_ as needed
+                        const target_op = r.peekOpCode();
+                        if (target_op != .end and target_op != .else_) return error.InternalCompilerError; // foooka amnitabl
+                        if (old_pos > r.pos) {
+                            if (target_op != .else_) return error.InternalCompilerError;
+                            // PERNICIOUS: we were actually in the else branch already, jump again
+                            // TODO: or fix how this is prepresented, change `label_stack.items[label_stack.items.len - 1].c_ip` when processing else??
+                            const jump_again = c[jump_to].jmp_t;
+                            r.pos = c[jump_again].off; // don't skip it, execute end
+                            if (r.peekOpCode() != .end) return error.InternalCompilerError;
+                        }
+                    }
                     dead_end = true; // TODO: as below
                 }
             },
