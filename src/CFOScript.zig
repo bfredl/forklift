@@ -305,7 +305,7 @@ pub fn call_expr(self: *Self, type_ctx: SpecType, kind: []const u8) !u16 {
     for (0.., args[0..n_arg]) |i, arg| {
         try self.ir.callarg(self.curnode, @intCast(i), arg);
     }
-    return self.ir.call(self.curnode, calltype, callwhat, extra);
+    return self.ir.call(self.curnode, calltype, callwhat, extra, .{ .intptr = .word });
 }
 
 pub fn cond_op(op: []const u8) ?defs.IntCond {

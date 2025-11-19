@@ -11,6 +11,7 @@ name: ?[]const u8 = null,
 call_count: Counter = 0,
 
 local_types: []defs.ValType = &.{},
+res_types: []defs.ValType = &.{},
 
 // for optimization. in case there is more than 64 args this will contain false positives..
 args_mut: u64 = 0,
@@ -60,7 +61,8 @@ pub fn parse(self: *Function, mod: *Module, r: *Reader) !void {
     const n_local_defs = try r.readu();
 
     var local_types: std.ArrayList(defs.ValType) = try .initCapacity(mod.allocator, self.n_params + n_local_defs);
-    _ = try mod.type_params(self.typeidx, local_types.addManyAsSliceAssumeCapacity(self.n_params));
+    const res_types: []defs.ValType = try mod.allocator.alloc(defs.ValType, self.n_res);
+    try mod.type_params(self.typeidx, local_types.addManyAsSliceAssumeCapacity(self.n_params), res_types);
 
     for (0..n_local_defs) |_| {
         const n_decl = try r.readu();
@@ -71,6 +73,7 @@ pub fn parse(self: *Function, mod: *Module, r: *Reader) !void {
     }
     dbg("\n", .{});
     self.local_types = try local_types.toOwnedSlice(mod.allocator);
+    self.res_types = res_types;
 
     try self.parse_body(mod, r, n_locals);
 }

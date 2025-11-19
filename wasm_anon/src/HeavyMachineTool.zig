@@ -199,13 +199,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             if (mut) {
                 const src = locals[i];
                 severe("TYP: {}\n", .{f.local_types[i]});
-                const typ: forklift.defs.SpecType = switch (f.local_types[i]) {
-                    .i32 => .{ .intptr = .dword },
-                    .i64 => .{ .intptr = .quadword },
-                    .f32 => .{ .avxval = .ss },
-                    .f64 => .{ .avxval = .sd },
-                    else => return error.NotImplemented,
-                };
+                const typ: forklift.defs.SpecType = specType(f.local_types[i]) orelse return error.NotImplemented;
                 locals[i] = try ir.variable(typ);
                 try ir.putvar(node, locals[i], src);
             }
@@ -219,16 +213,15 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     defer label_stack.deinit(gpa);
 
     const max_args = 5;
-    if (f.n_params > max_args) return error.NotImplemented;
+    const max_res = 1;
+    if (f.n_params > max_args or f.n_res > max_res) return error.NotImplemented;
 
-    var local_types_buf: [max_args]defs.ValType = undefined;
-    const ret_type = try in.mod.type_params(f.typeidx, &local_types_buf);
-    // TODO: redundant with f.local_types??????????????????
-    const arg_types = local_types_buf[0..f.n_params];
+    const arg_types = f.local_types[0..f.n_params];
 
     // only a single node doing "ir.ret"
     const exit_node = try ir.addNode();
     if (f.n_res > 1) return error.NotImplemented;
+    const ret_type = if (f.n_res > 0) f.res_types[0] else null;
     const tret: forklift.defs.SpecType = specType(ret_type orelse .i32) orelse .{ .intptr = .dword };
     const exit_var = try ir.variable(tret);
     // TODO: ir.ret(VOID)
@@ -565,12 +558,22 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 if (idx < in.mod.n_funcs_import) return error.NotImplemented;
                 if (idx >= in.mod.n_funcs_import + in.mod.funcs_internal.len) return error.InvalidFormat;
                 const func = &in.mod.funcs_internal[idx - in.mod.n_funcs_import];
-                if (func.n_params > 0 or func.n_res > 0) return error.NotImplemented;
+                _ = try func.ensure_parsed(in.mod); // TODO: aschually only need the type, maybe we should preparse mod.funcs[*].local_types|res_types early??
+                if (func.n_params > 0 or func.n_res > 1) {
+                    f.hmt_error = try std.fmt.allocPrint(gpa, "THERE WERE NO CALLS TODAY: {} => {}", .{ func.n_params, func.n_res });
+                    return error.NotImplemented;
+                }
                 const obj = func.hmt_object orelse return error.NotImplemented;
+
+                const restype = if (func.n_res > 0) func.res_types[0] else null;
 
                 const off = self.mod.get_func_off(obj) orelse return error.TypeError;
                 const callwhat = try ir.const_uint(off);
-                _ = try ir.call(node, .near, callwhat, 0);
+                const typ = if (restype) |t| specType(t) else null;
+                const res = try ir.call(node, .near, callwhat, 0, typ);
+                if (func.n_res > 0) {
+                    try value_stack.append(gpa, res);
+                }
             },
             .memory_size => {
                 // const size: i32 = @intCast(in.mem.items.len / 0x10000);

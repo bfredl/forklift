@@ -437,7 +437,7 @@ pub fn type_arity(self: *const Module, type_idx: u32) !struct { u16, u16 } {
     return .{ n_params, n_res };
 }
 
-pub fn type_params(self: *const Module, type_idx: u32, out_types: []defs.ValType) !?defs.ValType {
+pub fn type_params(self: *const Module, type_idx: u32, out_types: []defs.ValType, out_restypes: []defs.ValType) !void {
     var r = self.reader_at(self.types[type_idx]);
     const tag = try r.readByte();
     if (tag != 0x60) return error.InvalidFormat;
@@ -447,7 +447,9 @@ pub fn type_params(self: *const Module, type_idx: u32, out_types: []defs.ValType
     }
     // TODO: multiple return values
     const n_results: u16 = @intCast(try r.readu());
-    return if (n_results > 0) @enumFromInt(try r.readByte()) else null;
+    for (0..n_results) |i| {
+        out_restypes[i] = @enumFromInt(try r.readByte());
+    }
 }
 
 pub fn table_section(self: *Module, in: *Instance) !void {
