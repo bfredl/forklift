@@ -559,7 +559,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 if (idx >= in.mod.n_funcs_import + in.mod.funcs_internal.len) return error.InvalidFormat;
                 const func = &in.mod.funcs_internal[idx - in.mod.n_funcs_import];
                 _ = try func.ensure_parsed(in.mod); // TODO: aschually only need the type, maybe we should preparse mod.funcs[*].local_types|res_types early??
-                if (func.n_params > 0 or func.n_res > 1) {
+                if (func.n_params > 1 or func.n_res > 1) {
                     f.hmt_error = try std.fmt.allocPrint(gpa, "THERE WERE NO CALLS TODAY: {} => {}", .{ func.n_params, func.n_res });
                     return error.NotImplemented;
                 }
@@ -570,6 +570,13 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const off = self.mod.get_func_off(obj) orelse return error.TypeError;
                 const callwhat = try ir.const_uint(off);
                 const typ = if (restype) |t| specType(t) else null;
+                if (typ) |t| if (t != .intptr) return error.NotImplemented;
+                if (func.n_params > 0) {
+                    const arg = value_stack.pop().?;
+                    const argtyp = func.local_types[0];
+                    if (argtyp != .i32 and argtyp != .i64) return error.NotImplemented;
+                    try ir.callarg(node, 0, arg);
+                }
                 const res = try ir.call(node, .near, callwhat, 0, typ);
                 if (func.n_res > 0) {
                     try value_stack.append(gpa, res);

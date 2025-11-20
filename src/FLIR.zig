@@ -1462,6 +1462,22 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, i: *Inst, free_regs_ip: *[n_i
             }
         }
     }
+    // TODO: paniked fix, merge with the above :D
+    if (i.tag == .ibinop) {
+        if (self.iref(i.op2)) |rhs| {
+            if (rhs.mckind == .ipreg) {
+                const ok = is_ok: {
+                    if (self.iref(i.op1)) |lhs| {
+                        if (lhs.mckind == .ipreg) {
+                            break :is_ok lhs.mcidx == rhs.mcidx;
+                        }
+                    }
+                    break :is_ok false;
+                };
+                if (!ok) usable_regs[rhs.mcidx] = false;
+            }
+        }
+    }
 
     var chosen_reg: ?u8 = null;
     if (i.mckind == .unallocated_ipreghint) {
