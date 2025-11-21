@@ -571,11 +571,13 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const callwhat = try ir.const_uint(off);
                 const typ = if (restype) |t| specType(t) else null;
                 if (typ) |t| if (t != .intptr) return error.NotImplemented;
+                try ir.callarg(node, 0, mem_base);
+                try ir.callarg(node, 1, mem_size);
                 if (func.n_params > 0) {
                     const arg = value_stack.pop().?;
                     const argtyp = func.local_types[0];
                     if (argtyp != .i32 and argtyp != .i64) return error.NotImplemented;
-                    try ir.callarg(node, 0, arg);
+                    try ir.callarg(node, 2, arg);
                 }
                 const res = try ir.call(node, .near, callwhat, 0, typ);
                 if (func.n_res > 0) {
