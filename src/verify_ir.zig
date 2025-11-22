@@ -60,13 +60,24 @@ fn get_jmp_or_last(self: *FLIR, n: *FLIR.Node) !?Tag {
     return last_inst;
 }
 
-fn check_inst(self: *FLIR, i: *FLIR.Inst) !void {
+fn check_inst(self: *FLIR, iref: u16, i: *FLIR.Inst) !void {
     for (i.ops(false)) |op| {
         if (self.iref(op)) |ref| {
             if (ref.tag == .freelist) {
                 return error.FLIRError;
             }
         }
+    }
+    var opnext = i.next_as_op();
+    while (opnext != NoRef) {
+        const ii = self.iref(opnext);
+        if (self.iref(ii.op1)) |ref| {
+            if (ref.tag == .freelist) {
+                return error.FLIRError;
+            }
+        }
+        if (ii.op2 != iref) return error.FLIRError;
+        opnext = ii.next;
     }
 }
 
@@ -97,6 +108,7 @@ pub fn check_ir_valid(self: *FLIR) !void {
             }
         }
 
+        if (true) @panic("putphi like check_inst??");
         if (n.firstblk == NoRef) return error.InvalidCFG;
         var blk = n.firstblk;
         var prev_blk: u16 = NoRef;
@@ -279,6 +291,9 @@ pub fn print_inst(self: *FLIR, ref: u16, i: *FLIR.Inst) void {
         print_op(self, " ", i.f.kill_op1, i.op1);
         if (nop > 1) {
             print_op(self, ", ", i.f.kill_op2, i.op2);
+            if (nop > 2) {
+                print_op(self, ", ??kill?", false, i.next);
+            }
         }
     }
     print_mcval(i);
@@ -318,6 +333,13 @@ pub fn print_inst(self: *FLIR, ref: u16, i: *FLIR.Inst) void {
                 print(" [{s} <- {s}]", .{ tag, @tagName(X86Asm.IPReg.from(regsrc.?)) });
             }
         }
+    }
+    var opnext = i.next_as_op();
+    if (opnext != NoRef and i.kind != .call) print("not implemented??");
+    while (opnext != NoRef) {
+        const ii = self.iref(opnext);
+        print_op(self, "YARG:", ii.f.kill_op1, ii.op1);
+        opnext = ii.next;
     }
     print("\n", .{});
 }

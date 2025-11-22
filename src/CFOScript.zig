@@ -259,27 +259,27 @@ fn requireEnumKey(comptime T: type, key: []const u8, klagel: []const u8) !T {
 }
 
 pub fn call_expr(self: *Self, type_ctx: SpecType, kind: []const u8) !u16 {
-    const calltype: defs.CallKind, const callwhat, const extra: u16 = target: {
+    const calltype: defs.CallKind, const callwhat = target: {
         if (type_ctx != .intptr) return error.TypeError;
 
         if (mem.eql(u8, kind, "near")) {
             const name = self.t.keyword() orelse return error.ParseError;
             const idx = self.mod.lookup_obj(name) orelse return error.UndefinedName;
             const off = self.mod.get_func_off(idx) orelse return error.TypeError;
-            break :target .{ .near, try self.ir.const_uint(off), 0 };
+            break :target .{ .near, try self.ir.const_uint(off) };
         } else if (mem.eql(u8, kind, "sys")) {
             const name = self.t.keyword() orelse return error.ParseError;
             // TODO: non-native for
             const syscall = try requireEnumKey(std.os.linux.SYS, name, "unknown syscall");
             const sysnum = try self.ir.const_int(@intCast(@intFromEnum(syscall)));
-            break :target .{ .syscall, sysnum, 0 };
+            break :target .{ .syscall, sysnum };
         } else if (mem.eql(u8, kind, "bpf")) {
             const name = self.t.keyword() orelse return error.ParseError;
             const helper = try requireEnumKey(BPF.Helper, name, "unknown BPF helper");
-            break :target .{ .bpf_helper, try self.ir.const_int(@intCast(@intFromEnum(helper))), 0 };
+            break :target .{ .bpf_helper, try self.ir.const_int(@intCast(@intFromEnum(helper))) };
         } else if (mem.eql(u8, kind, "memset")) {
             const idx = @intFromEnum(defs.MemoryIntrinsic.memset);
-            break :target .{ .memory_intrinsic, try self.ir.const_int(@intCast(idx)), 0 };
+            break :target .{ .memory_intrinsic, try self.ir.const_int(@intCast(idx)) };
         } else {
             return error.ParseError;
         }
@@ -302,10 +302,15 @@ pub fn call_expr(self: *Self, type_ctx: SpecType, kind: []const u8) !u16 {
 
     try self.t.expect_char(')');
 
+    const call = try self.ir.call(self.curnode, calltype, callwhat);
+    var arglist = call;
+
     for (0.., args[0..n_arg]) |i, arg| {
-        try self.ir.callarg(self.curnode, @intCast(i), arg);
+        _ = i;
+        arglist = try self.ir.callarg(arglist, arg, .{ .intptr = .quadword });
     }
-    return self.ir.call(self.curnode, calltype, callwhat, extra, .{ .intptr = .word });
+
+    return self.ir.callret(self.curnode, call, .{ .word = .qword });
 }
 
 pub fn cond_op(op: []const u8) ?defs.IntCond {

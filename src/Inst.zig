@@ -31,6 +31,7 @@ pub const Tag = enum(u8) {
     ret,
     call,
     callarg,
+    callret,
     bpf_load_map,
     xadd,
 };
@@ -43,6 +44,7 @@ op1: u16,
 op2: u16,
 // only var, phi and putphi currently use this. other types can assign other meaning:
 // vblendf uses is as op3 (SKANDAL)
+// call uses it as a list of args
 next: u16 = FLIR.NoRef,
 
 // use_first: u16,
@@ -175,8 +177,9 @@ pub fn res_type(inst: Inst) ?defs.ValType {
         .fconst => .avxval,
         .vf2int => .intptr,
         .ret => null,
-        .call => .intptr,
+        .call => .null, // TODO: actually a tuple of retvals, make this explicit?
         .callarg => null,
+        .callret => @panic("TODO"),
         .bpf_load_map => .intptr,
         .xadd => null,
     };
@@ -215,8 +218,9 @@ pub fn n_op(inst: Inst, rw: bool) u2 {
         .fconst => 1, // but note: always a constval
         .vf2int => 1,
         .ret => 1,
-        .callarg => 1,
+        .callarg => 1, // op2 is a backlink to the call, not really a user
         .call => 1, // could be for funptr/dynamic syscall?
+        .callret => 1, // the call itself:p
         .alloc => 0,
         .bpf_load_map => 0,
         .xadd => 2, // TODO: atomic instruction group
