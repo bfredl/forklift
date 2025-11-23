@@ -1165,7 +1165,9 @@ fn mark_ops_who_kill(self: *Self, i: *Inst, killed: *u64) void {
             }
         }
         if (kill) {
-            if (i_op == 1) {
+            if (i_op == 2) {
+                @panic("ROCKAMAKAFÅN");
+            } else if (i_op == 1) {
                 i.f.kill_op2 = true;
             } else {
                 i.f.kill_op1 = true;
@@ -1581,27 +1583,28 @@ pub fn abi_call_info(self: *Self, comptime ABI: type, i: *Inst) !ABICallInfo {
 pub fn set_abi(self: *Self, comptime ABI: type) !void {
     for (self.n.items) |*n| {
         // TODO: if args existed nested in i_call.next we wouldn't need this :relieved:
-        var it = self.ins_iterator_rev(n.lastblk);
-        var last_call: ?ABICallInfo = null;
-        while (it.next_rev()) |item| {
+        var it = self.ins_iterator(n.lastblk);
+        while (it.next()) |item| {
             const i: *Inst = item.i;
             // non-standard callconvs can be annotated by pre-setting mckind/mcindx
             if (!i.mckind.unallocated()) continue;
             switch (i.tag) {
-                .callarg => {
-                    const num = i.spec;
-                    // TODO: floatarg
-                    i.mckind = .ipreg;
-                    const argregs = (last_call orelse return error.FLIRError).args;
-                    if (num >= argregs.len) return error.FLIRError;
-                    i.mcidx = @intFromEnum(argregs[num]);
-                },
                 .call => {
                     const call_info = try self.abi_call_info(ABI, i);
                     i.mckind = .ipreg;
                     i.mcidx = @intFromEnum(call_info.ret);
-                    last_call = call_info;
                     self.codegen_has_call = true;
+                    var a = i.next;
+                    var inum: u16 = 0;
+                    while (a != NoRef) {
+                        const iarg = self.iref(a) orelse return error.FLIRError;
+                        // TODO: floatarg
+                        iarg.mckind = .ipreg;
+                        const argregs = call_info.args;
+                        iarg.mcidx = @intFromEnum(argregs[inum]);
+                        inum += 1;
+                        a = iarg.next;
+                    }
                 },
                 .arg => {
                     if (i.mem_type() == .intptr) {
@@ -1616,9 +1619,7 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
                         i.mcidx = @intCast(i.op1);
                     }
                 },
-                else => {
-                    last_call = null; // gentlemen please
-                },
+                else => {},
             }
         }
     }
@@ -1795,15 +1796,14 @@ pub fn resolve_movelist(self: *Self, node: u16, list: u16) !void {
 
 pub fn resolve_moves(self: *Self) !void {
     for (self.n.items, 0..) |*n, ni| {
-        try self.resolve_movelist(uv(ni), n.putphi_list);
+        try self.resolve_movelist(uv(ni), n.putphi_list, null);
 
-        var iter = self.ins_iterator(n.firstblk);
+        var iter = self.ins_iterator(n.lastblk);
         while (iter.peek()) |it| {
-            if (it.i.tag == .callarg) {
-                try self.resolve_callargs_temp(&iter, it.i.tag);
-            } else {
-                _ = iter.next();
+            if (it.i.tag == .call) {
+                try self.resolve_movelist(uv(ni), n.callarg, iter);
             }
+            iter.next();
         }
     }
 }
@@ -1923,6 +1923,36 @@ const InsIterator = struct {
 
         b.pred = self.b_free;
         self.b_free = blk;
+    }
+
+    // ONLY TESTED FOR: inserting elements just before the current one by using peek() in forward mode
+    fn insert_before(it: *InsIterator, inst: u16) !void {
+        const self = it.self;
+        const blk_before, const pos_before = if (it.idx > 0) .{ it.cur_blk, it.idx } else .{ self.b.items[it.cur_blk], BLK_SIZE - 1 };
+        // attempt 1: fill NoRef just before
+        if (blk_before != NoRef and self.b.items[blk_before].i[pos_before] == NoRef) {
+
+            // NB: this is O(BLK_SIZE*args_per_call) but cache local so not soo bad
+            // could also do something silly like b.items[blk].last_filled_slot
+            // which also fixes addInstRef() LMAO
+            var insert_pos = pos_before;
+            while (insert_pos > 0) {
+                if (self.b.items[blk_before].i[insert_pos - 1] == NoRef) {
+                    insert_pos -= 1;
+                }
+            }
+            self.b.items[blk_before].i[insert_pos] = inst;
+            self.iref(inst).?.node_delete_this = self.b.items[blk_before].node;
+            return;
+        }
+
+        // attempt 2: shift elements after it.pos to make space
+        if (self.b.items[it.cur_blk].i[BLK_SIZE - 1] == NoRef) {
+            mem.copyBackwards();
+        }
+
+        // attempt 3: allocate new block, split if possible
+        @panic("AAAA");
     }
 
     fn get_rev(it: *InsIterator, advance: bool) ?IYtem {
