@@ -559,7 +559,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 if (idx >= in.mod.n_funcs_import + in.mod.funcs_internal.len) return error.InvalidFormat;
                 const func = &in.mod.funcs_internal[idx - in.mod.n_funcs_import];
                 _ = try func.ensure_parsed(in.mod); // TODO: aschually only need the type, maybe we should preparse mod.funcs[*].local_types|res_types early??
-                if (func.n_params > 1 or func.n_res > 1) {
+                if (func.n_params > 2 or func.n_res > 1) {
                     f.hmt_error = try std.fmt.allocPrint(gpa, "THERE WERE NO CALLS TODAY: {} => {}", .{ func.n_params, func.n_res });
                     return error.NotImplemented;
                 }
@@ -571,15 +571,15 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 var arglist = call;
                 arglist = try ir.callarg(arglist, mem_base, .{ .intptr = .quadword });
                 arglist = try ir.callarg(arglist, mem_size, .{ .intptr = .quadword });
-                if (func.n_params > 0) {
-                    const arg = value_stack.pop().?;
-                    const argtyp = func.local_types[0];
-                    if (argtyp != .i32 and argtyp != .i64) return error.NotImplemented;
-                    arglist = try ir.callarg(arglist, arg, .{ .intptr = .quadword });
+                if (func.n_params > value_stack.items.len) return error.InternalCompilerError;
+                const argbase = value_stack.items.len - func.n_params;
+                for (0..func.n_params) |i| {
+                    const argtyp = specType(func.local_types[i]) orelse return error.NotImplemented;
+                    arglist = try ir.callarg(arglist, value_stack.items[argbase + i], argtyp);
                 }
+                value_stack.items.len = argbase;
                 if (func.n_res > 0) {
                     const typ = specType(func.res_types[0]) orelse return error.NotImplemented;
-                    if (typ != .intptr) return error.NotImplemented;
                     const res = try ir.callret(node, call, typ);
                     try value_stack.append(gpa, res);
                 }

@@ -1596,26 +1596,49 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
     for (self.n.items) |*n| {
         // TODO: if args existed nested in i_call.next we wouldn't need this :relieved:
         var it = self.ins_iterator(n.lastblk);
+        var last_call_info: ABICallInfo = undefined;
         while (it.next()) |item| {
             const i: *Inst = item.i;
             // non-standard callconvs can be annotated by pre-setting mckind/mcindx
             if (!i.mckind.unallocated()) continue;
             switch (i.tag) {
                 .call => {
+                    // currently, as a compromise, `call_info` lists how integers should behave.
+                    // then we just count avxvar:s separately. this is gonna break if we pass
+                    // structs and stack slots and so on.
                     const call_info = try self.abi_call_info(ABI, i);
-                    i.mckind = .ipreg;
-                    i.mcidx = @intFromEnum(call_info.ret);
+                    last_call_info = call_info;
                     self.codegen_has_call = true;
                     var a = i.next;
-                    var inum: u16 = 0;
+                    var inum: u8 = 0;
+                    var avxnum: u8 = 0;
                     while (a != NoRef) {
                         const iarg = self.iref(a) orelse return error.FLIRError;
                         // TODO: floatarg
-                        iarg.mckind = .ipreg;
-                        const argregs = call_info.args;
-                        iarg.mcidx = @intFromEnum(argregs[inum]);
-                        inum += 1;
+                        switch (iarg.mem_type()) {
+                            .intptr => {
+                                iarg.mckind = .ipreg;
+                                iarg.mcidx = @intFromEnum(call_info.args[inum]);
+                                inum += 1;
+                            },
+                            .avxval => {
+                                iarg.mckind = .vfreg;
+                                iarg.mcidx = avxnum;
+                                avxnum += 1;
+                            },
+                        }
                         a = iarg.next;
+                    }
+                },
+                .callret => {
+                    // HUGLY: we will expect returns on stack later.
+                    switch (i.mem_type()) {
+                        .intptr => {
+                            i.op2 = @intFromEnum(last_call_info.ret);
+                        },
+                        .avxval => {
+                            i.op2 = 0;
+                        },
                     }
                 },
                 .arg => {
@@ -1660,7 +1683,9 @@ pub fn put_for_movelist(self: *Self, node: u16, iter: ?*InsIterator, inst: u16) 
     }
 }
 
-// currently only putphi, args should also become a list before scheduled..
+// Resolve a list of parallel moves. Currently supported:
+// callarg instruction: source in i.op1, destination i itself
+// putphi instruction: source in i.op1, destination in i.op2 (the phi instruction)
 pub fn resolve_movelist(self: *Self, node: u16, list: u16, iter: ?*InsIterator) !void {
     // phase one, kill trivial puts, emit non-conflicting puts
     while (true) {

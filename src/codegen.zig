@@ -610,10 +610,20 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                 },
                 // TODO: into parallel move group
                 .callret => {
-                    // lie: the entire point was to support multiple return values
-                    const src = self.ipval(i.op1) orelse return error.FLIRError;
-                    const dest = i.ipval() orelse return error.FLIRError;
-                    try movmcs(&cfo, true, dest, src); // TODO: wide
+                    switch (i.mem_type()) {
+                        .intptr => |size| {
+                            const src: IPReg = @enumFromInt(i.op2);
+                            const dest = i.ipval() orelse return error.FLIRError;
+                            try mcmovreg(&cfo, size == .quadword, dest, src); // TODO: wide
+                        },
+                        .avxval => |fmode| {
+                            const src: u4 = @intCast(i.op2);
+                            const dest = i.avxreg() orelse return error.FLIRError;
+                            if (dest != src) {
+                                try cfo.vmovf(fmode, dest, src);
+                            }
+                        },
+                    }
                 },
                 .copy => {
                     // TODO: of course also avxvals can be copied!
