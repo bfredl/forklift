@@ -421,6 +421,7 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                     }
                 },
                 // parallel move family
+                // callret wants to be be friends :pleading_face:
                 .putphi, .callarg => {
                     // fubbigt: the idea is than movins_read will return null
                     // exactly when reading an UNDEF, incase this insn becomes a no-op
@@ -606,6 +607,13 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                         },
                         else => return error.FLIRError,
                     }
+                },
+                // TODO: into parallel move group
+                .callret => {
+                    // lie: the entire point was to support multiple return values
+                    const src = self.ipval(i.op1) orelse return error.FLIRError;
+                    const dest = i.ipval() orelse return error.FLIRError;
+                    try movmcs(&cfo, true, dest, src); // TODO: wide
                 },
                 .copy => {
                     // TODO: of course also avxvals can be copied!

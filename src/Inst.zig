@@ -63,6 +63,7 @@ f: packed struct {
     // NOTE: putphis doesn't set kill_op1 because they don't need to (what is dead may never die)
     kill_op1: bool = false,
     kill_op2: bool = false,
+    kill_op3: bool = false, // vaaaaaaal
     killed: bool = false, // if false after calc_use, a non-vreg is never used
     is_vreg: bool = false, // if true: vreg_scratch is a vreg number. otherwise it is free real (scratch) estate
 
@@ -177,9 +178,9 @@ pub fn res_type(inst: Inst) ?defs.ValType {
         .fconst => .avxval,
         .vf2int => .intptr,
         .ret => null,
-        .call => .null, // TODO: actually a tuple of retvals, make this explicit?
+        .call => null, // TODO: actually a tuple of retvals, make this explicit for optgen?
         .callarg => null,
-        .callret => @panic("TODO"),
+        .callret => inst.mem_type(),
         .bpf_load_map => .intptr,
         .xadd => null,
     };
@@ -230,6 +231,10 @@ pub fn n_op(inst: Inst, rw: bool) u2 {
 pub fn ops(i: *Inst, rw: bool) []u16 {
     std.debug.assert(@intFromPtr(&i.op2) - @intFromPtr(&i.op1) == @sizeOf(u16));
     return @as([*]u16, @ptrCast(&i.op1))[0..i.n_op(rw)];
+}
+
+pub fn next_as_op(i: *Inst) u16 {
+    return if (i.tag == .call) i.next else FLIR.NoRef;
 }
 
 pub fn ipreg(i: Inst) ?defs.IPReg {

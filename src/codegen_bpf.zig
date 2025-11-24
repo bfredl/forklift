@@ -357,6 +357,10 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
                 .copy => {
                     try movmcs(mod, i.ipval().?, self.ipval(i.op1).?);
                 },
+                .callret => {
+                    // HAII
+                    try movmcs(mod, i.ipval().?, self.ipval(i.op1).?);
+                },
                 .xadd => {
                     const dest = self.iref(i.op1).?.*;
                     const dest_addr = try get_eaddr(self, dest, true);

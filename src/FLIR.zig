@@ -940,7 +940,7 @@ pub fn calc_live(self: *Self) !void {
             }
             var opnext = i.next_as_op();
             while (opnext != NoRef) {
-                const ii = self.iref(opnext);
+                const ii = self.iref(opnext) orelse return error.FLIRError;
                 self.adduse(uv(ni), opnext, ii.op1);
                 opnext = ii.next;
             }
@@ -978,12 +978,14 @@ pub fn calc_live(self: *Self) !void {
 
             var node_has_clobber: bool = false;
 
-            var listit = n.putphi_list;
-            while (listit != NoRef) {
-                // putphi:s arent ordered, so they all have neg_counter == 0
-                const i = self.iref(listit) orelse return error.FLIRError;
-                self.mark_ops_as_used(i, &live_vregs, neg_counter);
-                listit = i.next;
+            {
+                var listit = n.putphi_list;
+                while (listit != NoRef) {
+                    // putphi:s arent ordered, so they all have neg_counter == 0
+                    const i = self.iref(listit) orelse return error.FLIRError;
+                    self.mark_ops_as_used(i, &live_vregs, neg_counter);
+                    listit = i.next;
+                }
             }
 
             var it = self.ins_iterator_rev(n.lastblk);
@@ -999,7 +1001,7 @@ pub fn calc_live(self: *Self) !void {
                 self.mark_ops_as_used(i, &live_vregs, neg_counter);
                 var opnext = i.next_as_op();
                 while (opnext != NoRef) {
-                    const ii = self.iref(listit) orelse return error.FLIRError;
+                    const ii = self.iref(opnext) orelse return error.FLIRError;
                     self.mark_ops_as_used(ii, &live_vregs, neg_counter);
                     opnext = ii.next;
                 }
@@ -1038,11 +1040,13 @@ pub fn calc_live(self: *Self) !void {
                 }
             }
 
-            var phi = n.phi_list;
-            while (phi != NoRef) {
-                const i = self.iref(phi) orelse return error.FLIRError;
-                self.check_live_or_conflicts(i, &live_vregs, node_has_clobber, &last_clobber);
-                phi = i.next;
+            {
+                var phi = n.phi_list;
+                while (phi != NoRef) {
+                    const i = self.iref(phi) orelse return error.FLIRError;
+                    self.check_live_or_conflicts(i, &live_vregs, node_has_clobber, &last_clobber);
+                    phi = i.next;
+                }
             }
 
             n.live_in = live_vregs;
@@ -1086,11 +1090,13 @@ pub fn calc_live(self: *Self) !void {
         }
         var killed = n.live_in & ~live_out;
 
-        var listit = n.putphi_list;
-        while (listit != NoRef) {
-            const i = self.iref(listit) orelse return error.FLIRError;
-            self.mark_ops_who_kill(i, &killed);
-            listit = i.next;
+        {
+            var listit = n.putphi_list;
+            while (listit != NoRef) {
+                const i = self.iref(listit) orelse return error.FLIRError;
+                self.mark_ops_who_kill(i, &killed);
+                listit = i.next;
+            }
         }
 
         var it = self.ins_iterator_rev(n.lastblk);
@@ -1098,7 +1104,7 @@ pub fn calc_live(self: *Self) !void {
             self.mark_ops_who_kill(item.i, &killed);
             var opnext = item.i.next_as_op();
             while (opnext != NoRef) {
-                const ii = self.iref(listit) orelse return error.FLIRError;
+                const ii = self.iref(opnext) orelse return error.FLIRError;
                 self.mark_ops_who_kill(ii, &killed);
                 opnext = ii.next;
             }
@@ -1166,7 +1172,7 @@ fn mark_ops_who_kill(self: *Self, i: *Inst, killed: *u64) void {
         }
         if (kill) {
             if (i_op == 2) {
-                @panic("ROCKAMAKAFÅN");
+                i.f.kill_op3 = true;
             } else if (i_op == 1) {
                 i.f.kill_op2 = true;
             } else {
@@ -1408,6 +1414,12 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
             // TODO: reghint for killed op2? (if symmetric, like add usw)
             if (i.f.kill_op2) {
                 if (self.iref(i.op2)) |op| {
+                    if (op.mckind == .ipreg) free_regs_ip[op.mcidx] = true;
+                    if (op.mckind == .vfreg) free_regs_avx[op.mcidx] = true;
+                }
+            }
+            if (i.f.kill_op3) {
+                if (self.iref(i.next)) |op| {
                     if (op.mckind == .ipreg) free_regs_ip[op.mcidx] = true;
                     if (op.mckind == .vfreg) free_regs_avx[op.mcidx] = true;
                 }
@@ -1706,8 +1718,18 @@ pub fn resolve_callargs_temp(self: *Self, pos: *InsIterator, tag: Inst.Tag) !voi
     }
 }
 
+pub fn put_for_movelist(self: *Self, node: u16, iter: ?*InsIterator, inst: u16) !void {
+    // TODO: unify insertion code?
+    if (iter) |it| {
+        try it.insert_before(inst);
+    } else {
+        // insert at end of node
+        try self.addInstRef(node, inst);
+    }
+}
+
 // currently only putphi, args should also become a list before scheduled..
-pub fn resolve_movelist(self: *Self, node: u16, list: u16) !void {
+pub fn resolve_movelist(self: *Self, node: u16, list: u16, iter: ?*InsIterator) !void {
     // phase one, kill trivial puts, emit non-conflicting puts
     while (true) {
         var phi_1 = list;
@@ -1740,7 +1762,7 @@ pub fn resolve_movelist(self: *Self, node: u16, list: u16) !void {
             };
             if (ready) {
                 p1.f.killed = true;
-                try self.addInstRef(node, phi_1);
+                try self.put_for_movelist(node, iter, phi_1);
 
                 any_ready = true; // we advanced
             }
@@ -1763,7 +1785,7 @@ pub fn resolve_movelist(self: *Self, node: u16, list: u16) !void {
         var next_read = try self.movins_dest(p);
         p.f.killed = true;
         p.f.do_swap = true;
-        try self.addInstRef(node, phi);
+        try self.put_for_movelist(node, iter, phi);
         var phi_1 = list;
         while (phi_1 != NoRef) {
             const p1 = self.iref(phi_1) orelse return error.FLIRError;
@@ -1775,7 +1797,7 @@ pub fn resolve_movelist(self: *Self, node: u16, list: u16) !void {
             if (mc_equal(p1_read, next_read)) {
                 // we cannot run out of pos as it is a slower (or always equal) iterator
                 const p1_dest = try self.movins_dest(p1);
-                try self.addInstRef(node, phi_1);
+                try self.put_for_movelist(node, iter, phi_1);
                 p1.f.killed = true;
                 if (mc_equal(p1_dest, group_last_write)) {
                     p1.f.swap_done = true;
@@ -1801,9 +1823,9 @@ pub fn resolve_moves(self: *Self) !void {
         var iter = self.ins_iterator(n.lastblk);
         while (iter.peek()) |it| {
             if (it.i.tag == .call) {
-                try self.resolve_movelist(uv(ni), n.callarg, iter);
+                try self.resolve_movelist(uv(ni), it.i.next, &iter);
             }
-            iter.next();
+            _ = iter.next();
         }
     }
 }
@@ -1928,7 +1950,7 @@ const InsIterator = struct {
     // ONLY TESTED FOR: inserting elements just before the current one by using peek() in forward mode
     fn insert_before(it: *InsIterator, inst: u16) !void {
         const self = it.self;
-        const blk_before, const pos_before = if (it.idx > 0) .{ it.cur_blk, it.idx } else .{ self.b.items[it.cur_blk], BLK_SIZE - 1 };
+        const blk_before, const pos_before = if (it.idx > 0) .{ it.cur_blk, it.idx } else .{ self.b.items[it.cur_blk].pred, BLK_SIZE - 1 };
         // attempt 1: fill NoRef just before
         if (blk_before != NoRef and self.b.items[blk_before].i[pos_before] == NoRef) {
 
@@ -1948,7 +1970,12 @@ const InsIterator = struct {
 
         // attempt 2: shift elements after it.pos to make space
         if (self.b.items[it.cur_blk].i[BLK_SIZE - 1] == NoRef) {
-            mem.copyBackwards();
+            const arr = &self.b.items[it.cur_blk].i;
+            // const num = BLK_SIZE-(it.pos);
+            mem.copyBackwards(u16, arr[it.idx + 1 .. BLK_SIZE], arr[it.idx .. BLK_SIZE - 1]);
+            arr[it.idx] = inst;
+            it.idx += 1; // keep iterator valid
+            return;
         }
 
         // attempt 3: allocate new block, split if possible

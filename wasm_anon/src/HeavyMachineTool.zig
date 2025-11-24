@@ -565,22 +565,22 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 }
                 const obj = func.hmt_object orelse return error.NotImplemented;
 
-                const restype = if (func.n_res > 0) func.res_types[0] else null;
-
                 const off = self.mod.get_func_off(obj) orelse return error.TypeError;
                 const callwhat = try ir.const_uint(off);
-                const typ = if (restype) |t| specType(t) else null;
-                if (typ) |t| if (t != .intptr) return error.NotImplemented;
-                try ir.callarg(node, 0, mem_base);
-                try ir.callarg(node, 1, mem_size);
+                const call = try ir.call(node, .near, callwhat);
+                var arglist = call;
+                arglist = try ir.callarg(arglist, mem_base, .{ .intptr = .quadword });
+                arglist = try ir.callarg(arglist, mem_size, .{ .intptr = .quadword });
                 if (func.n_params > 0) {
                     const arg = value_stack.pop().?;
                     const argtyp = func.local_types[0];
                     if (argtyp != .i32 and argtyp != .i64) return error.NotImplemented;
-                    try ir.callarg(node, 2, arg);
+                    arglist = try ir.callarg(arglist, arg, .{ .intptr = .quadword });
                 }
-                const res = try ir.call(node, .near, callwhat, 0, typ);
                 if (func.n_res > 0) {
+                    const typ = specType(func.res_types[0]) orelse return error.NotImplemented;
+                    if (typ != .intptr) return error.NotImplemented;
+                    const res = try ir.callret(node, call, typ);
                     try value_stack.append(gpa, res);
                 }
             },

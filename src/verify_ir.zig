@@ -60,7 +60,8 @@ fn get_jmp_or_last(self: *FLIR, n: *FLIR.Node) !?Tag {
     return last_inst;
 }
 
-fn check_inst(self: *FLIR, iref: u16, i: *FLIR.Inst) !void {
+fn check_inst(self: *FLIR, iref: u16) !void {
+    const i = self.iref(iref).?;
     for (i.ops(false)) |op| {
         if (self.iref(op)) |ref| {
             if (ref.tag == .freelist) {
@@ -70,7 +71,7 @@ fn check_inst(self: *FLIR, iref: u16, i: *FLIR.Inst) !void {
     }
     var opnext = i.next_as_op();
     while (opnext != NoRef) {
-        const ii = self.iref(opnext);
+        const ii = self.iref(opnext) orelse return error.FLIRError;
         if (self.iref(ii.op1)) |ref| {
             if (ref.tag == .freelist) {
                 return error.FLIRError;
@@ -108,7 +109,6 @@ pub fn check_ir_valid(self: *FLIR) !void {
             }
         }
 
-        if (true) @panic("putphi like check_inst??");
         if (n.firstblk == NoRef) return error.InvalidCFG;
         var blk = n.firstblk;
         var prev_blk: u16 = NoRef;
@@ -118,7 +118,7 @@ pub fn check_ir_valid(self: *FLIR) !void {
             for (b.i) |i| {
                 if (i != NoRef) {
                     if (i >= self.i.items.len) return error.FLIRError;
-                    try check_inst(self, self.iref(i).?);
+                    try check_inst(self, i);
                 }
             }
             prev_blk = blk;
@@ -335,9 +335,9 @@ pub fn print_inst(self: *FLIR, ref: u16, i: *FLIR.Inst) void {
         }
     }
     var opnext = i.next_as_op();
-    if (opnext != NoRef and i.kind != .call) print("not implemented??");
+    if (opnext != NoRef and i.tag != .call) print("not implemented??\n", .{});
     while (opnext != NoRef) {
-        const ii = self.iref(opnext);
+        const ii = self.iref(opnext) orelse @panic("aa");
         print_op(self, "YARG:", ii.f.kill_op1, ii.op1);
         opnext = ii.next;
     }
