@@ -18,7 +18,6 @@ gpa: std.mem.Allocator,
 inst_off: std.ArrayList(u32) = .empty,
 inst_dbg: std.ArrayList(usize) = .empty,
 
-relocations: std.ArrayList(Relocation) = .empty,
 func_constants: std.ArrayList(Relocation) = .empty, // TODO: ??????
 
 value_map: std.ArrayList(ValueDebugInfo) = .empty,
@@ -73,7 +72,6 @@ pub fn deinit(self: *Self) void {
     self.buf.deinit(buf_alloc);
     self.inst_off.deinit(self.gpa);
     self.inst_dbg.deinit(self.gpa);
-    self.relocations.deinit(self.gpa);
     self.func_constants.deinit(self.gpa);
     self.value_map.deinit(self.gpa);
 }

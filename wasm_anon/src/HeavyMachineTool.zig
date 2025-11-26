@@ -84,6 +84,7 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance, filter: ?[]const 
         any_compiled = true;
     }
     if (any_compiled and very_verbose) try X86Asm.dbg_nasm(&.{ .code = &self.mod.code }, in.mod.allocator);
+    try self.mod.load(false);
     try self.mod.code.finalize();
     longjmp_f = try self.mod.get_func_ptr_id(self.longjmp_func, @TypeOf(longjmp_f));
 
@@ -177,6 +178,26 @@ pub fn specType(typ: defs.ValType) ?forklift.defs.SpecType {
         .funcref, .externref => .{ .intptr = .dword },
         else => null,
     };
+}
+
+// TODO: missing clear CFO vs wasm_shelf abstraction, just winging it
+pub fn declareFunc(self: *HeavyMachineTool, f: *Function, pos: ?u32) !u32 {
+    if (f.hmt_object) |idx| {
+        if (pos) |p| {
+            const obj = &self.mod.objs.items[idx].obj;
+            if (obj.func.code_start != forklift.defs.INVALID_OFFSET) {
+                return error.InternalCompilerError;
+            }
+            obj.func.code_start = p;
+        }
+        return idx;
+    } else {
+        const idx: u32 = @intCast(self.mod.objs.items.len);
+        f.hmt_object = idx;
+        const target = if (pos) |p| p else forklift.defs.INVALID_OFFSET;
+        try self.mod.objs.append(self.mod.gpa, .{ .obj = .{ .func = .{ .code_start = target } }, .name = null });
+        return idx;
+    }
 }
 
 pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Function, verbose: bool) !void {
@@ -559,15 +580,17 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 if (idx >= in.mod.n_funcs_import + in.mod.funcs_internal.len) return error.InvalidFormat;
                 const func = &in.mod.funcs_internal[idx - in.mod.n_funcs_import];
                 _ = try func.ensure_parsed(in.mod); // TODO: aschually only need the type, maybe we should preparse mod.funcs[*].local_types|res_types early??
+                if (f.hmt_error) |err| {
+                    f.hmt_error = try std.fmt.allocPrint(gpa, "chain error: {} {s}", .{ idx, err });
+                    return error.NotImplemented;
+                }
                 if (func.n_params > 2 or func.n_res > 1) {
                     f.hmt_error = try std.fmt.allocPrint(gpa, "THERE WERE NO CALLS TODAY: {} => {}", .{ func.n_params, func.n_res });
                     return error.NotImplemented;
                 }
-                const obj = func.hmt_object orelse return error.NotImplemented;
+                const obj = try self.declareFunc(func, null);
 
-                const off = self.mod.get_func_off(obj) orelse return error.TypeError;
-                const callwhat = try ir.const_uint(off);
-                const call = try ir.call(node, .near, callwhat);
+                const call = try ir.call(node, .cfo_obj, try ir.const_uint(obj));
                 var arglist = call;
                 arglist = try ir.callarg(arglist, mem_base, .{ .intptr = .quadword });
                 arglist = try ir.callarg(arglist, mem_size, .{ .intptr = .quadword });
@@ -604,9 +627,9 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     if (verbose) ir.debug_print();
 
     // TODO: abstraction
-    const target = try forklift.codegen_x86_64(ir, &self.mod.code, false);
-    f.hmt_object = @intCast(self.mod.objs.items.len);
-    try self.mod.objs.append(self.mod.gpa, .{ .obj = .{ .func = .{ .code_start = target } }, .name = null });
+    const target = try forklift.codegen_x86_64(ir, &self.mod, false);
+
+    _ = try self.declareFunc(f, target);
 
     if (f.exported == null) return;
 

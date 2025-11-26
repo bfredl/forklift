@@ -12,7 +12,7 @@ const FMode = X86Asm.FMode;
 const VMathOp = X86Asm.VMathOp;
 const EAddr = X86Asm.EAddr;
 const AOp = X86Asm.AOp;
-const CodeBuffer = @import("./CodeBuffer.zig");
+const CFOModule = @import("./CFOModule.zig");
 
 const defs = @import("./defs.zig");
 const options = defs.debug_options;
@@ -177,12 +177,13 @@ pub fn set_pred(self: *FLIR, cfo: *X86Asm, targets: [][2]u32, ni: u16) !void {
 // TODO: a lot of codegen.zig should be shared between plattforms
 const ABI = FLIR.X86ABI;
 
-pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
+pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool) !u32 {
     const labels = try self.gpa.alloc(u32, self.n.items.len);
     const targets = try self.gpa.alloc([2]u32, self.n.items.len);
     defer self.gpa.free(labels);
     defer self.gpa.free(targets);
 
+    const code = &mod.code;
     var cfo = X86Asm{ .code = code };
     @memset(labels, 0);
     @memset(targets, .{ 0, 0 });
@@ -596,6 +597,18 @@ pub fn codegen(self: *FLIR, code: *CodeBuffer, dbg: bool) !u32 {
                         .near => {
                             const val = self.constval(i.op1) orelse return error.FLIRError;
                             try cfo.call_rel(@intCast(val));
+                        },
+                        .cfo_obj => {
+                            const idx = self.constval(i.op1) orelse return error.FLIRError;
+                            const off = switch (mod.objs.items[idx].obj) {
+                                .func => |f| f.code_start,
+                                else => return error.FLIRError,
+                            };
+                            try cfo.call_rel(@intCast(off));
+                            // only relocate later if unknown
+                            if (off == defs.INVALID_OFFSET) {
+                                try mod.relocations.append(code.gpa, .{ .pos = mod.code.get_target() - 4, .obj_idx = @intCast(idx) });
+                            }
                         },
                         .memory_intrinsic => {
                             const idx = self.constval(i.op1) orelse return error.FLIRError;

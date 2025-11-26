@@ -280,7 +280,9 @@ pub const IPMCVal = union(enum) {
 pub const CallKind = enum(u8) {
     /// op1 is relative start of pointer, must be a constant
     near,
-    /// op1 is function pointer
+    /// op1 is an object index, must be a constant
+    cfo_obj,
+    /// op1 is function pointer (or fixed adress as a constant)
     fun_ptr,
     /// platform dependent. syscall index in op1
     /// directly encodes the linux syscall number of the target
@@ -290,6 +292,8 @@ pub const CallKind = enum(u8) {
     /// spec is like memtype, op1 is index into MemoryIntrinsic
     memory_intrinsic,
 };
+
+pub const INVALID_OFFSET: u32 = 0xFFFFFFFF;
 
 pub const MCKind = enum(u8) {
     // not yet allocated, or Inst that trivially produces no value

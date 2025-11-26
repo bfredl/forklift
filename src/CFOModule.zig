@@ -5,6 +5,7 @@ const mem = std.mem;
 const fd_t = linux.fd_t;
 const bpf = @import("./bpf.zig");
 const CodeBuffer = @import("./CodeBuffer.zig");
+const defs = @import("./defs.zig");
 
 pub const BPFCode = std.ArrayList(BPF.Insn);
 
@@ -62,27 +63,49 @@ pub fn deinit_mem(self: *CFOModule) void {
     self.relocations.deinit(self.gpa);
 }
 
-pub fn load(self: *CFOModule) !void {
-    for (0.., self.objs.items) |i, *v| {
-        switch (v.obj) {
-            .bpf_prog => |*p| {
-                const code = self.bpf_code.items[p.code_start..][0..p.code_len];
-                if (false) {
-                    try bpf.dump_bpf(std.io.getStdErr().writer(), code);
-                }
-                p.fd = try bpf.prog_load_test(.syscall, code, "MIT", BPF.F_SLEEPABLE);
-            },
+pub fn load(self: *CFOModule, comptime do_bpf: bool) !void {
+    // TODO: self.objs was probably dumb, separate arrays for bpf_map and bpf_prog.
+    // relocations can still refer to them indirectly if we patch these into a cpu function.
+    if (do_bpf) {
+        for (self.objs.items) |*v| {
+            switch (v.obj) {
+                .bpf_map => |*m| {
+                    m.fd = try BPF.map_create(m.kind, m.key_size, m.val_size, m.n_entries);
+                },
+                else => {},
+            }
+        }
+    }
+    for (self.relocations.items) |r| {
+        const o = &self.objs.items[r.obj_idx];
+        switch (o.obj) {
             .bpf_map => |*m| {
-                m.fd = try BPF.map_create(m.kind, m.key_size, m.val_size, m.n_entries);
-                // O(N^2) but who the fuck cares
-                for (self.relocations.items) |r| {
-                    if (r.obj_idx == i) {
-                        // note: technically [r.pos+1] contains the upper 32 bits of fd :zany_face:
-                        self.bpf_code.items[r.pos].imm = @intCast(m.fd);
-                    }
-                }
+                // note: technically [r.pos+1] contains the upper 32 bits of fd :zany_face:
+                self.bpf_code.items[r.pos].imm = @intCast(m.fd);
             },
-            .func => {},
+            .func => |*f| {
+                if (f.code_start == defs.INVALID_OFFSET) {
+                    @panic("nicer error her plz");
+                }
+                // TODO: we should have had a X86Asm here:p
+                const distance = @as(i32, @intCast(f.code_start)) - @as(i32, @intCast(r.pos + 4));
+                std.mem.writeInt(i32, self.code.buf.items[r.pos..][0..4], distance, .little);
+            },
+            else => {},
+        }
+    }
+    if (do_bpf) {
+        for (self.objs.items) |*v| {
+            switch (v.obj) {
+                .bpf_prog => |*p| {
+                    const code = self.bpf_code.items[p.code_start..][0..p.code_len];
+                    if (false) {
+                        try bpf.dump_bpf(std.io.getStdErr().writer(), code);
+                    }
+                    p.fd = try bpf.prog_load_test(.syscall, code, "MIT", BPF.F_SLEEPABLE);
+                },
+                else => {},
+            }
         }
     }
 }

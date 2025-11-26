@@ -458,7 +458,10 @@ pub fn call_rel(self: *Self, addr: u32) !void {
     try self.new_inst(@returnAddress());
     const rel_pos = self.code.get_target() + 5;
     // TODO: check bounds
-    const diff = @as(i32, @intCast(addr)) - @as(i32, @intCast(rel_pos));
+    const diff = if (addr == defs.INVALID_OFFSET)
+        @as(i32, @bitCast(defs.INVALID_OFFSET))
+    else
+        @as(i32, @intCast(addr)) - @as(i32, @intCast(rel_pos));
     try self.wb(0xE8);
     try self.wd(diff);
 }

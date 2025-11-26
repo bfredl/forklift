@@ -676,7 +676,7 @@ pub fn parse_mod(mod: *CFOModule, allocator: Allocator, str: []const u8, dbg: bo
             if (options.dbg_analysed_ir) ir.debug_print();
             if (options.dbg_vregs) ir.print_intervals();
 
-            const target = try codegen.codegen(&ir, &mod.code, false);
+            const target = try codegen.codegen(&ir, mod, false);
             obj_slot.* = .{ .func = .{ .code_start = target } };
             ir.reinit();
         } else if (mem.eql(u8, kw, "bpf_func")) {
