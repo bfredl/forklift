@@ -219,6 +219,9 @@ fn cleanup_trivial_phi_and_vars(self: *FLIR) !void {
                     // but check if we read any trivial phis..
                     i.op1 = check_trivial(self, i.op1);
                 }
+            } else if (i.tag == .retval) {
+                i.op1 = check_trivial(self, i.op1);
+                keep = true; // pls..
             }
             if (keep) {
                 next_ptr = &i.next;

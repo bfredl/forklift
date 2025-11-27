@@ -28,7 +28,7 @@ pub const Tag = enum(u8) {
     fcmp,
     int2vf,
     vf2int,
-    ret,
+    retval,
     call,
     callarg,
     callret,
@@ -177,7 +177,7 @@ pub fn res_type(inst: Inst) ?defs.ValType {
         .int2vf => .avxval, // convert int to float, or move int from gp to vector reg
         .fconst => .avxval,
         .vf2int => .intptr,
-        .ret => null,
+        .retval => null,
         .call => null, // TODO: actually a tuple of retvals, make this explicit for optgen?
         .callarg => null,
         .callret => inst.mem_type(),
@@ -218,7 +218,7 @@ pub fn n_op(inst: Inst, rw: bool) u2 {
         .int2vf => 1,
         .fconst => 1, // but note: always a constval
         .vf2int => 1,
-        .ret => 1,
+        .retval => 1,
         .callarg => 1, // op2 is a backlink to the call, not really a user
         .call => 1, // could be for funptr/dynamic syscall?
         .callret => 1, // the call itself:p

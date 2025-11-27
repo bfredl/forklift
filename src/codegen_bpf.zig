@@ -271,7 +271,6 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
                 .freelist => @panic("KATASTROFEN"),
                 // work is done by putphi
                 .phi => {},
-                .ret => try regmovmc(mod, r0, self.ipval(i.op1).?),
                 .ibinop => {
                     const dst = i.ipreg() orelse return error.FLIRError;
                     const op = i.ibinop().asBpfAluOp() orelse return error.FLIRError;
@@ -301,10 +300,10 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
                 },
                 .icmpset => return error.NotImplemented,
                 .iunop => return error.NotImplemented,
-                .putphi, .callarg => {
+                .putphi, .callarg, .retval => {
                     if (i.f.do_swap) return error.NotImplemented;
                     const dest = (try self.movins_dest(i)).ipval() orelse return error.FLIRError;
-                    if (try self.movins_read2(i)) |src| {
+                    if (self.ipval(try self.movins_read_ref(i))) |src| {
                         try movmcs(mod, dest, src);
                     }
                 },

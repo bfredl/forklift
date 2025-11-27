@@ -80,7 +80,8 @@ test "diamond cfg" {
     const adde = try self.ibinop(end, .quadword, .add, v, const_77);
     try self.putvar(end, v, adde);
 
-    try self.ret(end, FLIR.intspec(.quadword), v);
+    try self.ret(end);
+    try self.retval(end, FLIR.intspec(.quadword), v);
 
     try self.test_analysis(FLIR.X86ABI, true);
 }

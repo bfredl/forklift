@@ -19,17 +19,21 @@ fn check_phi(self: *FLIR, worklist: *ArrayList(u16), pred: u16, succ: u16) !void
     var item = pn.putphi_list;
     while (item != NoRef) {
         const i = self.iref(item) orelse return error.FLIRError;
-        if (i.tag == .putphi) {
+        if (i.tag == .putphi and succ != NoRef) {
             // it.op1 == NoRef is techy allowed ( %thephi := undefined )
             if (i.op2 == NoRef) return error.InvalidCFG;
             try worklist.append(self.gpa, i.op2); // TODO: check duplicate
-        } else if (i.tag != .putvar) { // only putvar and putphi allowed here
+        } else if (i.tag == .retval and succ == NoRef) {
+            // ok!
+        } else if (i.tag != .putvar) { // only putvar and putphi/retval allowed here
             return error.InvalidCFG;
         }
         item = i.next;
     }
 
     var left: u16 = uv(worklist.items.len);
+
+    if (succ == NoRef) return;
 
     var phi = self.n.items[succ].phi_list;
     while (phi != NoRef) {
@@ -54,7 +58,7 @@ fn get_jmp_or_last(self: *FLIR, n: *FLIR.Node) !?Tag {
     var last_inst: ?Tag = null;
     var iter = self.ins_iterator(n.firstblk);
     while (iter.next()) |it| {
-        if (last_inst) |l| if (l == .icmp or l == .fcmp or l == .ret) return error.InvalidCFG;
+        if (last_inst) |l| if (l == .icmp or l == .fcmp) return error.InvalidCFG;
         last_inst = it.i.tag;
     }
     return last_inst;
@@ -108,6 +112,9 @@ pub fn check_ir_valid(self: *FLIR) !void {
                 try check_phi(self, &worklist, pred, uv(ni));
             }
         }
+        if (n.is_return) {
+            try check_phi(self, &worklist, uv(ni), NoRef); // sentinel: check retval
+        }
 
         if (n.firstblk == NoRef) return error.InvalidCFG;
         var blk = n.firstblk;
@@ -128,9 +135,11 @@ pub fn check_ir_valid(self: *FLIR) !void {
     }
     for (self.n.items, 0..) |*n, ni| {
         const last = try get_jmp_or_last(self, n);
-        if ((last == .icmp or last == .fcmp) != (n.s[1] != 0)) return error.InvalidCFG;
-        if (last == Tag.ret and n.s[0] != 0) return error.InvalidCFG;
-        if (n.s[0] == 0 and (last != Tag.ret and reached[ni])) return error.InvalidCFG;
+        const is_branch = (last == .icmp or last == .fcmp);
+        if (is_branch != (n.s[1] != 0)) return error.InvalidCFG;
+        if (is_branch and n.is_return) return error.InvalidCFG;
+        if (n.is_return and n.s[0] != 0) return error.InvalidCFG;
+        if (n.s[0] == 0 and (!n.is_return and reached[ni])) return error.InvalidCFG;
         // TODO: also !reached and n.s[0] != 0 (not verified by remove_empty)
         if (!reached[ni] and (last != null)) return error.InvalidCFG;
     }
@@ -229,10 +238,9 @@ pub fn debug_print(self: *FLIR) void {
             }
             print("\n", .{});
         }
-
         if (n.s[1] == 0) {
             if (n.s[0] == 0) {
-                print("  diverge\n", .{});
+                print("  {s}\n", .{if (n.is_return) "return" else "diverge"});
             } else if (n.s[0] != i + 1) {
                 print("  jump {}\n", .{n.s[0]});
             }
@@ -279,7 +287,7 @@ pub fn print_inst(self: *FLIR, ref: u16, i: *FLIR.Inst) void {
         print(" wide", .{});
     }
 
-    if (i.tag == .load or i.tag == .load_signext or i.tag == .store or i.tag == .variable or i.tag == .ret) {
+    if (i.tag == .load or i.tag == .load_signext or i.tag == .store or i.tag == .variable or i.tag == .retval) {
         switch (i.mem_type()) {
             .intptr => |size| print(" {s}", .{@tagName(size)}),
             .avxval => |kind| print(" {s}", .{@tagName(kind)}),
@@ -370,7 +378,7 @@ fn print_node(self: *FLIR, n: *FLIR.Node) void {
             }
             print_op(self, " := ", i.f.kill_op1, i.op1);
             print("\n", .{});
-        } else if (i.tag == .putphi) {
+        } else if (i.tag == .putphi or i.tag == .retval) {
             // TODO: separate tags for "processed" and "scheduled"?
             if (!i.f.killed or (self.trivial(i) catch true)) {
                 if (i.f.killed) print("\x1b[38;5;244m", .{});

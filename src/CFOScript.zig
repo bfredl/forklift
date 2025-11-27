@@ -307,7 +307,7 @@ pub fn call_expr(self: *Self, type_ctx: SpecType, kind: []const u8) !u16 {
 
     for (0.., args[0..n_arg]) |i, arg| {
         _ = i;
-        arglist = try self.ir.callarg(arglist, arg, .{ .intptr = .quadword });
+        arglist = try self.ir.callarg(self.curnode, arglist, arg, .{ .intptr = .quadword });
     }
 
     return self.ir.callret(self.curnode, call, .{ .intptr = .quadword });
@@ -498,7 +498,9 @@ pub fn stmt(self: *Self) !?bool {
     if (mem.eql(u8, kw, "return")) {
         const type_ctx = try self.maybe_colon_type() orelse int_ctx;
         const res = try self.arg_expr(type_ctx); // BUULLLLLLL
-        try self.ir.ret(self.curnode, type_ctx, res);
+        // TODO: a common wrapper for "return exactly one value" :p
+        try self.ir.ret(self.curnode);
+        try self.ir.retval(self.curnode, type_ctx, res);
         did_ret = true;
     } else if (mem.eql(u8, kw, "let")) {
         const name = self.t.keyword() orelse return error.SyntaxError;

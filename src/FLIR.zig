@@ -117,8 +117,13 @@ pub const Node = struct {
     // if true, block will not contain any instructions and will not be emitted
     // codegen should chase through n.s[0] until an non-empty block is found
     is_empty: bool = false,
+    // explicitly marked as return. in theory just leaving n.s[0] as NoRef could work
+    // but this is more robust.
+    is_return: bool = false,
 
-    phi_list: u16 = NoRef, // currently also scheduled (CRINGE)
+    // as a natural reuse, putphi_list is the list of return values in the final node.
+    // NOT YET: put args in phi_list of the entry node
+    phi_list: u16 = NoRef,
     putphi_list: u16 = NoRef, // also used for "putvar" entries in the construction phase
 };
 
@@ -348,19 +353,26 @@ pub fn addRawInst(self: *Self, inst: Inst) !u16 {
     }
 }
 
-pub fn addInst(self: *Self, node: u16, inst: Inst) !u16 {
-    var i = inst;
+fn readVars(self: *Self, node: u16, i: *Inst) !void {
     if (self.unsealed) {
-        const nop = i.n_op(false);
-        if (nop > 0) {
-            i.op1 = try self.read_ref(node, i.op1);
-            if (nop > 1) {
-                i.op2 = try self.read_ref(node, i.op2);
-            }
+        for (i.ops(false)) |*op| {
+            op.* = try self.read_ref(node, op.*);
         }
     }
+}
+
+pub fn addInst(self: *Self, node: u16, inst: Inst) !u16 {
+    var i = inst;
+    try self.readVars(node, &i);
     const ref = try self.addRawInst(i);
     try self.addInstRef(node, ref);
+    return ref;
+}
+
+pub fn addRawInstButRead(self: *Self, inst: Inst, node: u16) !u16 {
+    var i = inst;
+    try self.readVars(node, &i);
+    const ref = try self.addRawInst(i);
     return ref;
 }
 
@@ -543,8 +555,23 @@ pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
     n.putphi_list = try self.addRawInst(.{ .tag = .putvar, .op1 = refval, .op2 = v.op1, .next = n.putphi_list, .node_delete_this = node });
 }
 
-pub fn ret(self: *Self, node: u16, kind: defs.SpecType, val: u16) !void {
-    _ = try self.addInst(node, .{ .tag = .ret, .op1 = val, .op2 = 0, .spec = sphigh(0, kind.into()) });
+pub fn ret(self: *Self, node: u16) !void {
+    self.n.items[node].is_return = true;
+}
+
+pub fn retval(self: *Self, node: u16, kind: defs.SpecType, val: u16) !void {
+    const rval = try self.addRawInstButRead(.{ .tag = .retval, .spec = kind.into(), .op1 = val, .op2 = NoRef, .next = NoRef }, node);
+    const n = &self.n.items[node];
+    // SILLY: self.put_at_end_of_any_list() ?
+    if (n.putphi_list == NoRef) {
+        n.putphi_list = rval;
+    } else {
+        var inst = self.iref(n.putphi_list) orelse return error.FLIRError;
+        while (inst.next != NoRef) {
+            inst = self.iref(inst.next) orelse return error.FLIRError;
+        }
+        inst.next = rval;
+    }
 }
 
 pub fn call(self: *Self, node: u16, kind: defs.CallKind, num: u16) !u16 {
@@ -557,7 +584,7 @@ pub fn call(self: *Self, node: u16, kind: defs.CallKind, num: u16) !u16 {
     });
 }
 
-pub fn callarg(self: *Self, toinst: u16, ref: u16, typ: defs.SpecType) !u16 {
+pub fn callarg(self: *Self, node: u16, toinst: u16, ref: u16, typ: defs.SpecType) !u16 {
     var inst = self.iref(toinst) orelse return error.FLIRError;
     const tocall = switch (inst.tag) {
         .call => toinst,
@@ -566,13 +593,13 @@ pub fn callarg(self: *Self, toinst: u16, ref: u16, typ: defs.SpecType) !u16 {
     };
     if (inst.next != NoRef) return error.FLIRError;
 
-    const nextarg = try self.addRawInst(.{
+    const nextarg = try self.addRawInstButRead(.{
         .tag = .callarg,
         .spec = typ.into(),
         .op1 = ref,
         .op2 = tocall,
         .next = NoRef,
-    });
+    }, node);
     inst.next = nextarg;
     return nextarg;
 }
@@ -984,6 +1011,17 @@ pub fn calc_live(self: *Self) !void {
                     // putphi:s arent ordered, so they all have neg_counter == 0
                     const i = self.iref(listit) orelse return error.FLIRError;
                     self.mark_ops_as_used(i, &live_vregs, neg_counter);
+                    // TODO: flogger
+                    if (i.tag == .retval) {
+                        if (self.abi_tag == .X86) {
+                            if (self.iref(i.op1)) |ref| {
+                                if (ref.mckind == .unallocated_raw and i.res_type() == .intptr) {
+                                    ref.mckind = .unallocated_ipreghint;
+                                    ref.mcidx = X86Asm.IPReg.rax.id();
+                                }
+                            }
+                        }
+                    }
                     listit = i.next;
                 }
             }
@@ -1010,20 +1048,6 @@ pub fn calc_live(self: *Self) !void {
                 // TOOO: or having it as a fixed input, which is not ALWAYS a clobber
                 // (like two shr intructions in a row sharing the same ecx input)
                 const clobber_mask: u16 = try self.get_clobbers(i);
-
-                // TODO: very ad-hoc,
-                // currently there is no praxis for back-propagating reghints
-                // like this one should obviosly work across a (%1 = phi; ret %1) and so on and so on
-                if (i.tag == .ret) {
-                    if (self.abi_tag == .X86) {
-                        if (self.iref(i.op1)) |ref| {
-                            if (ref.mckind == .unallocated_raw and i.res_type() == .intptr) {
-                                ref.mckind = .unallocated_ipreghint;
-                                ref.mcidx = X86Asm.IPReg.rax.id();
-                            }
-                        }
-                    }
-                }
 
                 if (clobber_mask != 0) {
                     node_has_clobber = true; // quick skipahead
@@ -1522,6 +1546,9 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, i: *Inst, free_regs_ip: *[n_i
     }
 
     var chosen_reg: ?u8 = null;
+
+    // NB: currently there is no praxis for back-propagating reghints
+    // like these should obviosly work across a (%1 = phi; ret %1) and so on and so on
     if (i.mckind == .unallocated_ipreghint) {
         if (i.res_type() != .intptr) unreachable;
         if (usable_regs[i.mcidx]) {
@@ -1655,6 +1682,26 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
                     }
                 },
                 else => {},
+            }
+        }
+
+        if (n.is_return) {
+            var next = n.putphi_list;
+            while (next != NoRef) {
+                const i = self.iref(next) orelse return error.FLIRError;
+                if (i.tag == .retval) {
+                    switch (i.mem_type()) {
+                        .intptr => {
+                            i.mckind = .ipreg;
+                            i.mcidx = X86Asm.IPReg.rax.id();
+                        },
+                        .avxval => {
+                            i.mckind = .vfreg;
+                            i.mcidx = 0;
+                        },
+                    }
+                }
+                next = i.next;
             }
         }
     }
@@ -1791,24 +1838,21 @@ pub fn movins_dest(self: *Self, movins: *Inst) !*Inst {
     return switch (movins.tag) {
         .putphi => self.iref(movins.op2) orelse return error.FLIRError,
         .callarg => movins,
+        .retval => movins,
         else => error.FLIRError,
     };
 }
 
 // if reading a constant or undef, returns null
 fn movins_read(self: *Self, movins: *Inst) !?*Inst {
-    return switch (movins.tag) {
-        .putphi => self.iref(movins.op1),
-        .callarg => self.iref(movins.op1),
-        else => error.FLIRError,
-    };
+    return self.iref(try self.movins_read_ref(movins));
 }
 
 // fubbigt: use IPMCVal even in the analysis stage
-pub fn movins_read2(self: *Self, movins: *Inst) !?defs.IPMCVal {
+pub fn movins_read_ref(self: *Self, movins: *Inst) !u16 {
+    _ = self;
     return switch (movins.tag) {
-        .putphi => self.ipval(movins.op1),
-        .callarg => self.ipval(movins.op1),
+        .putphi, .callarg, .retval => movins.op1,
         else => error.FLIRError,
     };
 }
@@ -1849,14 +1893,14 @@ const InsIterator = struct {
             if (it.cur_blk == NoRef) return null;
 
             const ref = it.self.b.items[it.cur_blk].i[it.idx];
-            const retval: IYtem = .{
+            const result: IYtem = .{
                 .i = if (ref != NoRef) &it.self.i.items[ref] else undefined, // GESUNDHEIT
                 .ref = ref,
                 .blk = it.cur_blk,
                 .idx_in_blk = it.idx,
             };
             if (!advance and ref != NoRef) {
-                return retval;
+                return result;
             }
 
             it.idx += 1;
@@ -1865,7 +1909,7 @@ const InsIterator = struct {
                 it.cur_blk = it.self.b.items[it.cur_blk].succ;
             }
             if (ref != NoRef) {
-                return retval;
+                return result;
             }
         }
     }
@@ -2041,7 +2085,7 @@ pub fn find_nonempty(self: *Self, ni_0: u16) u16 {
     var ni = ni_0;
     while (true) {
         const node = self.n.items[ni];
-        if (!node.is_empty) break;
+        if (!node.is_empty or node.is_return) break;
         ni = node.s[0];
         assert(ni > 0);
     }
@@ -2050,7 +2094,7 @@ pub fn find_nonempty(self: *Self, ni_0: u16) u16 {
 
 pub fn mark_empty(self: *Self) !void {
     for (self.n.items, 0..) |*n, ni| {
-        if (self.empty(uv(ni), true)) {
+        if (self.empty(uv(ni), true) and !n.is_return) {
             n.is_empty = true;
         }
     }

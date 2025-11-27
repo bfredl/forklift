@@ -268,23 +268,6 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool) !u32 {
                 },
                 // lea relative RBP when used
                 .alloc => {},
-                .ret => {
-                    // TODO: extend i.res_type() to a useful SpecType from self.val(REF) ??
-                    // then we won't need to encode the type on .ret separately...
-                    switch (i.mem_type()) {
-                        .intptr => |size| {
-                            const ipval = self.ipval(i.op1) orelse return error.FLIRError;
-                            try regmovmc(&cfo, size.wide(), X86Asm.IPReg.rax.into(), ipval);
-                        },
-                        .avxval => |fmode| {
-                            const avxval = self.iref(i.op1) orelse return error.FLIRError;
-                            const reg = avxval.avxreg() orelse return error.FLIRError;
-                            if (reg != 0) {
-                                try cfo.vmovf(fmode, 0, reg);
-                            }
-                        },
-                    }
-                },
                 .iunop => {
                     const src = self.ipval(i.op1) orelse return error.FLIRError;
                     const dst = i.ipreg() orelse return error.SpillError;
@@ -423,11 +406,12 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool) !u32 {
                 },
                 // parallel move family
                 // callret wants to be be friends :pleading_face:
-                .putphi, .callarg => {
+                .putphi, .callarg, .retval => {
                     // fubbigt: the idea is than movins_read will return null
                     // exactly when reading an UNDEF, incase this insn becomes a no-op
                     const w = true; // TODO: aaaaaaaaaaaa
-                    if (try self.movins_read2(i)) |src| {
+                    const read = try self.movins_read_ref(i);
+                    if (self.ipval(read)) |src| {
                         const dest = (try self.movins_dest(i)).ipval() orelse return error.FLIRError;
                         if (i.f.do_swap) {
                             if (swap_source) |swap_src| {
@@ -444,6 +428,9 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool) !u32 {
                             // TODO: phi of avxval
                             try movmcs(&cfo, w, dest, src);
                         }
+                    } else if (self.avxreg(read)) |reg| {
+                        _ = reg;
+                        @panic("it is fun time");
                     }
                 },
                 .load, .load_signext => {

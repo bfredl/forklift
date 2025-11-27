@@ -63,6 +63,8 @@ pub fn build(b: *std.Build) void {
             .optimize = opt,
             .target = t,
         }),
+        // why is this not builtin??????????
+        .filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match any filter") orelse &[0][]const u8{},
     });
     test_user.root_module.addImport("forklift", forklift);
     const run_test_user = b.addRunArtifact(test_user);
