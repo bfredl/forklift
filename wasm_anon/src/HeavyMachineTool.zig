@@ -245,8 +245,10 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     const ret_type = if (f.n_res > 0) f.res_types[0] else null;
     const tret: forklift.defs.SpecType = specType(ret_type orelse .i32) orelse .{ .intptr = .dword };
     const exit_var = try ir.variable(tret);
-    // TODO: ir.ret(VOID)
-    try ir.ret(exit_node, tret, if (f.n_res > 0) exit_var else try ir.const_uint(0));
+    try ir.ret(exit_node);
+    if (f.n_res >= 1) {
+        try ir.retval(exit_node, tret, exit_var);
+    }
     try label_stack.append(gpa, .{ .c_ip = 0, .ir_target = exit_node, .loop = false, .res_var = if (f.n_res > 0) exit_var else FLIR.NoRef, .value_stack_level = 0 });
 
     var c_ip: u32 = 0;
@@ -592,13 +594,13 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
 
                 const call = try ir.call(node, .cfo_obj, try ir.const_uint(obj));
                 var arglist = call;
-                arglist = try ir.callarg(arglist, mem_base, .{ .intptr = .quadword });
-                arglist = try ir.callarg(arglist, mem_size, .{ .intptr = .quadword });
+                arglist = try ir.callarg(node, arglist, mem_base, .{ .intptr = .quadword });
+                arglist = try ir.callarg(node, arglist, mem_size, .{ .intptr = .quadword });
                 if (func.n_params > value_stack.items.len) return error.InternalCompilerError;
                 const argbase = value_stack.items.len - func.n_params;
                 for (0..func.n_params) |i| {
                     const argtyp = specType(func.local_types[i]) orelse return error.NotImplemented;
-                    arglist = try ir.callarg(arglist, value_stack.items[argbase + i], argtyp);
+                    arglist = try ir.callarg(node, arglist, value_stack.items[argbase + i], argtyp);
                 }
                 value_stack.items.len = argbase;
                 if (func.n_res > 0) {

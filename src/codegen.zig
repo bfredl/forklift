@@ -428,9 +428,15 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool) !u32 {
                             // TODO: phi of avxval
                             try movmcs(&cfo, w, dest, src);
                         }
-                    } else if (self.avxreg(read)) |reg| {
-                        _ = reg;
-                        @panic("it is fun time");
+                    } else if (self.avxreg(read)) |src| {
+                        if (i.f.do_swap) {
+                            @panic("nooooo you cannot; haha avx vals go swappy");
+                        } else if (i.f.swap_done) {
+                            // swap_source_avx = null;
+                        } else {
+                            const dest = (try self.movins_dest(i)).avxreg() orelse return error.FLIRError;
+                            try cfo.vmovf(self.iref(read).?.mem_type().avxval, dest, src);
+                        }
                     }
                 },
                 .load, .load_signext => {
