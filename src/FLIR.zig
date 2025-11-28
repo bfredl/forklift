@@ -1687,17 +1687,24 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
 
         if (n.is_return) {
             var next = n.putphi_list;
+            var n_ipval: u8 = 0;
+            var n_avx: u8 = 0;
+            const ret_regs: [2]X86Asm.IPReg = .{ .rax, .rdx };
             while (next != NoRef) {
                 const i = self.iref(next) orelse return error.FLIRError;
                 if (i.tag == .retval) {
                     switch (i.mem_type()) {
                         .intptr => {
+                            if (n_ipval >= ret_regs.len) return error.NotImplemented;
                             i.mckind = .ipreg;
-                            i.mcidx = X86Asm.IPReg.rax.id();
+                            i.mcidx = ret_regs[n_ipval].id();
+                            n_ipval += 1;
                         },
                         .avxval => {
+                            if (n_avx >= 2) return error.NotImplemented;
                             i.mckind = .vfreg;
-                            i.mcidx = 0;
+                            i.mcidx = n_avx;
+                            n_avx += 1;
                         },
                     }
                 }

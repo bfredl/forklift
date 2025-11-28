@@ -234,22 +234,26 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     defer label_stack.deinit(gpa);
 
     const max_args = 5;
-    const max_res = 1;
-    if (f.n_params > max_args or f.n_res > max_res) return error.NotImplemented;
+    const max_res = 2;
+    if (f.n_params > max_args or f.n_res > max_res) {
+        f.hmt_error = try std.fmt.allocPrint(gpa, "VERKLIGEN VILL DU: {} => {}", .{ f.n_params, f.n_res });
+        return error.NotImplemented;
+    }
 
     const arg_types = f.local_types[0..f.n_params];
 
     // only a single node doing "ir.ret"
     const exit_node = try ir.addNode();
-    if (f.n_res > 1) return error.NotImplemented;
-    const ret_type = if (f.n_res > 0) f.res_types[0] else null;
-    const tret: forklift.defs.SpecType = specType(ret_type orelse .i32) orelse .{ .intptr = .dword };
-    const exit_var = try ir.variable(tret);
+    var exit_vars: [max_res]u16 = @splat(FLIR.NoRef);
+
     try ir.ret(exit_node);
-    if (f.n_res >= 1) {
-        try ir.retval(exit_node, tret, exit_var);
+    for (0..f.n_res) |i| {
+        const tret = specType(f.res_types[i]) orelse return error.NotImplemented;
+        exit_vars[i] = try ir.variable(tret);
+        try ir.retval(exit_node, tret, exit_vars[i]);
     }
-    try label_stack.append(gpa, .{ .c_ip = 0, .ir_target = exit_node, .loop = false, .res_var = if (f.n_res > 0) exit_var else FLIR.NoRef, .value_stack_level = 0 });
+    // FAIL: integrate with multiple res_vars because of the wasm multivalue blocks extension
+    try label_stack.append(gpa, .{ .c_ip = 0, .ir_target = exit_node, .loop = false, .res_var = FLIR.NoRef, .value_stack_level = 0 });
 
     var c_ip: u32 = 0;
     var r = in.mod.reader_at(f.codeoff);
@@ -385,7 +389,15 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const has_res = label.res_var != FLIR.NoRef;
                 if (!label.loop) {
                     if (!dead_end) {
-                        if (has_res) {
+                        // FAIL: reintegrate with multivalue
+                        if (label_stack.items.len == 0) {
+                            // it's return time
+                            if (value_stack.items.len != f.n_res) return error.InternalCompilerError;
+                            for (0..f.n_res) |i| {
+                                try ir.putvar(node, exit_vars[i], value_stack.items[i]);
+                            }
+                            value_stack.items.len = 0;
+                        } else if (has_res) {
                             try ir.putvar(node, label.res_var, value_stack.pop().?);
                         }
                         try ir.addLink(node, 0, label.ir_target);
@@ -415,7 +427,9 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 try ir.addLink(node, 0, exit_node);
                 if (f.n_res > 0) {
                     if (f.n_res > 1) return error.NotImplemented;
-                    try ir.putvar(node, exit_var, value_stack.pop().?);
+                    if (f.n_res == 1) {
+                        try ir.putvar(node, exit_vars[0], value_stack.pop().?);
+                    }
                 }
                 // TODO: dead code is weird in WASM, need to skip over as the stack might not exist
                 // TODO: or else I guess
@@ -653,7 +667,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     // arg5: R8 = jmp_buf
     // try cfo.trap();
     if (frame) try cfo.enter();
-    if (ret_type) |_| try cfo.push(.rcx);
+    if (f.n_res > 0) try cfo.push(.rcx);
 
     // inline setjmp
     const b = X86Asm.a(.r8);
@@ -690,14 +704,17 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
         }
     }
     try cfo.call_rel(target);
-    if (ret_type) |typ| {
-        try cfo.pop(.rcx);
+    if (f.n_res > 0) try cfo.pop(.rcx);
+    for (0..f.n_res) |i| {
+        const typ = f.res_types[i];
+        if (i > 0) return error.NotImplemented;
         switch (typ) {
             .i32, .i64 => try cfo.movmr(typ == .i64, X86Asm.a(.rcx), .rax), // only one,
             .f32, .f64 => try cfo.vmovumr(if (typ == .f64) .sd else .ss, X86Asm.a(.rcx), 0),
             else => return error.NotImplemented,
         }
     }
+
     try cfo.zero(.rax); // non-error exit
     // as a silly trick, setjmp target here? nice for debugging
     if (frame) try cfo.leave();

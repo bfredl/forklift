@@ -430,7 +430,8 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool) !u32 {
                         }
                     } else if (self.avxreg(read)) |src| {
                         if (i.f.do_swap) {
-                            @panic("nooooo you cannot; haha avx vals go swappy");
+                            // nooooo you cannot; haha avx vals go swappy
+                            return error.NotImplemented;
                         } else if (i.f.swap_done) {
                             // swap_source_avx = null;
                         } else {
