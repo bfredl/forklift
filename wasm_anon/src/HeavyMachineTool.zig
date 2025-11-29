@@ -77,6 +77,9 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance, filter: ?[]const 
                         }
                     }
                 }
+                if (f.hmt_call_emitted) {
+                    try self.errorStub(f);
+                }
                 if (selekted) return e else continue; // ok, note the error, unless selekted (NOT OK)
             },
             else => return e,
@@ -605,6 +608,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     return error.NotImplemented;
                 }
                 const obj = try self.declareFunc(func, null);
+                func.hmt_call_emitted = true;
 
                 const call = try ir.call(node, .cfo_obj, try ir.const_uint(obj));
                 var arglist = call;
@@ -619,7 +623,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 value_stack.items.len = argbase;
                 if (func.n_res > 0) {
                     const typ = specType(func.res_types[0]) orelse return error.NotImplemented;
-                    const res = try ir.callret(node, call, typ);
+                    const res = try ir.callret(call, typ);
                     try value_stack.append(gpa, res);
                 }
             },
@@ -722,4 +726,12 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
 
     f.hmt_trampoline = @intCast(self.mod.objs.items.len);
     try self.mod.objs.append(self.mod.gpa, .{ .obj = .{ .func = .{ .code_start = trampolin_target } }, .name = null });
+}
+
+pub fn errorStub(self: *HeavyMachineTool, f: *Function) !void {
+    const stub_target = self.mod.code.get_target();
+    var cfo = X86Asm{ .code = &self.mod.code, .long_jump_mode = true };
+    // TODO: set some state. or maybe just the location is enough if the handler were to lookup $RIP
+    try cfo.trap();
+    _ = try self.declareFunc(f, stub_target);
 }

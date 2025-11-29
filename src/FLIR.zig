@@ -152,7 +152,7 @@ pub const X86ABI = struct {
     const Reg = X86Asm.IPReg;
     // Args: used used both for incoming args and nested calls (including syscalls)
     pub const argregs = erase([6]Reg{ .rdi, .rsi, .rdx, .rcx, .r8, .r9 });
-    pub const ret_reg = Reg.rax.into();
+    pub const ret_regs = erase([_]Reg{ .rax, .rdx });
 
     // canonical order of callee saved registers. nsave>0 means
     // the first nsave items needs to be saved and restored
@@ -168,7 +168,7 @@ pub const BPF_ABI = struct {
     const Reg = BPF.Insn.Reg;
     // Args: used used both for incoming args and nested calls (including syscalls)
     pub const argregs = erase([5]Reg{ .r1, .r2, .r3, .r4, .r5 });
-    pub const ret_reg: defs.IPReg = @enumFromInt(0);
+    pub const ret_regs = erase([1]Reg{.r0});
 
     // canonical order of callee saved registers. nsave>0 means
     // the first nsave items needs to be saved and restored
@@ -604,8 +604,23 @@ pub fn callarg(self: *Self, node: u16, toinst: u16, ref: u16, typ: defs.SpecType
     return nextarg;
 }
 
-pub fn callret(self: *Self, node: u16, the_call: u16, typ: defs.SpecType) !u16 {
-    return self.addInst(node, .{ .tag = .callret, .spec = typ.into(), .op1 = the_call, .op2 = NoRef });
+pub fn callret(self: *Self, the_call: u16, typ: defs.SpecType) !u16 {
+    const theret = try self.addRawInst(.{ .tag = .callret, .spec = typ.into(), .op1 = the_call, .op2 = NoRef });
+    const ic = self.iref(the_call) orelse return error.FLIRError;
+    if (ic.tag != .call) return error.FLIRError;
+
+    // SILLY: self.put_at_end_of_any_list() ?
+    // canary inconistency if you compare callarg vs callret, pick the style which works best and use it everywhere
+    if (ic.op2 == NoRef) {
+        ic.op2 = theret;
+    } else {
+        var inst = self.iref(ic.op2) orelse return error.FLIRError;
+        while (inst.next != NoRef) {
+            inst = self.iref(inst.next) orelse return error.FLIRError;
+        }
+        inst.next = theret;
+    }
+    return theret;
 }
 
 pub fn addPhi(self: *Self, node: u16, vidx: u16, valspec: u8) !u16 {
@@ -936,6 +951,9 @@ pub fn peep_iunop(self: *Self, op: IntUnOp, size: defs.ISize, input: u16) !?u16 
 pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
     _ = user;
     const i = self.iref(used) orelse return;
+
+    if (i.tag == .callret) @panic("callret is a projection of the underlying call, need to use the call instruction as the definition 'time'");
+
     //ref.i.n_use += 1;
     // it leaks to another block: give it a virtual register number
     if (i.node_delete_this != ni) {
@@ -1031,7 +1049,11 @@ pub fn calc_live(self: *Self) !void {
                 neg_counter += 1;
                 const i = item.i;
 
-                self.check_live_or_conflicts(i, &live_vregs, node_has_clobber, &last_clobber);
+                if (i.tag == .call) {
+                    @panic("check the vregs of the callrets");
+                } else {
+                    self.check_live_or_conflicts(i, &live_vregs, node_has_clobber, &last_clobber);
+                }
 
                 // TODO: currently this forbids clobbers as inputs, which is wrong when killing the op.
                 // just need to check for mismatches
@@ -1597,8 +1619,7 @@ const ABIType = union(enum) { ipreg: defs.IPReg, avxreg: u16 };
 // TODO: clobbers should be in here :P
 const ABICallInfo = struct {
     args: []const defs.IPReg, // ABIType!!!!!
-    // curently void => rax as a lie, but eventually this should also be an array:p
-    ret: defs.IPReg,
+    rets: []const defs.IPReg,
 };
 
 pub fn abi_call_info(self: *Self, comptime ABI: type, i: *Inst) !ABICallInfo {
@@ -1611,12 +1632,12 @@ pub fn abi_call_info(self: *Self, comptime ABI: type, i: *Inst) !ABICallInfo {
         if (intrinsic == .memset) { // REP STOS
             const args = comptime erase([_]Reg{ .rdi, .rax, .rcx }); // (dest, val, len)
             // choice of ret is a bit arbitrary, but rdi is at least dest+len :P
-            return .{ .args = &args, .ret = Reg.rdi.into() };
+            return .{ .args = &args, .rets = &comptime erase([_]Reg{.rdi}) };
         } else {
             return error.FLIRError;
         }
     }
-    return .{ .args = &ABI.argregs, .ret = ABI.ret_reg };
+    return .{ .args = &ABI.argregs, .rets = &ABI.ret_regs };
 }
 
 pub fn set_abi(self: *Self, comptime ABI: type) !void {
@@ -1636,36 +1657,51 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
                     const call_info = try self.abi_call_info(ABI, i);
                     last_call_info = call_info;
                     self.codegen_has_call = true;
-                    var a = i.next;
-                    var inum: u8 = 0;
-                    var avxnum: u8 = 0;
-                    while (a != NoRef) {
-                        const iarg = self.iref(a) orelse return error.FLIRError;
-                        // TODO: floatarg
-                        switch (iarg.mem_type()) {
-                            .intptr => {
-                                iarg.mckind = .ipreg;
-                                iarg.mcidx = @intFromEnum(call_info.args[inum]);
-                                inum += 1;
-                            },
-                            .avxval => {
-                                iarg.mckind = .vfreg;
-                                iarg.mcidx = avxnum;
-                                avxnum += 1;
-                            },
+                    {
+                        var a = i.next;
+                        var inum: u8 = 0;
+                        var avxnum: u8 = 0;
+                        while (a != NoRef) {
+                            const iarg = self.iref(a) orelse return error.FLIRError;
+                            switch (iarg.mem_type()) {
+                                .intptr => {
+                                    if (inum >= call_info.args.len) return error.NotImplemented;
+                                    iarg.mckind = .ipreg;
+                                    iarg.mcidx = @intFromEnum(call_info.args[inum]);
+                                    inum += 1;
+                                },
+                                .avxval => {
+                                    if (avxnum >= 16) return error.NotImplemented;
+                                    iarg.mckind = .vfreg;
+                                    iarg.mcidx = avxnum;
+                                    avxnum += 1;
+                                },
+                            }
+                            a = iarg.next;
                         }
-                        a = iarg.next;
                     }
-                },
-                .callret => {
-                    // HUGLY: we will expect returns on stack later.
-                    switch (i.mem_type()) {
-                        .intptr => {
-                            i.op2 = @intFromEnum(last_call_info.ret);
-                        },
-                        .avxval => {
-                            i.op2 = 0;
-                        },
+                    {
+                        var r = i.op2;
+                        var inum: u8 = 0;
+                        var avxnum: u8 = 0;
+                        while (r != NoRef) {
+                            const rret = self.iref(r) orelse return error.FLIRError;
+                            switch (rret.mem_type()) {
+                                .intptr => {
+                                    if (inum >= call_info.rets.len) return error.NotImplemented;
+                                    rret.mckind = .ipreg;
+                                    rret.mcidx = @intFromEnum(call_info.rets[inum]);
+                                    inum += 1;
+                                },
+                                .avxval => {
+                                    if (avxnum >= 2) return error.NotImplemented;
+                                    rret.mckind = .vfreg;
+                                    rret.mcidx = avxnum;
+                                    avxnum += 1;
+                                },
+                            }
+                            r = rret.next;
+                        }
                     }
                 },
                 .arg => {
@@ -1689,6 +1725,7 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
             var next = n.putphi_list;
             var n_ipval: u8 = 0;
             var n_avx: u8 = 0;
+            // TODO: use ABICallInfo also for the function signature!!!!!
             const ret_regs: [2]X86Asm.IPReg = .{ .rax, .rdx };
             while (next != NoRef) {
                 const i = self.iref(next) orelse return error.FLIRError;
@@ -1835,8 +1872,9 @@ pub fn resolve_moves(self: *Self) !void {
         while (iter.peek()) |it| {
             if (it.i.tag == .call) {
                 try self.resolve_movelist(uv(ni), it.i.next, &iter);
+                const any = iter.next() != null; // retvals is after the instruction,
+                try self.resolve_movelist(uv(ni), it.i.op2, if (any) &iter else null); // TODO: this encoding of position is crazy af
             }
-            _ = iter.next();
         }
     }
 }
@@ -1859,6 +1897,7 @@ fn movins_read(self: *Self, movins: *Inst) !?*Inst {
 pub fn movins_read_ref(self: *Self, movins: *Inst) !u16 {
     _ = self;
     return switch (movins.tag) {
+        .callret => @panic("change representation so this is posible"),
         .putphi, .callarg, .retval => movins.op1,
         else => error.FLIRError,
     };

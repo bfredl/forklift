@@ -25,6 +25,7 @@ hmt_object: ?u32 = null,
 hmt_trampoline: ?u32 = null,
 // NB: leaky lifeboat - no errors make no leaked error strings!
 hmt_error: ?[]const u8 = null,
+hmt_call_emitted: bool = false,
 const Counter = u64;
 
 const std = @import("std");
