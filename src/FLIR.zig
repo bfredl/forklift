@@ -1698,14 +1698,12 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
                             switch (rret.mem_type()) {
                                 .intptr => {
                                     if (inum >= call_info.rets.len) return error.NotImplemented;
-                                    rret.mckind = .ipreg;
-                                    rret.mcidx = @intFromEnum(call_info.rets[inum]);
+                                    rret.op2 = @intFromEnum(call_info.rets[inum]);
                                     inum += 1;
                                 },
                                 .avxval => {
                                     if (avxnum >= 2) return error.NotImplemented;
-                                    rret.mckind = .vfreg;
-                                    rret.mcidx = avxnum;
+                                    rret.op2 = avxnum;
                                     avxnum += 1;
                                 },
                             }
@@ -1900,17 +1898,36 @@ pub fn movins_dest(self: *Self, movins: *Inst) !*Inst {
     };
 }
 
+pub const MCReadRef = struct {
+    mckind: defs.MCKind,
+    mcidx: u8,
+
+    pub fn from(i: Inst) MCReadRef {
+        return .{ .mckind = i.mckind, .mcidx = i.mcidx };
+    }
+};
+
 // if reading a constant or undef, returns null
-fn movins_read(self: *Self, movins: *Inst) !?*Inst {
-    return self.iref(try self.movins_read_ref(movins));
+// FUBBIGT: just compare EitherVal for equality?
+fn movins_read(self: *Self, movins: *Inst) !?MCReadRef {
+    return switch (movins.tag) {
+        // THIS is ugly as fuck. We probably want callret just to just be fixed mcvals, and then
+        // let the splitter add a renumbering copy as needed. then MCReadRef can be lybill
+        .callret => .{ .mckind = if (movins.mem_type() == .avxval) .vfreg else .ipreg, .mcidx = @intCast(movins.op2) },
+        .putphi, .callarg, .retval => .from((self.iref(movins.op1) orelse return null).*),
+        else => error.FLIRError,
+    };
 }
 
+const EitherVal = union(enum) {
+    ipval: defs.IPMCVal,
+    avxreg: u4,
+};
 // fubbigt: use IPMCVal even in the analysis stage
-pub fn movins_read_ref(self: *Self, movins: *Inst) !u16 {
-    _ = self;
-    return switch (movins.tag) {
-        .callret => @panic("change representation so this is posible"),
-        .putphi, .callarg, .retval => movins.op1,
+pub fn movins_read_val(self: *Self, i: *Inst) !?EitherVal {
+    return switch (i.tag) {
+        .callret => if (i.mem_type() == .avxval) .{ .avxreg = @intCast(i.op2) } else .{ .ipval = .{ .ipreg = @enumFromInt(i.op2) } },
+        .putphi, .callarg, .retval => if (self.ipval(i.op1)) |ival| .{ .ipval = ival } else if (self.avxreg(i.op1)) |reg| .{ .avxreg = reg } else null,
         else => error.FLIRError,
     };
 }

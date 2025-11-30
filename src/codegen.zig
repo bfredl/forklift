@@ -410,35 +410,39 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool) !u32 {
                     // fubbigt: the idea is than movins_read will return null
                     // exactly when reading an UNDEF, incase this insn becomes a no-op
                     const w = true; // TODO: aaaaaaaaaaaa
-                    const read = try self.movins_read_ref(i);
-                    if (self.ipval(read)) |src| {
-                        const dest = (try self.movins_dest(i)).ipval() orelse return error.FLIRError;
-                        if (i.f.do_swap) {
-                            if (swap_source) |swap_src| {
-                                try swapmcs(&cfo, w, dest, swap_src); // PLOCKA INTE UPP DEN
+                    if (try self.movins_read_val(i)) |readval| switch (readval) {
+                        .ipval => |src| {
+                            const dest = (try self.movins_dest(i)).ipval() orelse return error.FLIRError;
+                            if (i.f.do_swap) {
+                                if (swap_source) |swap_src| {
+                                    try swapmcs(&cfo, w, dest, swap_src); // PLOCKA INTE UPP DEN
+                                } else {
+                                    try swapmcs(&cfo, w, dest, src);
+                                    swap_source = src;
+                                }
+                            } else if (i.f.swap_done) {
+                                // do nothing, for N cyclic values we do N-1 swaps
+                                // but clear the state for another group
+                                swap_source = null;
                             } else {
-                                try swapmcs(&cfo, w, dest, src);
-                                swap_source = src;
+                                // TODO: phi of avxval
+                                try movmcs(&cfo, w, dest, src);
                             }
-                        } else if (i.f.swap_done) {
-                            // do nothing, for N cyclic values we do N-1 swaps
-                            // but clear the state for another group
-                            swap_source = null;
-                        } else {
-                            // TODO: phi of avxval
-                            try movmcs(&cfo, w, dest, src);
-                        }
-                    } else if (self.avxreg(read)) |src| {
-                        if (i.f.do_swap) {
-                            // nooooo you cannot; haha avx vals go swappy
-                            return error.NotImplemented;
-                        } else if (i.f.swap_done) {
-                            // swap_source_avx = null;
-                        } else {
-                            const dest = (try self.movins_dest(i)).avxreg() orelse return error.FLIRError;
-                            try cfo.vmovf(self.iref(read).?.mem_type().avxval, dest, src);
-                        }
-                    }
+                        },
+                        .avxreg => |src| {
+                            if (i.f.do_swap) {
+                                // nooooo you cannot; haha avx vals go swappy
+                                return error.NotImplemented;
+                            } else if (i.f.swap_done) {
+                                // swap_source_avx = null;
+                            } else {
+                                const dest = try self.movins_dest(i);
+                                const destreg = dest.avxreg() orelse return error.FLIRError;
+                                // TODO: always mem_type of dest??
+                                try cfo.vmovf(dest.mem_type().avxval, destreg, src);
+                            }
+                        },
+                    };
                 },
                 .load, .load_signext => {
                     const eaddr = try get_eaddr_load_or_lea(self, i.*);

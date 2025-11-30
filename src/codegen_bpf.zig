@@ -303,9 +303,10 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
                 .putphi, .callarg, .retval => {
                     if (i.f.do_swap) return error.NotImplemented;
                     const dest = (try self.movins_dest(i)).ipval() orelse return error.FLIRError;
-                    if (self.ipval(try self.movins_read_ref(i))) |src| {
-                        try movmcs(mod, dest, src);
-                    }
+                    if (try self.movins_read_val(i)) |val| switch (val) {
+                        .ipval => |src| try movmcs(mod, dest, src),
+                        .avxreg => return error.NotImplemented,
+                    };
                 },
                 .load, .load_signext => {
                     // TODO: spill spall supllit?
