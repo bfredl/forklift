@@ -313,7 +313,7 @@ pub fn print_inst(self: *FLIR, ref: u16, i: *FLIR.Inst) void {
         print(" *", .{});
     }
     if (i.f.conflicts or v_conflict) {
-        print(" !", .{});
+        print(" ~~", .{});
     }
     if (i.tag == .putphi) {
         const targ = if (self.iref(i.op2)) |iref| iref.* else empty_inst;
@@ -346,10 +346,19 @@ pub fn print_inst(self: *FLIR, ref: u16, i: *FLIR.Inst) void {
     if (opnext != NoRef and i.tag != .call) print("not implemented??\n", .{});
     while (opnext != NoRef) {
         const ii = self.iref(opnext) orelse @panic("aa");
-        print_op(self, "YARG:", ii.f.kill_op1, ii.op1);
+        print_op(self, ", ", ii.f.kill_op1, ii.op1);
         opnext = ii.next;
     }
     print("\n", .{});
+
+    if (i.tag == .call) {
+        var next_ret = i.op2;
+        while (next_ret != NoRef) {
+            const retv = self.iref(next_ret) orelse @panic("eeeeee");
+            print_inst(self, next_ret, retv);
+            next_ret = retv.next;
+        }
+    }
 }
 
 // TODO: bull, but here we just use it as "anything unallocated"
@@ -380,10 +389,10 @@ fn print_node(self: *FLIR, n: *FLIR.Node) void {
             print("\n", .{});
         } else if (i.tag == .putphi or i.tag == .retval) {
             // TODO: separate tags for "processed" and "scheduled"?
-            if (!i.f.killed or (self.trivial(i) catch true)) {
-                if (i.f.killed) print("\x1b[38;5;244m", .{});
+            if (!i.f.move_processed or (self.trivial(i) catch true)) {
+                if (i.f.move_processed) print("\x1b[38;5;244m", .{});
                 print_inst(self, put_iter, i);
-                if (i.f.killed) print("\x1b[0m", .{});
+                if (i.f.move_processed) print("\x1b[0m", .{});
             }
         } else {
             print("MÖG: ", .{});

@@ -77,6 +77,8 @@ f: packed struct {
     // gen as a no-op as previous instruction was a swap
     swap_done: bool = false,
 
+    move_processed: bool = false,
+
     // indicates, in general, that an integer operation is 64-bit instead of 32-bit
     // in general 32-bit math is expected to always leave the upper 32-bits zero
     // For loads, it means e.g an i16 will be sign exstended to 64 bits instead of 32

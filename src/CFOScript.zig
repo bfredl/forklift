@@ -310,7 +310,7 @@ pub fn call_expr(self: *Self, type_ctx: SpecType, kind: []const u8) !u16 {
         arglist = try self.ir.callarg(self.curnode, arglist, arg, .{ .intptr = .quadword });
     }
 
-    return self.ir.callret(self.curnode, call, .{ .intptr = .quadword });
+    return self.ir.callret(call, .{ .intptr = .quadword });
 }
 
 pub fn cond_op(op: []const u8) ?defs.IntCond {

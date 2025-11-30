@@ -948,15 +948,18 @@ pub fn peep_iunop(self: *Self, op: IntUnOp, size: defs.ISize, input: u16) !?u16 
 }
 
 // ni = node id of user
-pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) void {
+pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) !void {
     _ = user;
     const i = self.iref(used) orelse return;
 
-    if (i.tag == .callret) @panic("callret is a projection of the underlying call, need to use the call instruction as the definition 'time'");
+    const def_node = switch (i.tag) {
+        .callret => (self.iref(i.op1) orelse return error.FLIRError).node_delete_this,
+        else => i.node_delete_this,
+    };
 
     //ref.i.n_use += 1;
     // it leaks to another block: give it a virtual register number
-    if (i.node_delete_this != ni) {
+    if (def_node != ni) {
         if (!i.f.is_vreg) {
             i.f.is_vreg = true;
             i.vreg_scratch = self.nvreg;
@@ -981,12 +984,12 @@ pub fn calc_live(self: *Self) !void {
         while (it.next()) |item| {
             const i = item.i;
             for (i.ops(false)) |*op| {
-                self.adduse(uv(ni), item.ref, op.*);
+                try self.adduse(uv(ni), item.ref, op.*);
             }
             var opnext = i.next_as_op();
             while (opnext != NoRef) {
                 const ii = self.iref(opnext) orelse return error.FLIRError;
-                self.adduse(uv(ni), opnext, ii.op1);
+                try self.adduse(uv(ni), opnext, ii.op1);
                 opnext = ii.next;
             }
         }
@@ -994,7 +997,7 @@ pub fn calc_live(self: *Self) !void {
         var item = n.putphi_list;
         while (item != NoRef) {
             const i = self.iref(item) orelse return error.FLIRError;
-            self.adduse(uv(ni), item, i.op1);
+            try self.adduse(uv(ni), item, i.op1);
             item = i.next;
         }
     }
@@ -1050,7 +1053,13 @@ pub fn calc_live(self: *Self) !void {
                 const i = item.i;
 
                 if (i.tag == .call) {
-                    @panic("check the vregs of the callrets");
+                    // currently the only inst with projections
+                    var r = i.op2;
+                    while (r != NoRef) {
+                        const rret = self.iref(r) orelse return error.FLIRError;
+                        self.check_live_or_conflicts(rret, &live_vregs, node_has_clobber, &last_clobber);
+                        r = rret.next;
+                    }
                 } else {
                     self.check_live_or_conflicts(i, &live_vregs, node_has_clobber, &last_clobber);
                 }
@@ -1784,13 +1793,13 @@ pub fn resolve_movelist(self: *Self, node: u16, list: u16, iter: ?*InsIterator) 
         var any_ready = false;
         while (phi_1 != NoRef) {
             var p1 = self.iref(phi_1) orelse return error.FLIRError;
-            if (!p1.f.killed) {
+            if (!p1.f.move_processed) {
                 // fast path: a lot of putphis are going to be trivial "RAX := RAX" stuff
                 if (try self.trivial(p1)) {
-                    p1.f.killed = true;
+                    p1.f.move_processed = true;
                 }
             }
-            if (p1.f.killed) {
+            if (p1.f.move_processed) {
                 phi_1 = p1.next;
                 continue;
             }
@@ -1799,7 +1808,7 @@ pub fn resolve_movelist(self: *Self, node: u16, list: u16, iter: ?*InsIterator) 
                 while (phi_2 != NoRef) {
                     const p2 = self.iref(phi_2) orelse return error.FLIRError;
                     // pointer comparison: skip diagonal element
-                    if (!(p2.f.killed or p1 == p2)) {
+                    if (!(p2.f.move_processed or p1 == p2)) {
                         if (try self.conflict(p1, p2)) {
                             break :is_ready false;
                         }
@@ -1809,7 +1818,7 @@ pub fn resolve_movelist(self: *Self, node: u16, list: u16, iter: ?*InsIterator) 
                 break :is_ready true;
             };
             if (ready) {
-                p1.f.killed = true;
+                p1.f.move_processed = true;
                 try self.put_for_movelist(node, iter, phi_1);
 
                 any_ready = true; // we advanced
@@ -1824,20 +1833,20 @@ pub fn resolve_movelist(self: *Self, node: u16, list: u16, iter: ?*InsIterator) 
     var phi = list;
     while (phi != NoRef) {
         const p = self.iref(phi) orelse return error.FLIRError;
-        if (p.f.killed) {
+        if (p.f.move_processed) {
             phi = p.next;
             continue;
         }
 
         const group_last_write = try self.movins_read(p) orelse @panic("trivial move in cycle group?");
         var next_read = try self.movins_dest(p);
-        p.f.killed = true;
+        p.f.move_processed = true;
         p.f.do_swap = true;
         try self.put_for_movelist(node, iter, phi);
         var phi_1 = list;
         while (phi_1 != NoRef) {
             const p1 = self.iref(phi_1) orelse return error.FLIRError;
-            if (p1.f.killed) {
+            if (p1.f.move_processed) {
                 phi_1 = p1.next;
                 continue;
             }
@@ -1846,7 +1855,7 @@ pub fn resolve_movelist(self: *Self, node: u16, list: u16, iter: ?*InsIterator) 
                 // we cannot run out of pos as it is a slower (or always equal) iterator
                 const p1_dest = try self.movins_dest(p1);
                 try self.put_for_movelist(node, iter, phi_1);
-                p1.f.killed = true;
+                p1.f.move_processed = true;
                 if (mc_equal(p1_dest, group_last_write)) {
                     p1.f.swap_done = true;
                     break;
@@ -1874,6 +1883,8 @@ pub fn resolve_moves(self: *Self) !void {
                 try self.resolve_movelist(uv(ni), it.i.next, &iter);
                 const any = iter.next() != null; // retvals is after the instruction,
                 try self.resolve_movelist(uv(ni), it.i.op2, if (any) &iter else null); // TODO: this encoding of position is crazy af
+            } else {
+                _ = iter.next();
             }
         }
     }
@@ -1884,6 +1895,7 @@ pub fn movins_dest(self: *Self, movins: *Inst) !*Inst {
         .putphi => self.iref(movins.op2) orelse return error.FLIRError,
         .callarg => movins,
         .retval => movins,
+        .callret => movins,
         else => error.FLIRError,
     };
 }
@@ -2121,6 +2133,7 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
     if (check) try self.check_vregs();
 
     try self.scan_alloc(ABI);
+    self.debug_print();
     try self.resolve_moves(); // GLYTTIT
     if (check) try self.check_ir_valid();
 
