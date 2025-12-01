@@ -1455,6 +1455,7 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
 
             const is_avx = (i.res_type() == .avxval);
 
+            // call args/ret handled below, but op1 can be a function pointer
             if (i.f.kill_op1) {
                 if (self.iref(i.op1)) |op| {
                     if (op.mckind == .ipreg) free_regs_ip[op.mcidx] = true;
@@ -1466,21 +1467,48 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
                 }
             }
 
-            // TODO: reghint for killed op2? (if symmetric, like add usw)
-            if (i.f.kill_op2) {
-                if (self.iref(i.op2)) |op| {
-                    if (op.mckind == .ipreg) free_regs_ip[op.mcidx] = true;
-                    if (op.mckind == .vfreg) free_regs_avx[op.mcidx] = true;
+            // note: the risk here out of convenience is that "call" tag becomes
+            // a standin for "anything which uses lists for inputs and outputs".
+            // For the scale of this silly project, that might end up as the right thing.
+            if (i.tag != .call) {
+                // TODO: reghint for killed op2? (if symmetric, like add usw)
+                if (i.f.kill_op2) {
+                    if (self.iref(i.op2)) |op| {
+                        if (op.mckind == .ipreg) free_regs_ip[op.mcidx] = true;
+                        if (op.mckind == .vfreg) free_regs_avx[op.mcidx] = true;
+                    }
                 }
-            }
-            if (i.f.kill_op3) {
-                if (self.iref(i.next)) |op| {
-                    if (op.mckind == .ipreg) free_regs_ip[op.mcidx] = true;
-                    if (op.mckind == .vfreg) free_regs_avx[op.mcidx] = true;
+                if (i.f.kill_op3) {
+                    if (self.iref(i.next)) |op| {
+                        if (op.mckind == .ipreg) free_regs_ip[op.mcidx] = true;
+                        if (op.mckind == .vfreg) free_regs_avx[op.mcidx] = true;
+                    }
                 }
-            }
 
-            try self.alloc_inst(ABI, i, &free_regs_ip, &free_regs_avx, &highest_used);
+                try self.alloc_inst(ABI, i, &free_regs_ip, &free_regs_avx, &highest_used);
+            } else {
+                var opnext = i.next_as_op();
+                while (opnext != NoRef) {
+                    const ii = self.iref(opnext) orelse return error.FLIRError;
+                    if (ii.f.kill_op1) {
+                        if (self.iref(ii.op1)) |op| {
+                            if (op.mckind == .ipreg) free_regs_ip[op.mcidx] = true;
+                            if (op.mckind == .vfreg) free_regs_avx[op.mcidx] = true;
+                        }
+                    }
+                    opnext = ii.next;
+                }
+
+                var rnext = i.op2;
+                while (rnext != NoRef) {
+                    const ii = self.iref(rnext) orelse return error.FLIRError;
+                    // Even if `.callret` instructions end up "fixed", somewhere
+                    // around here the cereal spiller would need to consider to
+                    // split it anyway, to the same effect
+                    try self.alloc_inst(ABI, ii, &free_regs_ip, &free_regs_avx, &highest_used);
+                    rnext = ii.next;
+                }
+            }
         }
 
         var put_iter = n.putphi_list;
@@ -1699,11 +1727,17 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
                                 .intptr => {
                                     if (inum >= call_info.rets.len) return error.NotImplemented;
                                     rret.op2 = @intFromEnum(call_info.rets[inum]);
+                                    // if the spiller is good enough, this should just be a fixed
+                                    // allocation, no op2 shenanigans, and emit extra copy instructions as needed
+                                    rret.mckind = .unallocated_ipreghint;
+                                    rret.mcidx = @intFromEnum(call_info.rets[inum]);
                                     inum += 1;
                                 },
                                 .avxval => {
                                     if (avxnum >= 2) return error.NotImplemented;
                                     rret.op2 = avxnum;
+                                    rret.mckind = .unallocated_vfreghint;
+                                    rret.mcidx = avxnum;
                                     avxnum += 1;
                                 },
                             }
@@ -2150,7 +2184,6 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
     if (check) try self.check_vregs();
 
     try self.scan_alloc(ABI);
-    self.debug_print();
     try self.resolve_moves(); // GLYTTIT
     if (check) try self.check_ir_valid();
 
