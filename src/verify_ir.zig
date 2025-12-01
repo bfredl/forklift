@@ -162,8 +162,8 @@ pub fn check_vregs(self: *FLIR) !void {
                 if ((born & (@as(usize, 1) << @as(u6, @intCast(ireg)))) != 0) {
                     const i = self.vregs.items[ireg].ref;
                     // print(" %{}", .{i});
-                    if (self.iref(i).?.node_delete_this != ni) {
-                        // print("!! {} vs {}\n", .{ self.iref(i).?.node_delete_this, ni });
+                    if (try self.defNode(self.iref(i).?) != ni) {
+                        // print("!! {} vs {}\n", .{ def_node, ni });
                         err = true;
                     }
                 }
@@ -448,7 +448,7 @@ fn print_interval(self: *FLIR, ref: u16) void {
     print("\x1b[4m", .{});
     for (self.n.items, 0..) |n, ni| {
         var live: bool = if (vreg_flag) |f| (f & n.live_in) != 0 else false;
-        if (i.tag == .phi and i.node_delete_this == ni) {
+        if (i.tag == .phi and (self.defNode(i) catch @panic("glüffer")) == ni) {
             live = true;
         }
         var it = self.ins_iterator(n.firstblk);

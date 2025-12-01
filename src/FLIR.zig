@@ -947,15 +947,19 @@ pub fn peep_iunop(self: *Self, op: IntUnOp, size: defs.ISize, input: u16) !?u16 
     return null;
 }
 
+pub fn defNode(self: *Self, i: *Inst) !u16 {
+    return switch (i.tag) {
+        .callret => (self.iref(i.op1) orelse return error.FLIRError).node_delete_this,
+        else => i.node_delete_this,
+    };
+}
+
 // ni = node id of user
 pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) !void {
     _ = user;
     const i = self.iref(used) orelse return;
 
-    const def_node = switch (i.tag) {
-        .callret => (self.iref(i.op1) orelse return error.FLIRError).node_delete_this,
-        else => i.node_delete_this,
-    };
+    const def_node = try self.defNode(i);
 
     //ref.i.n_use += 1;
     // it leaks to another block: give it a virtual register number
@@ -964,7 +968,7 @@ pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) !void {
             i.f.is_vreg = true;
             i.vreg_scratch = self.nvreg;
             self.nvreg += 1;
-            self.vregs.appendAssumeCapacity(.{ .ref = used, .def_node = i.node_delete_this });
+            self.vregs.appendAssumeCapacity(.{ .ref = used, .def_node = def_node });
         }
     }
 }
