@@ -1751,13 +1751,13 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
                 },
                 .arg => {
                     if (i.mem_type() == .intptr) {
-                        if (i.op1 >= ABI.argregs.len) return error.ARA;
+                        if (i.op1 >= ABI.argregs.len) return error.NotImplemented;
                         // tricky: do we use this to encode that the arg came from there?
                         // or should spec be changed to the reg number
                         i.mckind = .unallocated_ipreghint;
                         i.mcidx = ABI.argregs[i.op1].id();
                     } else {
-                        if (i.op1 >= 16) return error.ARA;
+                        if (i.op1 >= 16) return error.NotImplemented;
                         i.mckind = .unallocated_vfreghint;
                         i.mcidx = @intCast(i.op1);
                     }

@@ -63,9 +63,7 @@ fn regaritmc(cfo: *X86Asm, w: bool, op: AOp, dst: IPReg, src: IPMCVal) !void {
         .frameslot => |f| try cfo.aritrm(op, w, r(dst), X86Asm.a(.rbp).o(slotoff(f))),
         .ipreg => |reg| try cfo.arit(op, w, r(dst), r(reg)),
         .constval => |c| try cfo.aritri(op, w, r(dst), @intCast(c)),
-        .constref, .constptr => {
-            @panic("le wip");
-        },
+        .constref, .constptr => return error.NotImplemented,
     }
 }
 
@@ -73,7 +71,7 @@ fn mcmovreg(cfo: *X86Asm, w: bool, dst: IPMCVal, src: IPReg) !void {
     switch (dst) {
         .frameslot => |f| try cfo.movmr(w, slotea(f), r(src)),
         .ipreg => |reg| if (reg != src) try cfo.mov(w, r(reg), r(src)),
-        .constval, .constref, .constptr => return error.AURORA_BOREALIS,
+        .constval, .constref, .constptr => return error.FLIRError, // AURORA BOREALIS?
     }
 }
 
@@ -177,7 +175,7 @@ pub fn set_pred(self: *FLIR, cfo: *X86Asm, targets: [][2]u32, ni: u16) !void {
 // TODO: a lot of codegen.zig should be shared between plattforms
 const ABI = FLIR.X86ABI;
 
-pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool) !u32 {
+pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u32 {
     const labels = try self.gpa.alloc(u32, self.n.items.len);
     const targets = try self.gpa.alloc([2]u32, self.n.items.len);
     defer self.gpa.free(labels);
@@ -251,9 +249,11 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool) !u32 {
                     }
                 },
                 .arg => {
-                    // TRICKY: should i.op1 actually be the specific register?
+                    // TODO: if "arg" is like a move instruction it should be a movins!
+                    // ALSO TRICKY: should i.op1 actually be the specific register?
                     switch (i.mem_type()) {
                         .intptr => |size| {
+                            if (i.op1 >= ABI.argregs.len) return error.NotImplemented;
                             const src = ABI.argregs[i.op1];
                             const dst = i.ipval() orelse return error.FLIRError;
                             try mcmovreg(&cfo, size == .quadword, dst, src);
@@ -605,7 +605,7 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool) !u32 {
                             try cfo.call_rel(@intCast(off));
                             // only relocate later if unknown
                             if (off == defs.INVALID_OFFSET) {
-                                try mod.relocations.append(code.gpa, .{ .pos = mod.code.get_target() - 4, .obj_idx = @intCast(idx) });
+                                try mod.relocations.append(code.gpa, .{ .pos = mod.code.get_target() - 4, .obj_idx = @intCast(idx), .user_obj_idx_for_debugging = owner_obj_idx });
                             }
                         },
                         .memory_intrinsic => {

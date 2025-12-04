@@ -106,7 +106,7 @@ test "maybe_split" {
     try self.test_analysis(FLIR.X86ABI, true);
     var cfo = try CodeBuffer.init(test_allocator);
     defer cfo.deinit();
-    _ = try forklift.codegen_x86_64(self, &cfo, false);
+    _ = try forklift.codegen_x86_64(self, &cfo, false, null);
     try cfo.finalize();
     const fun = cfo.get_ptr(0, AFunc);
     try expect(usize, 12, fun(11));

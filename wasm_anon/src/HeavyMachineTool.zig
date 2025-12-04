@@ -198,7 +198,10 @@ pub fn declareFunc(self: *HeavyMachineTool, f: *Function, pos: ?u32) !u32 {
         const idx: u32 = @intCast(self.mod.objs.items.len);
         f.hmt_object = idx;
         const target = if (pos) |p| p else forklift.defs.INVALID_OFFSET;
-        try self.mod.objs.append(self.mod.gpa, .{ .obj = .{ .func = .{ .code_start = target } }, .name = null });
+
+        // this doesn't have to be accurate/unique, just nice to have a name for debugging
+        const name = if (f.name) |nam| nam else f.exported;
+        try self.mod.objs.append(self.mod.gpa, .{ .obj = .{ .func = .{ .code_start = target } }, .name = name });
         return idx;
     }
 }
@@ -647,8 +650,10 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     if (verbose) ir.debug_print();
 
     // TODO: abstraction
-    const target = try forklift.codegen_x86_64(ir, &self.mod, false);
 
+    // this is a very silly song
+    const obj = try self.declareFunc(f, null);
+    const target = try forklift.codegen_x86_64(ir, &self.mod, false, obj);
     _ = try self.declareFunc(f, target);
 
     if (f.exported == null) return;

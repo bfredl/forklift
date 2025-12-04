@@ -44,7 +44,7 @@ objs: std.ArrayList(struct { name: ?[]const u8, obj: RTObject }) = .empty,
 // quick stub, replace with something which reuses objs[index].name as key
 objs_map: std.StringHashMap(usize),
 // bpf_code.items[id] needs to point at fd of object specified by obj_idx
-relocations: std.ArrayList(struct { pos: u32, obj_idx: u32 }) = .empty,
+relocations: std.ArrayList(struct { pos: u32, obj_idx: u32, user_obj_idx_for_debugging: ?u32 = null }) = .empty,
 
 pub fn init(allocator: std.mem.Allocator) !CFOModule {
     return .{
@@ -85,7 +85,13 @@ pub fn load(self: *CFOModule, comptime do_bpf: bool) !void {
             },
             .func => |*f| {
                 if (f.code_start == defs.INVALID_OFFSET) {
-                    @panic("nicer error her plz");
+                    const username = if (r.user_obj_idx_for_debugging) |user|
+                        (self.objs.items[user].name orelse "??")
+                    else
+                        "???";
+                    std.debug.print("\"{s}\" used by \"{s}\" but it doesn't exist\n", .{ o.name orelse "??", username });
+
+                    return error.MissingObject;
                 }
                 // TODO: we should have had a X86Asm here:p
                 const distance = @as(i32, @intCast(f.code_start)) - @as(i32, @intCast(r.pos + 4));
