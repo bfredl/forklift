@@ -106,3 +106,10 @@ pub fn execute_either(in: *Instance, engine: Engine, idx: u32, params: []const d
         .heavy => |h| h.execute(in, idx, params, ret, logga, err_ret),
     };
 }
+
+pub fn maybe_compile(in: *Instance, engine: Engine) !void {
+    switch (engine) {
+        .interpreter => {},
+        .heavy => |h| try h.compileInstance(in, null),
+    }
+}

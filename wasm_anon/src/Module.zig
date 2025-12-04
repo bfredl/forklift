@@ -1,8 +1,8 @@
 const std = @import("std");
 const testing = std.testing;
 
-//pub const dbg = std.debug.print;
-pub const dbg = severe;
+//pub const dbg = severe;
+pub const dbg = nodbg;
 pub fn nodbg(str: anytype, vals: anytype) void {
     _ = str;
     _ = vals;

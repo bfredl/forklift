@@ -65,14 +65,6 @@ pub fn main() !u8 {
         return 0;
     }
 
-    if (p.args.heavy > 0) {
-        var tool: wasm_shelf.HeavyMachineTool = try .init(allocator);
-        var in: Instance = try .init(&mod, null);
-        defer in.deinit();
-        try tool.compileInstance(&in, null);
-        return 0;
-    }
-
     for (p.args.compile) |str| {
         const func, const blk = try blkspec(str);
         try mod.dbg_compile(func, blk);
@@ -80,7 +72,9 @@ pub fn main() !u8 {
 
     var interpreter: wasm_shelf.Interpreter = .init(allocator);
     defer interpreter.deinit();
-    const engine: wasm_shelf.Engine = .{ .interpreter = &interpreter };
+    var tool: wasm_shelf.HeavyMachineTool = try .init(allocator);
+
+    const engine: wasm_shelf.Engine = if (p.args.heavy > 0) .{ .heavy = &tool } else .{ .interpreter = &interpreter };
 
     if (p.args.func) |func| {
         const callname = func;
@@ -116,6 +110,7 @@ const WASIState = struct {
     exit_status: ?u32 = null,
 };
 
+// NB: engine is a tagged pointer
 fn wasi_run(engine: wasm_shelf.Engine, mod: *wasm_shelf.Module, allocator: std.mem.Allocator, stdin: ?[:0]const u8) !u32 {
     if (stdin) |path| {
         const fd = try std.posix.openZ(path, .{ .ACCMODE = .RDONLY }, 0);
@@ -134,6 +129,8 @@ fn wasi_run(engine: wasm_shelf.Engine, mod: *wasm_shelf.Module, allocator: std.m
 
     var in = try wasm_shelf.Instance.init(mod, &imports);
     defer in.deinit();
+
+    try in.maybe_compile(engine);
 
     const sym = try mod.lookup_export("_start") orelse @panic("_start not found");
 
