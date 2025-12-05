@@ -321,8 +321,18 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             .global_get, .global_set => |idx| {
                 const globel = in.get_global(idx);
                 const typ = in.mod.global_types[idx];
-                f.hmt_error = try std.fmt.allocPrint(gpa, "globel {}: {} of typ {}", .{ idx, @intFromPtr(globel), typ });
-                return error.NotImplemented;
+                const addr = try ir.const_uint(@intFromPtr(globel));
+
+                if (typ.t != .i32 and typ.t != .i64) return error.NotImplemented;
+                const wide = typ.t == .i64;
+
+                if (inst == .global_get) {
+                    const load = try ir.load(node, wide, false, specType(typ.t).?, FLIR.NoRef, addr, 0);
+                    try value_stack.append(gpa, load);
+                } else {
+                    const val = value_stack.pop().?;
+                    _ = try ir.store(node, specType(typ.t).?, FLIR.NoRef, addr, 0, val);
+                }
             },
             .loop => |typ| {
                 const n_args, const n_results = try typ.arity(in.mod);
