@@ -16,6 +16,7 @@ const Module = @This();
 const ImportTable = @import("./ImportTable.zig");
 
 pub const Limits = struct { min: u32, max: ?u32 };
+pub const GlobalType = struct { t: defs.ValType, mut: bool };
 
 const Reader = @import("./Reader.zig");
 allocator: std.mem.Allocator,
@@ -34,6 +35,7 @@ n_globals_import: u32 = 0,
 n_globals_internal: u32 = 0,
 globals_off: u32 = 0,
 
+global_types: []GlobalType = &.{},
 n_imports: u32 = 0,
 imports_off: u32 = 0,
 
@@ -70,6 +72,8 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
     var r0 = self.reader_at(8);
     const r = &r0; // DO YOU LIKE MY SILLY HAT?
 
+    var globtypes: std.ArrayList(GlobalType) = .empty;
+
     while (true) {
         const id = r.readByte() catch |err| switch (err) {
             error.EndOfStream => break,
@@ -83,18 +87,18 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
         const end_pos = r.pos + len;
         switch (kind) {
             .type => try self.type_section(r),
+            .import => try self.import_section(r, &globtypes),
             .function => try self.function_section(r),
+            .table => self.table_off = r.pos,
             .memory => try self.memory_section(r),
-            .global => try self.global_section(r),
-            .import => try self.import_section(r),
+            .global => try self.global_section(r, &globtypes),
             .export_ => self.export_off = r.pos,
 
-            .code => try self.code_section(r),
-            .table => self.table_off = r.pos,
+            .start => return error.NotImplemented,
             .element => self.element_off = r.pos,
+            .code => try self.code_section(r),
             .data => self.data_off = r.pos,
             .custom => try self.custom_section(r, len),
-            .start => return error.NotImplemented,
             else => {
                 // severe("NO {s}!\n", .{@tagName(kind)});
             },
@@ -106,6 +110,8 @@ pub fn parse(module: []const u8, allocator: std.mem.Allocator) !Module {
         }
         r.pos = end_pos;
     }
+
+    self.global_types = try globtypes.toOwnedSlice(self.allocator);
 
     return self;
 }
@@ -186,7 +192,7 @@ pub fn dbg_type(self: *Module, typeidx: u32) !void {
 }
 
 // currently we two-cycle the import section to first get the counts
-pub fn import_section(self: *Module, r: *Reader) !void {
+pub fn import_section(self: *Module, r: *Reader, globtypes: *std.ArrayList(GlobalType)) !void {
     self.imports_off = r.pos;
     const len = try r.readu();
     dbg("IMPORTS: {}\n", .{len});
@@ -212,9 +218,10 @@ pub fn import_section(self: *Module, r: *Reader) !void {
                 _ = try r.readLimits();
             },
             .global => {
-                _ = try r.readByte();
-                _ = try r.readByte();
                 self.n_globals_import += 1;
+                const typ: defs.ValType = @enumFromInt(try r.readByte());
+                const mut = try r.readBinaryFlag();
+                try globtypes.append(self.allocator, .{ .t = typ, .mut = mut });
             },
         }
     }
@@ -354,11 +361,18 @@ pub fn init_data(self: *Module, mem: []u8, preglobals: []const defs.StackValue) 
     }
 }
 
-pub fn global_section(self: *Module, r: *Reader) !void {
+pub fn global_section(self: *Module, r: *Reader, globtypes: *std.ArrayList(GlobalType)) !void {
     const len = try r.readu();
     dbg("GLOBALS: {}\n", .{len});
     self.n_globals_internal = len;
     self.globals_off = r.pos;
+    for (0..len) |_| {
+        // this is evil
+        // const typ: defs.ValType = @enumFromInt(try r.readByte());
+        // const mut = try r.readBinaryFlag();
+        //try globtypes.append(self.allocator, .{ .t = typ, .mut = mut });
+        try globtypes.append(self.allocator, .{ .t = .void, .mut = false });
+    }
 }
 
 const Instance = @import("./Instance.zig");
@@ -403,8 +417,7 @@ pub fn init_imports(self: *Module, in: *Instance, imports: ?*ImportTable) !void 
             },
             .global => {
                 const typ: defs.ValType = @enumFromInt(try r.readByte());
-                const mut = (try r.readByte()) > 0;
-                _ = mut;
+                _ = try r.readBinaryFlag();
 
                 const item = imp.globals.get(name) orelse return error.MissingImport;
                 if (typ != item.typ) return error.ImportTypeMismatch;
@@ -416,12 +429,14 @@ pub fn init_imports(self: *Module, in: *Instance, imports: ?*ImportTable) !void 
 
     r.pos = self.globals_off;
     for (0..self.n_globals_internal) |i| {
-        const typ: defs.ValType = @enumFromInt(r.peekByte());
-        try self.skip_type(&r);
-        dbg("\n", .{});
-        _ = try r.readByte(); // WHO FUCKING CARES IF IT IS MUTABLE OR NOT
+        const idx = self.n_globals_import + i;
+        const typ: defs.ValType = @enumFromInt(try r.readByte());
+        const mut = try r.readBinaryFlag();
 
-        in.globals_maybe_indir[self.n_globals_import + i] = try Interpreter.eval_constant_expr(&r, typ, in.preglobals(), self.allocator);
+        // EVIL: part of mod initialized at instance time!!!!!!!!
+        self.global_types[idx] = .{ .t = typ, .mut = mut };
+
+        in.globals_maybe_indir[idx] = try Interpreter.eval_constant_expr(&r, typ, in.preglobals(), self.allocator);
     }
 }
 

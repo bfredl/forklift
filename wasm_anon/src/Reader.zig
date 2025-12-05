@@ -46,6 +46,14 @@ pub fn peekOpCode(r: *Reader) defs.OpCode {
     return @enumFromInt(r.peekByte());
 }
 
+pub fn readBinaryFlag(r: *Reader) !bool {
+    return switch (try r.readByte()) {
+        0 => false,
+        1 => true,
+        else => return error.InvalidFormat,
+    };
+}
+
 fn i(op: defs.OpCode) u8 {
     return @intFromEnum(op);
 }
@@ -72,6 +80,8 @@ pub const Instruction = union(enum) {
     local_set: u32,
     local_get: u32,
     local_tee: u32,
+    global_get: u32,
+    global_set: u32,
 
     block: defs.BlockType,
     loop: defs.BlockType,
@@ -124,6 +134,8 @@ pub fn readInst(r: *Reader) !Instruction {
         i(.local_set) => .{ .local_set = try r.readu() },
         i(.local_get) => .{ .local_get = try r.readu() },
         i(.local_tee) => .{ .local_tee = try r.readu() },
+        i(.global_set) => .{ .global_set = try r.readu() },
+        i(.global_get) => .{ .global_get = try r.readu() },
         i(.block) => .{ .block = try r.blocktype() },
         i(.loop) => .{ .loop = try r.blocktype() },
         i(.if_) => .{ .if_ = try r.blocktype() },

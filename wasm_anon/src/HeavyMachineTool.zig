@@ -77,9 +77,7 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance, filter: ?[]const 
                         }
                     }
                 }
-                if (f.hmt_call_emitted) {
-                    try self.errorStub(f);
-                }
+                try self.errorStub(f);
                 if (selekted) return e else continue; // ok, note the error, unless selekted (NOT OK)
             },
             else => return e,
@@ -319,6 +317,12 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             .local_get => |idx| {
                 const val = try ir.read_ref(node, locals[idx]); // idempodent if locals[idx] is (non-mutable) argument
                 try value_stack.append(gpa, val);
+            },
+            .global_get, .global_set => |idx| {
+                const globel = in.get_global(idx);
+                const typ = in.mod.global_types[idx];
+                f.hmt_error = try std.fmt.allocPrint(gpa, "globel {}: {} of typ {}", .{ idx, @intFromPtr(globel), typ });
+                return error.NotImplemented;
             },
             .loop => |typ| {
                 const n_args, const n_results = try typ.arity(in.mod);
@@ -602,10 +606,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 if (idx >= in.mod.n_funcs_import + in.mod.funcs_internal.len) return error.InvalidFormat;
                 const func = &in.mod.funcs_internal[idx - in.mod.n_funcs_import];
                 _ = try func.ensure_parsed(in.mod); // TODO: aschually only need the type, maybe we should preparse mod.funcs[*].local_types|res_types early??
-                if (f.hmt_error) |err| {
-                    f.hmt_error = try std.fmt.allocPrint(gpa, "chain error: {} {s}", .{ idx, err });
-                    return error.NotImplemented;
-                }
                 if (func.n_params > 2 or func.n_res > 1) {
                     f.hmt_error = try std.fmt.allocPrint(gpa, "THERE WERE NO CALLS TODAY: {} => {}", .{ func.n_params, func.n_res });
                     return error.NotImplemented;
