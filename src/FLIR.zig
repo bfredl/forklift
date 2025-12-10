@@ -455,9 +455,30 @@ pub fn load(self: *Self, node: u16, wide: bool, signext: bool, kind: defs.SpecTy
     return self.addInst(node, .{ .tag = if (signext) .load_signext else .load, .op1 = base, .op2 = idx, .spec = sphigh(scale, kind.into()), .f = .{ .wide = wide } });
 }
 pub fn store(self: *Self, node: u16, kind: defs.SpecType, base: u16, idx: u16, scale: u2, val: u16) !u16 {
+    // TODO: paniked hack just to support globals
+    var bigaddr = false;
+    if (self.constval(base)) |cval| {
+        if (cval > 0) {
+            bigaddr = true;
+        }
+    }
     // FUBBIT: all possible instances of fusing should be detected in analysis anyway
-    const addr = if (idx != NoRef) try self.addInst(node, .{ .tag = .lea, .op1 = base, .op2 = idx, .mckind = .fused, .spec = sphigh(scale, 0) }) else base;
-    return self.addInst(node, .{ .tag = .store, .op1 = addr, .op2 = val, .spec = sphigh(0, kind.into()) });
+    const addr = if (idx != NoRef) try self.addInst(node, .{ .tag = .lea, .op1 = base, .op2 = idx, .mckind = if (bigaddr) .unallocated_raw else .fused, .spec = sphigh(scale, 0) }) else base;
+
+    const wval = wval: {
+        // TODO: why are we doing isel here???
+        // long before even optimization passes??
+        // not that we have either :sob:
+        if (self.constval(val)) |cval| {
+            if (cval > 0xFFFFFFFF) {
+                const copy = try self.addInst(node, .{ .tag = .copy, .op1 = val, .op2 = NoRef, .mckind = .unallocated_raw, .spec = intspec(.quadword).into() });
+                break :wval copy;
+            }
+        }
+        break :wval val;
+    };
+
+    return self.addInst(node, .{ .tag = .store, .op1 = addr, .op2 = wval, .spec = sphigh(0, kind.into()) });
 }
 
 pub fn bpf_load_map(self: *Self, node: u16, map_idx: u32, is_value: bool) !u16 {

@@ -28,7 +28,15 @@ pub fn wbi(self: *Self, imm: i8) !void {
     try self.wb(@as(u8, @bitCast(imm)));
 }
 
-pub fn wd(self: *Self, dword: i32) !void {
+pub fn ww(self: *Self, word: u16) !void {
+    std.mem.writeInt(u16, try self.code.buf_addManyAsArray(2), word, .little);
+}
+
+pub fn wd(self: *Self, dword: u32) !void {
+    std.mem.writeInt(u32, try self.code.buf_addManyAsArray(4), dword, .little);
+}
+
+pub fn wdi(self: *Self, dword: i32) !void {
     std.mem.writeInt(i32, try self.code.buf_addManyAsArray(4), dword, .little);
 }
 
@@ -383,12 +391,12 @@ pub fn modRmEA(self: *Self, reg_or_opx: u3, ea: EAddr) !void {
     if (ea.base == null) {
         // rip+off32
         if (ea.bluff) {
-            try self.wd(@bitCast(@as(u32, 0xBABABABA))); // placeholder
+            try self.wd(0xBABABABA); // placeholder
         } else {
-            try self.wd(ea.offset - (@as(i32, @bitCast(self.code.get_target())) + 4));
+            try self.wdi(ea.offset - (@as(i32, @bitCast(self.code.get_target())) + 4));
         }
     } else if (mod != 0b00) {
-        try if (offset8) |off| self.wbi(off) else self.wd(ea.offset);
+        try if (offset8) |off| self.wbi(off) else self.wdi(ea.offset);
     }
 }
 
@@ -463,7 +471,7 @@ pub fn call_rel(self: *Self, addr: u32) !void {
     else
         @as(i32, @intCast(addr)) - @as(i32, @intCast(rel_pos));
     try self.wb(0xE8);
-    try self.wd(diff);
+    try self.wdi(diff);
 }
 
 pub fn maybe_call_rel_abs(self: *Self, addr: *const u8) !?void {
@@ -476,7 +484,7 @@ pub fn maybe_call_rel_abs(self: *Self, addr: *const u8) !?void {
 
     try self.new_inst(@returnAddress());
     try self.wb(0xE8);
-    try self.wd(short_diff);
+    try self.wdi(short_diff);
     return {};
 }
 
@@ -558,10 +566,10 @@ pub fn jbck(self: *Self, cond: ?Cond, target: u32) !void {
         if (cond) |c| {
             try self.wb(0x0f);
             try self.wb(0x80 + c.off());
-            try self.wd(off - 4); // FETING: offset is larger as the jump instruction is larger
+            try self.wdi(off - 4); // FETING: offset is larger as the jump instruction is larger
         } else {
             try self.wb(0xe9);
-            try self.wd(off - 3); // FETING: offset is larger as the jump instruction is larger
+            try self.wdi(off - 3); // FETING: offset is larger as the jump instruction is larger
         }
     }
 }
@@ -738,6 +746,22 @@ pub fn lealink(self: *Self, dst: IPReg) !u32 {
     return pos;
 }
 
+// nb: this selekts between the B8 forms but caller should do optimizations like
+// mov [REX.W C7] rax, -1 for 0xFFFFFFFFFFFFFFFF and so on
+pub fn movabs(self: *Self, dst: IPReg, src: u64) !void {
+    const quad = src > 0xFFFFFFFF;
+    const sm0l = src <= 0xFFFF;
+    if (sm0l) try self.wb(0x66);
+    try self.rex_wrxb(quad, dst.ext(), false, false);
+    try self.wb(0xb8 + @as(u8, dst.lowId()));
+    if (quad) {
+        try self.wq(src);
+    } else {
+        try if (sm0l) self.ww(@intCast(src)) else self.wd(@intCast(src));
+    }
+}
+
+// TODO: movabs is shorter for src > 0
 pub fn movri(self: *Self, w: bool, dst: IPReg, src: i32) !void {
     try self.new_inst(@returnAddress());
     // "mov rax, 1337" can be reduced to "mov eax, 1337"
@@ -745,7 +769,7 @@ pub fn movri(self: *Self, w: bool, dst: IPReg, src: i32) !void {
     try self.rex_wrxb(wide, false, false, dst.ext());
     try self.wb(0xc7); // MOV \rm, imm32
     try self.modRm(0b11, 0b000, dst.lowId());
-    try self.wd(src);
+    try self.wdi(src);
 }
 
 pub fn aritri(self: *Self, op: AOp, w: bool, dst: IPReg, imm: i32) !void {
@@ -754,7 +778,7 @@ pub fn aritri(self: *Self, op: AOp, w: bool, dst: IPReg, imm: i32) !void {
     try self.rex_wrxb(w, false, false, dst.ext());
     try self.wb(if (imm8 != null) 0x83 else 0x81);
     try self.modRm(0b11, op.opx(), dst.lowId());
-    try if (imm8) |i| self.wbi(i) else self.wd(imm);
+    try if (imm8) |i| self.wbi(i) else self.wdi(imm);
 }
 
 pub fn aritmi(self: *Self, op: AOp, w: bool, ea: EAddr, imm: i32) !void {
@@ -763,7 +787,7 @@ pub fn aritmi(self: *Self, op: AOp, w: bool, ea: EAddr, imm: i32) !void {
     try self.rex_wrxb(w, false, ea.x(), ea.b());
     try self.wb(if (imm8 != null) 0x83 else 0x81);
     try self.modRmEA(op.opx(), ea);
-    try if (imm8) |i| self.wbi(i) else self.wd(imm);
+    try if (imm8) |i| self.wbi(i) else self.wdi(imm);
 }
 
 pub fn movmi(self: *Self, w: bool, dst: EAddr, src: i32) !void {
@@ -771,7 +795,7 @@ pub fn movmi(self: *Self, w: bool, dst: EAddr, src: i32) !void {
     try self.rex_wrxb(w, false, dst.x(), dst.b());
     try self.wb(0xc7); // MOV \rm, imm32
     try self.modRmEA(0b000, dst);
-    try self.wd(src);
+    try self.wdi(src);
 }
 
 pub fn movmi_byte(self: *Self, dst: EAddr, src: u8) !void {
@@ -812,7 +836,7 @@ pub fn imulrri(self: *Self, w: bool, dst: IPReg, src: IPReg, factor: i32) !void 
     if (small_factor) |f| {
         try self.wbi(f);
     } else {
-        try self.wd(factor);
+        try self.wdi(factor);
     }
 }
 

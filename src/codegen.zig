@@ -125,6 +125,7 @@ fn get_eaddr(self: *FLIR, ref: u16) EERROR!EAddr {
     if (i.tag == .alloc) {
         return X86Asm.a(.rbp).o(slotoff(i.op1));
     } else if (i.tag == .lea) {
+        if (i.ipreg()) |addr| return X86Asm.a(r(addr));
         return get_eaddr_load_or_lea(self, i.*);
     } else {
         const base = i.ipreg() orelse return error.SpillError;
@@ -445,7 +446,22 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
                     };
                 },
                 .load, .load_signext => {
-                    const eaddr = try get_eaddr_load_or_lea(self, i.*);
+                    const eaddr = addr: {
+                        // TODO: doubplicated with lea!
+                        if (self.constval(i.op1)) |val| {
+                            // this probably should have been iseled earlier to lea + load:
+                            // but we don't have a isel step :sob:
+                            if (val > 0xFFFFFFFF) {
+                                // TODO: assert, due to optimization/isel, that [const+reg] is mubbled into [reg+const]
+                                if (i.op2 != FLIR.IZero) return error.FLIRError;
+                                const addrtmp = i.ipreg() orelse return error.SpillError;
+                                try cfo.movabs(r(addrtmp), val);
+                                break :addr X86Asm.a(r(addrtmp));
+                            }
+                        }
+
+                        break :addr try get_eaddr_load_or_lea(self, i.*);
+                    };
                     const mem_type = i.mem_type();
                     switch (mem_type) {
                         .intptr => |size| {
@@ -467,7 +483,14 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
                 .lea => {
                     // TODO: spill spall supllit?
                     // const eaddr = X86Asm.qi(base, idx);
-                    if (i.mckind == .fused) {} else {
+                    if (i.mckind == .fused) {
+                        // oki
+                    } else if (self.constval(i.op1)) |val| {
+                        // TODO: assert, due to optimization/isel, that [const+reg] is mubbled into [reg+const]
+                        if (i.op2 != FLIR.IZero) return error.FLIRError;
+                        const dst = i.ipreg() orelse return error.SpillError;
+                        try cfo.movabs(r(dst), val);
+                    } else {
                         if (true) return error.NotImplemented;
                         const base = self.ipreg(i.op1) orelse return error.SpillError;
                         const idx = self.ipreg(i.op2) orelse return error.SpillError;

@@ -329,11 +329,11 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const wide = typ.t == .i64;
 
                 if (inst == .global_get) {
-                    const load = try ir.load(node, wide, false, specType(typ.t).?, NoRef, addr, 0);
+                    const load = try ir.load(node, wide, false, specType(typ.t).?, addr, IZero, 0);
                     try value_stack.append(gpa, load);
                 } else {
                     const val = value_stack.pop().?;
-                    _ = try ir.store(node, specType(typ.t).?, NoRef, addr, 0, val);
+                    _ = try ir.store(node, specType(typ.t).?, addr, IZero, 0, val);
                 }
             },
             .loop => |typ| {
