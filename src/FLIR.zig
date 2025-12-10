@@ -2116,7 +2116,17 @@ const InsIterator = struct {
         }
 
         // attempt 3: allocate new block, split if possible
-        @panic("AAAA");
+        const node = self.b.items[it.cur_blk].node;
+        const oldprev = self.b.items[it.cur_blk].pred;
+        const new = try self.new_blk();
+        self.b.items[new] = .{ .node = node, .pred = oldprev, .next = it.cur_blk };
+        if (oldprev != NoRef) {
+            self.b.items[oldprev].next = new;
+        } else {
+            self.n.items[node].firstblk = new;
+        }
+        self.b.items[it.cur_blk].prev = new;
+        @memcpy(self.b.items[new].i[0..it.idx], self.b.items[0..it.idx]);
     }
 
     fn get_rev(it: *InsIterator, advance: bool) ?IYtem {
