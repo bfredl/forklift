@@ -13,6 +13,8 @@ const FLIR = forklift.FLIR;
 const severe = std.debug.print;
 const dbg = severe;
 const defs = @import("./defs.zig");
+const NoRef = FLIR.NoRef;
+const IZero = FLIR.IZero;
 
 const HeavyMachineTool = @This();
 flir: FLIR,
@@ -234,7 +236,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     var value_stack: std.ArrayList(u16) = .empty;
     defer value_stack.deinit(gpa);
 
-    var label_stack: std.ArrayList(struct { c_ip: u32, ir_target: u16, else_target: u16 = FLIR.NoRef, loop: bool, res_var: u16, value_stack_level: usize }) = .empty;
+    var label_stack: std.ArrayList(struct { c_ip: u32, ir_target: u16, else_target: u16 = NoRef, loop: bool, res_var: u16, value_stack_level: usize }) = .empty;
     defer label_stack.deinit(gpa);
 
     const max_args = 5;
@@ -248,7 +250,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
 
     // only a single node doing "ir.ret"
     const exit_node = try ir.addNode();
-    var exit_vars: [max_res]u16 = @splat(FLIR.NoRef);
+    var exit_vars: [max_res]u16 = @splat(NoRef);
 
     try ir.ret(exit_node);
     for (0..f.n_res) |i| {
@@ -257,7 +259,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
         try ir.retval(exit_node, tret, exit_vars[i]);
     }
     // FAIL: integrate with multiple res_vars because of the wasm multivalue blocks extension
-    try label_stack.append(gpa, .{ .c_ip = 0, .ir_target = exit_node, .loop = false, .res_var = FLIR.NoRef, .value_stack_level = 0 });
+    try label_stack.append(gpa, .{ .c_ip = 0, .ir_target = exit_node, .loop = false, .res_var = NoRef, .value_stack_level = 0 });
 
     var c_ip: u32 = 0;
     var r = in.mod.reader_at(f.codeoff);
@@ -327,11 +329,11 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const wide = typ.t == .i64;
 
                 if (inst == .global_get) {
-                    const load = try ir.load(node, wide, false, specType(typ.t).?, FLIR.NoRef, addr, 0);
+                    const load = try ir.load(node, wide, false, specType(typ.t).?, NoRef, addr, 0);
                     try value_stack.append(gpa, load);
                 } else {
                     const val = value_stack.pop().?;
-                    _ = try ir.store(node, specType(typ.t).?, FLIR.NoRef, addr, 0, val);
+                    _ = try ir.store(node, specType(typ.t).?, NoRef, addr, 0, val);
                 }
             },
             .loop => |typ| {
@@ -340,7 +342,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 c_ip += 1;
                 const entry = try ir.addNodeAfter(node);
                 node = entry;
-                try label_stack.append(gpa, .{ .c_ip = c_ip, .ir_target = entry, .loop = true, .res_var = FLIR.NoRef, .value_stack_level = value_stack.items.len });
+                try label_stack.append(gpa, .{ .c_ip = c_ip, .ir_target = entry, .loop = true, .res_var = NoRef, .value_stack_level = value_stack.items.len });
             },
             .block => |typ| {
                 const n_args, const n_results = try typ.arity(in.mod);
@@ -350,7 +352,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const exit = try ir.addNode();
                 // technically just a single phi. but FLIR.variable() is meant to be cheap enough to not nead
                 // a separate API for "gimmie one phi".
-                const res_var = if (n_results > 0) try ir.variable(.{ .intptr = .dword }) else FLIR.NoRef;
+                const res_var = if (n_results > 0) try ir.variable(.{ .intptr = .dword }) else NoRef;
                 // TODO: with n_args, value_stack_level is without the args
                 try label_stack.append(gpa, .{ .c_ip = c_ip, .ir_target = exit, .loop = false, .res_var = res_var, .value_stack_level = value_stack.items.len });
             },
@@ -361,7 +363,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 // note: semi-copy in .br_if
                 if (!cond_pending) {
                     const val = value_stack.pop().?;
-                    _ = try ir.icmp(node, .dword, .neq, val, try ir.const_uint(0));
+                    _ = try ir.icmp(node, .dword, .neq, val, IZero);
                 } else cond_pending = false;
 
                 c_ip += 1;
@@ -374,7 +376,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const exit = try ir.addNode();
                 const else_ = if (c_inst == .else_) try ir.addNode() else exit;
 
-                const res_var = if (n_results > 0) try ir.variable(.{ .intptr = .dword }) else FLIR.NoRef;
+                const res_var = if (n_results > 0) try ir.variable(.{ .intptr = .dword }) else NoRef;
                 try label_stack.append(gpa, .{ .c_ip = c_ip, .ir_target = exit, .else_target = else_, .loop = false, .res_var = res_var, .value_stack_level = value_stack.items.len });
 
                 try ir.addLink(node, 0, else_);
@@ -389,7 +391,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const label = label_stack.items[label_stack.items.len - 1];
 
                 if (!dead_end) {
-                    const has_res = label.res_var != FLIR.NoRef;
+                    const has_res = label.res_var != NoRef;
                     if (has_res) {
                         try ir.putvar(node, label.res_var, value_stack.pop().?);
                     }
@@ -406,7 +408,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 c_ip += 1;
                 if (c[c_ip].off != pos) @panic("UNSEEN FEAR");
                 const label = label_stack.pop() orelse @panic("FEAR OF LIMBO");
-                const has_res = label.res_var != FLIR.NoRef;
+                const has_res = label.res_var != NoRef;
                 if (!label.loop) {
                     if (!dead_end) {
                         // FAIL: reintegrate with multivalue
@@ -462,12 +464,12 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     if (c[c_ip].off != pos) @panic("FEAR ALL AROUND");
                     if (!cond_pending) {
                         const val = value_stack.pop().?;
-                        _ = try ir.icmp(node, .dword, .neq, val, try ir.const_uint(0));
+                        _ = try ir.icmp(node, .dword, .neq, val, IZero);
                     } else cond_pending = false;
                 }
                 if (label > label_stack.items.len - 1) return error.InternalCompilerError;
                 const target = label_stack.items[label_stack.items.len - label - 1];
-                if (target.res_var != FLIR.NoRef) {
+                if (target.res_var != NoRef) {
                     if (value_stack.items.len == 0) return error.InternalCompilerError;
                     // don't pop in case branch NOT taken
                     try ir.putvar(node, target.res_var, value_stack.items[value_stack.items.len - 1]);
@@ -510,7 +512,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             .i32_relop, .i64_relop => |tag| {
                 const rhs = value_stack.pop().?;
                 // careful now:
-                const lhs = if (tag == .eqz) try ir.const_uint(0) else value_stack.pop().?;
+                const lhs = if (tag == .eqz) IZero else value_stack.pop().?;
                 const wide = inst == .i64_relop;
                 const cmpop: FLIR.IntCond = tag.into() orelse .eq; // AHAHHAHAHA
 

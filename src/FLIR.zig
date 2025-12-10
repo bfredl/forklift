@@ -91,6 +91,8 @@ pub const NoRef: u16 = 0xFFFF;
 // 255 constants should be enough for everyone
 // could be smarter, like dedicated Block type for constants!
 pub const ConstOff: u16 = 0xFF00;
+// ASSERT, DUE TO INITIALIZATION, first constant is always zero
+pub const IZero = ConstOff;
 
 pub fn uv(s: usize) u16 {
     return @intCast(s);
