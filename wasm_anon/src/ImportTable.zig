@@ -43,7 +43,13 @@ pub fn add_global(self: *ImportTable, name: []const u8, ref: *defs.StackValue, t
 
 // Note: "ref" must point to a full StackValue. Full 64-bits will be overwritten even if the type is 32-bit internally
 pub fn add_func(self: *ImportTable, name: []const u8, def: defs.HostFunc) !void {
-    try self.funcs.put(self.allocator, name, def);
+    var ndef = def;
+    // UGLY:(
+    if (ndef.name_dbg == null) {
+        ndef.name_dbg = name;
+    }
+
+    try self.funcs.put(self.allocator, name, ndef);
 }
 
 pub fn add_func_to_table(self: *ImportTable, def: defs.HostFunc) !u32 {

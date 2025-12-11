@@ -542,4 +542,5 @@ pub const HostFunc = struct {
     data: *anyopaque = undefined,
     n_args: u16,
     n_res: u16,
+    name_dbg: ?[]const u8 = null,
 };

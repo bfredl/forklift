@@ -615,30 +615,45 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 return error.NotImplemented;
             },
             .call => |idx| {
-                if (idx < in.mod.n_funcs_import) return error.NotImplemented;
-                if (idx >= in.mod.n_funcs_import + in.mod.funcs_internal.len) return error.InvalidFormat;
-                const func = &in.mod.funcs_internal[idx - in.mod.n_funcs_import];
-                _ = try func.ensure_parsed(in.mod); // TODO: aschually only need the type, maybe we should preparse mod.funcs[*].local_types|res_types early??
-                if (func.n_params > 2 or func.n_res > 1) {
-                    f.hmt_error = try std.fmt.allocPrint(gpa, "THERE WERE NO CALLS TODAY: {} => {}", .{ func.n_params, func.n_res });
+                // TODO: reunite functypes
+                const call, const typidx, const n_params, const n_res = call: {
+                    if (idx < in.mod.n_funcs_import) {
+                        const imp = &in.funcs_imported[idx];
+                        f.hmt_error = try std.fmt.allocPrint(gpa, "call {} and ret {} but haha {s}\n", .{ imp.n_args, imp.n_res, imp.name_dbg orelse "??" });
+                        return error.NotImplemented;
+                    }
+                    if (idx >= in.mod.n_funcs_import + in.mod.funcs_internal.len) return error.InvalidFormat;
+                    const func = &in.mod.funcs_internal[idx - in.mod.n_funcs_import];
+                    _ = try func.ensure_parsed(in.mod); // TODO: aschually only need the type, maybe we should preparse mod.funcs[*].local_types|res_types early??
+                    const obj = try self.declareFunc(func, null);
+                    func.hmt_call_emitted = true;
+
+                    break :call .{ try ir.call(node, .cfo_obj, try ir.const_uint(obj)), func.typeidx, func.n_params, func.n_res };
+                };
+
+                if (n_params > 2 or n_res > 1) {
+                    f.hmt_error = try std.fmt.allocPrint(gpa, "THERE WERE NO CALLS TODAY: {} => {}", .{ n_params, n_res });
                     return error.NotImplemented;
                 }
-                const obj = try self.declareFunc(func, null);
-                func.hmt_call_emitted = true;
 
-                const call = try ir.call(node, .cfo_obj, try ir.const_uint(obj));
+                // TODO: just has all types in pre-parsed form anyway??
+                // would just be a cute little arena at module-parse time
+                var call_arg_types: [2]defs.ValType = undefined;
+                var call_res_types: [1]defs.ValType = undefined;
+                try in.mod.type_params(typidx, &call_arg_types, &call_res_types);
+
                 var arglist = call;
                 arglist = try ir.callarg(node, arglist, mem_base, .{ .intptr = .quadword });
                 arglist = try ir.callarg(node, arglist, mem_size, .{ .intptr = .quadword });
-                if (func.n_params > value_stack.items.len) return error.InternalCompilerError;
-                const argbase = value_stack.items.len - func.n_params;
-                for (0..func.n_params) |i| {
-                    const argtyp = specType(func.local_types[i]) orelse return error.NotImplemented;
+                if (n_params > value_stack.items.len) return error.InternalCompilerError;
+                const argbase = value_stack.items.len - n_params;
+                for (0..n_params) |i| {
+                    const argtyp = specType(call_arg_types[i]) orelse return error.NotImplemented;
                     arglist = try ir.callarg(node, arglist, value_stack.items[argbase + i], argtyp);
                 }
                 value_stack.items.len = argbase;
-                if (func.n_res > 0) {
-                    const typ = specType(func.res_types[0]) orelse return error.NotImplemented;
+                if (n_res > 0) {
+                    const typ = specType(call_res_types[0]) orelse return error.NotImplemented;
                     const res = try ir.callret(call, typ);
                     try value_stack.append(gpa, res);
                 }
