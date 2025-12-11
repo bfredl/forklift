@@ -232,6 +232,7 @@ pub fn n_op(inst: Inst, rw: bool) u2 {
 
 pub fn ops(i: *Inst, rw: bool) []u16 {
     std.debug.assert(@intFromPtr(&i.op2) - @intFromPtr(&i.op1) == @sizeOf(u16));
+    std.debug.assert(@intFromPtr(&i.next) - @intFromPtr(&i.op2) == @sizeOf(u16)); // SKANDAL！！！！
     return @as([*]u16, @ptrCast(&i.op1))[0..i.n_op(rw)];
 }
 

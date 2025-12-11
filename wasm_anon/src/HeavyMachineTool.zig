@@ -67,7 +67,7 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance, filter: ?[]const 
                 selekted = true;
             }
         }
-        self.compileFunc(in, i, f, true) catch |e| switch (e) {
+        self.compileFunc(in, i, f, false) catch |e| switch (e) {
             error.NotImplemented => {
                 if (f.hmt_error == null) {
                     f.hmt_error = "??UNKNOWN";
@@ -106,7 +106,8 @@ pub fn execute(self: *HeavyMachineTool, in: *Instance, idx: u32, params: []const
     _ = logga;
     if (func.hmt_error) |err| {
         if (err_ret) |ptr| {
-            ptr.* = err;
+            const name = if (func.name) |nam| nam else func.exported;
+            ptr.* = try std.fmt.allocPrint(in.mod.allocator, "cannot execute {s} due to {s}", .{ name orelse "???", err });
         } else {
             dbg("ERROR: {s}\n", .{err});
         }
@@ -225,7 +226,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             const mut = (f.args_mut & (@as(u64, 1) << @as(u6, @intCast((i & 63))))) != 0;
             if (mut) {
                 const src = locals[i];
-                severe("TYP: {}\n", .{f.local_types[i]});
+                // dbg("TYP: {}\n", .{f.local_types[i]});
                 const typ: forklift.defs.SpecType = specType(f.local_types[i]) orelse return error.NotImplemented;
                 locals[i] = try ir.variable(typ);
                 try ir.putvar(node, locals[i], src);
@@ -285,7 +286,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
         }
     }
 
-    errdefer ir.debug_print(); // show what we got when it ends
+    errdefer if (verbose) ir.debug_print(); // show what we got when it ends
 
     if (verbose) {
         if (f.name) |nam| {
@@ -649,8 +650,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 try value_stack.append(gpa, calc);
             },
             .other__fixme => |tag| {
-                dbg("inst {s} TBD, aborting!\n", .{@tagName(tag)});
-                f.hmt_error = @tagName(tag);
+                f.hmt_error = try std.fmt.allocPrint(gpa, "inst {s} TBD", .{@tagName(tag)});
                 return error.NotImplemented;
             },
         }
