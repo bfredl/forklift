@@ -1670,7 +1670,7 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, i: *Inst, free_regs_ip: *[n_i
         }
     }
 
-    const chosen = chosen_reg orelse @panic("implement interval splitting");
+    const chosen = chosen_reg orelse return error.NotImplemented; // "implement interval splitting"
 
     free_regs[chosen] = false;
     i.mckind = reg_kind;
@@ -2087,7 +2087,7 @@ const InsIterator = struct {
     // ONLY TESTED FOR: inserting elements just before the current one by using peek() in forward mode
     fn insert_before(it: *InsIterator, inst: u16) !void {
         const self = it.self;
-        const blk_before, const pos_before = if (it.idx > 0) .{ it.cur_blk, it.idx } else .{ self.b.items[it.cur_blk].pred, BLK_SIZE - 1 };
+        const blk_before, const pos_before = if (it.idx > 0) .{ it.cur_blk, it.idx - 1 } else .{ self.b.items[it.cur_blk].pred, BLK_SIZE - 1 };
         // attempt 1: fill NoRef just before
         if (blk_before != NoRef and self.b.items[blk_before].i[pos_before] == NoRef) {
 
@@ -2098,6 +2098,8 @@ const InsIterator = struct {
             while (insert_pos > 0) {
                 if (self.b.items[blk_before].i[insert_pos - 1] == NoRef) {
                     insert_pos -= 1;
+                } else {
+                    break;
                 }
             }
             self.b.items[blk_before].i[insert_pos] = inst;
@@ -2202,6 +2204,7 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
     // TODO: missed opportunity: some branches are already trivial
     try self.calc_preds();
 
+    if (check) try self.check_ir_valid();
     try self.resolve_ssa();
 
     if (check) try self.check_ir_valid();

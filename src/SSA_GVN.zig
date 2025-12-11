@@ -199,12 +199,14 @@ fn cleanup_trivial_phi_and_vars(self: *FLIR) !void {
         var it = self.ins_iterator(n.firstblk);
         while (it.next()) |item| {
             const i = item.i;
-            const nop = i.n_op(false);
-            if (nop > 0) {
-                i.op1 = check_trivial(self, i.op1);
-                if (nop > 1) {
-                    i.op2 = check_trivial(self, i.op2);
-                }
+            for (i.ops(false)) |*op| {
+                op.* = check_trivial(self, op.*);
+            }
+            var opnext = i.next_as_op();
+            while (opnext != NoRef) {
+                const ii = self.iref(opnext) orelse return error.FLIRError;
+                ii.op1 = check_trivial(self, ii.op1);
+                opnext = ii.next;
             }
         }
         var next_ptr: *u16 = &n.putphi_list;
