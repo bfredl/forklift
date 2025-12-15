@@ -523,6 +523,9 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
                         },
                     }
                 },
+                .select => {
+                    return error.NotImplemented;
+                },
                 .fconst => {
                     const dst = i.avxreg() orelse return error.FLIRError;
                     const uconst = self.constval(i.op1) orelse return error.FLIRError;

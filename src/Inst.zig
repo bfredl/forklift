@@ -23,7 +23,9 @@ pub const Tag = enum(u8) {
     fconst, // op1 is a constref, opspec for type
     vmath, // binops specifically
     vcmpf,
-    vblendf, // perhaps tri-ops more generally??
+    select, // perhaps int tri-ops more generally
+    // NB: curently we don't really encode: select(intptr, avx1, avx2) but maybe we should
+    vblendf, // perhaps avx tri-ops more generally??
     vunop,
     fcmp,
     int2vf,
@@ -42,8 +44,8 @@ tag: Tag,
 spec: u8 = 0,
 op1: u16,
 op2: u16,
-// only var, phi and putphi currently use this. other types can assign other meaning:
-// vblendf uses is as op3 (SKANDAL)
+// to start with: var, phi and putphi use this. other types can assign other meaning:
+// select, vblendf uses is as op3 (SKANDAL)
 // call uses it as a list of args
 next: u16 = FLIR.NoRef,
 
@@ -173,6 +175,7 @@ pub fn res_type(inst: Inst) ?defs.ValType {
         .icmpset => .intptr,
         .vmath => .avxval,
         .vcmpf => .avxval,
+        .select => .intptr,
         .vblendf => .avxval,
         .vunop => .avxval,
         .fcmp => null, // matching icmp
@@ -214,6 +217,7 @@ pub fn n_op(inst: Inst, rw: bool) u2 {
         .icmpset => 2,
         .vmath => 2,
         .vcmpf => 2,
+        .select => 3, // HAIII
         .vblendf => 3, // HAIII
         .vunop => 1,
         .fcmp => 2,

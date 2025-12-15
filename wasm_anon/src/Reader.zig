@@ -54,6 +54,12 @@ pub fn readBinaryFlag(r: *Reader) !bool {
     };
 }
 
+pub fn readValType(r: *Reader) !defs.ValType {
+    const v: defs.ValType = @enumFromInt(try r.readByte());
+    if (v == .prefix_refnull or v == .prefix_ref) return error.NotImplemented;
+    return v;
+}
+
 fn i(op: defs.OpCode) u8 {
     return @intFromEnum(op);
 }
@@ -93,6 +99,7 @@ pub const Instruction = union(enum) {
 
     br: u32,
     br_if: u32,
+    select: ?defs.ValType,
 
     i32_const: i32,
     i64_const: i64,
@@ -145,6 +152,11 @@ pub fn readInst(r: *Reader) !Instruction {
         i(.call) => .{ .call = try r.readu() },
         i(.br) => .{ .br = try r.readu() },
         i(.br_if) => .{ .br_if = try r.readu() },
+        i(.select) => .{ .select = null },
+        i(.select_t) => {
+            if (try r.readu() != 1) return error.InvalidFormat; // not supported in this wersion
+            return .{ .select = try r.readValType() };
+        },
         i(.i32_const) => .{ .i32_const = try r.readLeb(i32) },
         i(.i64_const) => .{ .i64_const = try r.readLeb(i64) },
         i(.f32_const) => .{ .f32_const = try r.readf(f32) },
@@ -202,8 +214,7 @@ pub fn blocktype(r: *Reader) !defs.BlockType {
     // TODO: just readLeb(r, i33) directly and "interpret" negative values might be simpler?
     const nextByte = r.peekByte();
     if ((nextByte & 0xc0) == 0x40) {
-        const t: defs.ValType = @enumFromInt(try r.readByte());
-        return .{ .simple = t };
+        return .{ .simple = try r.readValType() };
     } else {
         const tidx: u32 = @intCast(try readLeb(r, i33));
         return .{ .complex_idx = tidx };

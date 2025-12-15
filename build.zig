@@ -4,14 +4,13 @@ pub fn build(b: *std.Build) void {
     const opt = b.standardOptimizeOption(.{});
 
     const ir = b.step("ir", "run some ir");
-    const exe_ir_module = b.createModule(.{
-        .root_source_file = b.path("src/run_ir.zig"),
-        .optimize = opt,
-        .target = t,
-    });
     const exe_ir = b.addExecutable(.{
         .name = "run",
-        .root_module = exe_ir_module,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/run_ir.zig"),
+            .optimize = opt,
+            .target = t,
+        }),
     });
     b.installArtifact(exe_ir);
     ir.dependOn(&exe_ir.step);

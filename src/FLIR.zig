@@ -502,6 +502,11 @@ pub fn vblendf(self: *Self, node: u16, fmode: FMode, op1: u16, op2: u16, op3: u1
     return self.addInst(node, .{ .tag = .vblendf, .spec = vspec(0, fmode), .op1 = op1, .op2 = op2, .next = op3 });
 }
 
+// maybe this should allow select(int, avx1, avx2). could lower to convert+vblend if that is good
+pub fn select(self: *Self, node: u16, wide: bool, op1: u16, op2: u16, op3: u16) !u16 {
+    return self.addInst(node, .{ .tag = .select, .spec = 0, .op1 = op1, .op2 = op2, .next = op3, .f = .{ .wide = wide } });
+}
+
 pub fn vunop(self: *Self, node: u16, vop: defs.VUnOp, fmode: FMode, op1: u16) !u16 {
     return self.addInst(node, .{ .tag = .vunop, .spec = vspec(@intFromEnum(vop), fmode), .op1 = op1, .op2 = 0 });
 }

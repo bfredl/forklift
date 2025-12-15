@@ -300,6 +300,9 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
                 },
                 .icmpset => return error.NotImplemented,
                 .iunop => return error.NotImplemented,
+                .select => {
+                    return error.NotImplemented;
+                },
                 .putphi, .callarg, .retval => {
                     if (i.f.do_swap) return error.NotImplemented;
                     const dest = (try self.movins_dest(i)).ipval() orelse return error.FLIRError;

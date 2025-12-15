@@ -590,7 +590,14 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     try value_stack.append(gpa, val);
                 }
             },
-
+            .select => |_| {
+                const pred = value_stack.pop().?;
+                const val1 = value_stack.pop().?;
+                const val2 = value_stack.pop().?;
+                // TODO: NOT ALWAYS WIIIDE
+                const val = try ir.select(node, true, pred, val1, val2);
+                try value_stack.append(gpa, val);
+            },
             .f32_unop, .f64_unop => |tag| {
                 const ival = value_stack.pop().?;
                 const theop: forklift.defs.VUnOp = switch (tag) {
