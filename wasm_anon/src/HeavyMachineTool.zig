@@ -627,7 +627,10 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     if (idx < in.mod.n_funcs_import) {
                         const imp = &in.funcs_imported[idx];
                         f.hmt_error = try std.fmt.allocPrint(gpa, "call {} and ret {} but haha {s}\n", .{ imp.n_args, imp.n_res, imp.name_dbg orelse "??" });
-                        return error.NotImplemented;
+                        // todo: unified ABI for callbacks
+                        const addr = imp.cb_direct orelse return error.NotImplemented;
+                        const typ = in.mod.funcs_imported_types[idx];
+                        break :call .{ try ir.call(node, .fun_addr, try ir.const_uint(@intFromPtr(addr))), typ, imp.n_args, imp.n_res };
                     }
                     if (idx >= in.mod.n_funcs_import + in.mod.funcs_internal.len) return error.InvalidFormat;
                     const func = &in.mod.funcs_internal[idx - in.mod.n_funcs_import];
@@ -638,14 +641,14 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     break :call .{ try ir.call(node, .cfo_obj, try ir.const_uint(obj)), func.typeidx, func.n_params, func.n_res };
                 };
 
-                if (n_params > 2 or n_res > 1) {
+                if (n_params > 3 or n_res > 1) {
                     f.hmt_error = try std.fmt.allocPrint(gpa, "THERE WERE NO CALLS TODAY: {} => {}", .{ n_params, n_res });
                     return error.NotImplemented;
                 }
 
                 // TODO: just has all types in pre-parsed form anyway??
                 // would just be a cute little arena at module-parse time
-                var call_arg_types: [2]defs.ValType = undefined;
+                var call_arg_types: [3]defs.ValType = undefined;
                 var call_res_types: [1]defs.ValType = undefined;
                 try in.mod.type_params(typidx, &call_arg_types, &call_res_types);
 

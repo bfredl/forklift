@@ -122,7 +122,7 @@ fn wasi_run(engine: wasm_shelf.Engine, mod: *wasm_shelf.Module, allocator: std.m
 
     var state: WASIState = .{ .klocka = try std.time.Timer.start() };
 
-    try imports.add_func("proc_exit", .{ .cb = &wasi_proc_exit, .n_args = 1, .n_res = 0, .data = @ptrCast(&state) });
+    try imports.add_func("proc_exit", .{ .cb = &wasi_proc_exit, .cb_direct = &wasi_proc_exit_direct, .n_args = 1, .n_res = 0, .data = @ptrCast(&state) });
     try imports.add_func("fd_read", .{ .cb = &wasi_fd_read, .n_args = 4, .n_res = 1 });
     try imports.add_func("fd_write", .{ .cb = &wasi_fd_write, .n_args = 4, .n_res = 1 });
     try imports.add_func("clock_time_get", .{ .cb = &wasi_clock_time_get, .n_args = 3, .n_res = 1, .data = @ptrCast(&state) });
@@ -156,6 +156,10 @@ fn wasi_run(engine: wasm_shelf.Engine, mod: *wasm_shelf.Module, allocator: std.m
     };
 
     return 0;
+}
+
+fn wasi_proc_exit_direct() callconv(.c) void {
+    @panic("hello there");
 }
 
 fn wasi_proc_exit(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {

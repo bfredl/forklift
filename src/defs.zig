@@ -282,10 +282,10 @@ pub const CallKind = enum(u8) {
     near,
     /// op1 is an object index, must be a constant
     cfo_obj,
-    /// op1 is function pointer (or fixed adress as a constant)
-    fun_ptr,
+    /// op1 is function pointer, or fixed adress as a constant.
+    fun_addr,
     /// platform dependent. syscall index in op1
-    /// directly encodes the linux syscall number of the target
+    /// directly encodes the linux syscall number (for the specific ISA!)
     syscall,
     /// op1: bpf helper index
     bpf_helper,

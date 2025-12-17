@@ -1162,6 +1162,10 @@ pub fn calc_live(self: *Self) !void {
         }
     }
 
+    if (self.n.items.len > 2 or self.vregs.items.len > 0) {
+        std.debug.print("bloggen: {} nodes and {} vreggs, oh my!\n", .{ self.n.items.len, self.vregs.items.len });
+    }
+
     // step 3: mark the instructions which kill a live range, which will be used by regalloc
     for (self.n.items, 0..) |*n, ni| {
         // transpose the node.live_in[vreg] bitfield into vreg.live_in[node] bitfield

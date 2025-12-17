@@ -539,6 +539,7 @@ pub const page_size: u32 = 0x10000;
 
 pub const HostFunc = struct {
     cb: *const fn (args_ret: []StackValue, in: *@import("./Instance.zig"), data: *anyopaque) WASMError!void,
+    cb_direct: ?*const anyopaque = null,
     data: *anyopaque = undefined,
     n_args: u16,
     n_res: u16,
