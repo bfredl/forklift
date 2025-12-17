@@ -67,7 +67,7 @@ unsealed: bool = true,
 // variables 2.0: virtual registero
 // vregs is any result which is live outside of its defining node, that's it.
 nvreg: u16 = 0,
-vregs: ArrayList(struct { ref: u16, def_node: u16, live_in: u64 = 0, conflicts: u16 = 0 }) = .empty,
+vregs: ArrayList(struct { ref: u16, def_node: u16, live_in: NodeFlag = 0, conflicts: u16 = 0 }) = .empty,
 
 // 8-byte slots in stack frame
 nslots: u8 = 0,
@@ -88,11 +88,14 @@ pub const DEAD: u16 = 0xFEFF;
 // For blocks: we cannot have more than 2^14 blocks anyway
 // for vars: don't allocate last block!
 pub const NoRef: u16 = 0xFFFF;
-// 255 constants should be enough for everyone
+// 511 constants should be enough for everyone
 // could be smarter, like dedicated Block type for constants!
-pub const ConstOff: u16 = 0xFF00;
+pub const ConstOff: u16 = 0xFE00;
 // ASSERT, DUE TO INITIALIZATION, first constant is always zero
 pub const IZero = ConstOff;
+
+pub const NodeFlag = u128;
+pub const VRegFlag = u128;
 
 pub fn uv(s: usize) u16 {
     return @intCast(s);
@@ -109,7 +112,7 @@ pub const Node = struct {
     // TODO: now what blocks are not "referenced", first block should be inline (and sm0ler, mayhaps)
     firstblk: u16,
     lastblk: u16,
-    live_in: u64 = 0, // TODO: globally allocate a [n_nodes*nvreg] multibitset
+    live_in: VRegFlag = 0, // TODO: globally allocate a [n_nodes*nvreg] multibitset
 
     loop: u16 = 0,
     rpolink: u8 = 0,
@@ -213,12 +216,13 @@ fn ipreg_flag(reg: u4) u16 {
     return @as(u16, 1) << reg;
 }
 
-fn vreg_flag(reg: u6) u64 {
-    return @as(u64, 1) << reg;
+fn vreg_flag(reg: u7) VRegFlag {
+    return @as(VRegFlag, 1) << reg;
 }
 
-fn node_flag(node: u6) u64 {
-    return @as(u64, 1) << node;
+// TODO: dynamisk
+fn node_flag(node: u7) NodeFlag {
+    return @as(NodeFlag, 1) << node;
 }
 
 pub fn constidx(ref: u16) ?u16 {
@@ -350,6 +354,7 @@ pub fn addRawInst(self: *Self, inst: Inst) !u16 {
         return ref;
     } else {
         const ref = uv(self.i.items.len);
+        if (ref >= ConstOff) @panic("I DON'T KNOW HOW WE GOT HERE");
         try self.i.append(self.gpa, inst);
         return ref;
     }
@@ -1041,11 +1046,14 @@ pub fn calc_live(self: *Self) !void {
         // TODO: at this point the number of vregs is known. so a bitset for
         // node X vreg can be allocated here.
 
-        if (self.nvreg > 64) return error.DoTheWork;
+        if (self.nvreg > @typeInfo(VRegFlag).int.bits) {
+            std.debug.print("HAHAHAHA {} fast med noder {}:\n", .{ self.nvreg, ni + 1 });
+            return error.NotImplemented;
+        }
 
         while (true) : (ni -= 1) {
             const n = &self.n.items[ni];
-            var live_vregs: u64 = 0;
+            var live_vregs: VRegFlag = 0;
             for (n.s) |s| {
                 if (s != 0) {
                     live_vregs |= self.n.items[s].live_in;
@@ -1115,7 +1123,7 @@ pub fn calc_live(self: *Self) !void {
                 if (clobber_mask != 0) {
                     node_has_clobber = true; // quick skipahead
                     for (self.vregs.items, 0..) |*v, vi| {
-                        if (live_vregs & vreg_flag(@as(u6, @intCast(vi))) != 0) {
+                        if (live_vregs & vreg_flag(@intCast(vi)) != 0) {
                             v.conflicts |= clobber_mask;
                         }
                     }
@@ -1144,10 +1152,10 @@ pub fn calc_live(self: *Self) !void {
                 // TODO: if there was a call anywhere in the loop
                 // propagate call clobbers onto the loop invariant vregs
                 if (self.n.items.len > 64) unreachable;
-                var loop_set: u64 = node_flag(@intCast(ni));
+                var loop_set: u128 = node_flag(@intCast(ni));
                 for (ni + 1..self.n.items.len) |ch_i| {
                     const ch_n = &self.n.items[ch_i];
-                    const ch_loop: u64 = node_flag(@intCast(ch_i));
+                    const ch_loop = node_flag(@intCast(ch_i));
                     if ((node_flag(@intCast(ch_n.loop)) & loop_set) != 0) {
                         if (ch_n.is_header) {
                             loop_set |= ch_loop;
@@ -1162,8 +1170,9 @@ pub fn calc_live(self: *Self) !void {
         }
     }
 
-    if (self.n.items.len > 2 or self.vregs.items.len > 0) {
-        std.debug.print("bloggen: {} nodes and {} vreggs, oh my!\n", .{ self.n.items.len, self.vregs.items.len });
+    if (self.n.items.len > @typeInfo(NodeFlag).int.bits) {
+        std.debug.print("HOHOHOHO {} fast med noder {}:\n", .{ self.nvreg, self.n.items.len });
+        return error.NotImplemented;
     }
 
     // step 3: mark the instructions which kill a live range, which will be used by regalloc
@@ -1175,11 +1184,11 @@ pub fn calc_live(self: *Self) !void {
             }
         }
 
-        var live_out: u64 = 0;
+        var live_out: VRegFlag = 0;
         for (n.s) |s| {
             live_out |= self.n.items[s].live_in;
         }
-        var killed = n.live_in & ~live_out;
+        var killed: VRegFlag = n.live_in & ~live_out;
 
         {
             var listit = n.putphi_list;
@@ -1203,7 +1212,7 @@ pub fn calc_live(self: *Self) !void {
     }
 }
 
-fn check_live_or_conflicts(self: *Self, i: *Inst, live_vregs: *u64, node_has_clobber: bool, last_clobber: *const [n_ipreg]u16) void {
+fn check_live_or_conflicts(self: *Self, i: *Inst, live_vregs: *VRegFlag, node_has_clobber: bool, last_clobber: *const [n_ipreg]u16) void {
     _ = self;
 
     // TODO: need to consider phi:s even when they are unscheduled
@@ -1230,7 +1239,7 @@ fn check_live_or_conflicts(self: *Self, i: *Inst, live_vregs: *u64, node_has_clo
     }
 }
 
-fn mark_ops_as_used(self: *Self, i: *Inst, live: *u64, neg_counter: u16) void {
+fn mark_ops_as_used(self: *Self, i: *Inst, live: *VRegFlag, neg_counter: u16) void {
     for (i.ops(false)) |op| {
         if (self.iref(op)) |ref| {
             if (ref.vreg()) |vreg| {
@@ -1244,7 +1253,7 @@ fn mark_ops_as_used(self: *Self, i: *Inst, live: *u64, neg_counter: u16) void {
     }
 }
 
-fn mark_ops_who_kill(self: *Self, i: *Inst, killed: *u64) void {
+fn mark_ops_who_kill(self: *Self, i: *Inst, killed: *VRegFlag) void {
     for (i.ops(false), 0..) |op, i_op| {
         var kill: bool = false;
         if (self.iref(op)) |ref| {

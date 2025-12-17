@@ -149,7 +149,7 @@ pub fn check_vregs(self: *FLIR) !void {
     if (self.n.items[0].live_in != 0) return error.HOPPSANSA;
     var err = false;
     for (self.n.items, 0..) |*n, ni| {
-        var live_out: u64 = 0;
+        var live_out: FLIR.VRegFlag = 0;
         // hack: if n.s[i] == 0 then no bits will be added anyway
         live_out |= self.n.items[n.s[0]].live_in;
         live_out |= self.n.items[n.s[1]].live_in;
@@ -223,7 +223,7 @@ pub fn debug_print(self: *FLIR) void {
 
         // only print liveout if we have more than one sucessor, otherwise it is BOOORING
         if (n.s[1] != 0) {
-            var live_out: u64 = 0;
+            var live_out: FLIR.VRegFlag = 0;
             live_out |= self.n.items[n.s[0]].live_in;
             live_out |= self.n.items[n.s[1]].live_in;
             if (live_out != 0) {

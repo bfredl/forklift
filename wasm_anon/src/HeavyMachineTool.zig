@@ -641,14 +641,16 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     break :call .{ try ir.call(node, .cfo_obj, try ir.const_uint(obj)), func.typeidx, func.n_params, func.n_res };
                 };
 
-                if (n_params > 3 or n_res > 1) {
+                const max_params = 4;
+
+                if (n_params > max_params or n_res > 1) {
                     f.hmt_error = try std.fmt.allocPrint(gpa, "THERE WERE NO CALLS TODAY: {} => {}", .{ n_params, n_res });
                     return error.NotImplemented;
                 }
 
                 // TODO: just has all types in pre-parsed form anyway??
                 // would just be a cute little arena at module-parse time
-                var call_arg_types: [3]defs.ValType = undefined;
+                var call_arg_types: [max_params]defs.ValType = undefined;
                 var call_res_types: [1]defs.ValType = undefined;
                 try in.mod.type_params(typidx, &call_arg_types, &call_res_types);
 
