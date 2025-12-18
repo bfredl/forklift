@@ -577,6 +577,7 @@ pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
 
     const n = &self.n.items[node];
     var put_iter = n.putphi_list;
+    var counter: u32 = 1;
     while (put_iter != NoRef) {
         const p = &self.i.items[put_iter];
         if (p.tag == .putvar and p.op2 == v.op1) {
@@ -584,7 +585,9 @@ pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
             return;
         }
         put_iter = p.next;
+        counter += 1;
     }
+    std.debug.print("\nCANTER {}\n", .{counter});
     n.putphi_list = try self.addRawInst(.{ .tag = .putvar, .op1 = refval, .op2 = v.op1, .next = n.putphi_list, .node_delete_this = node });
 }
 
