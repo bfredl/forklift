@@ -88,7 +88,7 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance, filter: ?[]const 
                         }
                     }
                 }
-                try self.errorStub(f);
+                try self.errorStub(i, f);
                 if (selekted) return e else continue; // ok, note the error, unless selekted (NOT OK)
             },
             else => return e,
@@ -189,6 +189,7 @@ fn try_inspect(self: *HeavyMachineTool, addr: usize) void {
                     const f = in.mod.funcs_internal[self.debug_list.items[i - 1].func_idx];
                     const name = if (f.name) |nam| nam else f.exported;
                     if (name) |nam| severe("NAMN {s}\n", .{nam});
+                    if (f.hmt_error) |err| severe("jalla fixa: {s}\n", .{err});
                 }
                 break;
             }
@@ -197,7 +198,6 @@ fn try_inspect(self: *HeavyMachineTool, addr: usize) void {
 }
 
 fn sigHandler(sig: i32, info: *const std.posix.siginfo_t, ctx_ptr: ?*const anyopaque) callconv(.c) void {
-    _ = sig;
     _ = info;
 
     if (debug_as_self) |self| {
@@ -206,14 +206,19 @@ fn sigHandler(sig: i32, info: *const std.posix.siginfo_t, ctx_ptr: ?*const anyop
         std.debug.relocateContext(&new_ctx);
         severe("hej!\n", .{});
 
+        var ip = new_ctx.mcontext.gregs[std.posix.REG.RIP];
+        if (sig == std.posix.SIG.TRAP) {
+            // if we trapped, ip will refer to the next instruction after the trap
+            ip -= 1;
+        }
         // TODO: some of this logic in OSHA.zig. update it and make it generic!
         // NB: we want to be able to debug JIT code even if there is no SelfInfo
-        severe("first hello: {x}\n", .{new_ctx.mcontext.gregs[std.posix.REG.RIP]});
-        self.try_inspect(new_ctx.mcontext.gregs[std.posix.REG.RIP]);
+        // severe("first hello: {x}\n", .{ip});
+        self.try_inspect(ip);
         var it = std.debug.StackIterator.init(null, new_ctx.mcontext.gregs[std.posix.REG.RBP]);
         defer it.deinit();
         while (it.next()) |return_address| {
-            severe("hallå eller: {x}\n", .{return_address});
+            // severe("hallå eller: {x}\n", .{return_address});
             self.try_inspect(return_address);
         }
 
@@ -761,7 +766,8 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
 
     // this is a very silly song
     const obj = try self.declareFunc(f, null);
-    try self.debug_list.append(self.mod.gpa, .{ .start_off = @intCast(self.mod.code.buf.items.len), .func_idx = @intCast(id) });
+    // do this before, so an incomplete func still gets inspected
+    try self.debug_list.append(self.mod.gpa, .{ .start_off = self.mod.code.get_target(), .func_idx = @intCast(id) });
     const target = try forklift.codegen_x86_64(ir, &self.mod, false, obj);
     _ = try self.declareFunc(f, target);
 
@@ -842,9 +848,10 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     try self.mod.objs.append(self.mod.gpa, .{ .obj = .{ .func = .{ .code_start = trampolin_target } }, .name = null });
 }
 
-pub fn errorStub(self: *HeavyMachineTool, f: *Function) !void {
+pub fn errorStub(self: *HeavyMachineTool, id: usize, f: *Function) !void {
     const stub_target = self.mod.code.get_target();
     var cfo = X86Asm{ .code = &self.mod.code, .long_jump_mode = true };
+    try self.debug_list.append(self.mod.gpa, .{ .start_off = stub_target, .func_idx = @intCast(id) });
     // TODO: set some state. or maybe just the location is enough if the handler were to lookup $RIP
     try cfo.trap();
     _ = try self.declareFunc(f, stub_target);
