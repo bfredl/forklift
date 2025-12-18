@@ -20,6 +20,7 @@ const HeavyMachineTool = @This();
 flir: FLIR,
 mod: forklift.CFOModule,
 longjmp_func: u32 = undefined,
+trap_verbose: bool = false,
 
 pub fn init(allocator: std.mem.Allocator) !HeavyMachineTool {
     return .{
@@ -118,10 +119,10 @@ pub fn execute(self: *HeavyMachineTool, in: *Instance, idx: u32, params: []const
 
     const f = try self.mod.get_func_ptr_id(trampoline_obj, TrampolineFn);
     jmp_active = true;
-    debug_as_self = self;
+    if (self.trap_verbose) debug_as_self = self;
     // std.debug.print("info jmp buf: {x}={}\ntrampolin: {x}={}\n", .{ @intFromPtr(&jmp_buf), @intFromPtr(&jmp_buf), @intFromPtr(f), @intFromPtr(f) });
     const status = f(in.mem.items.ptr, in.mem.items.len, params.ptr, ret.ptr, &jmp_buf);
-    debug_as_self = null;
+    if (self.trap_verbose) debug_as_self = null;
     jmp_active = false;
     if (status != 0) return error.WASMTrap;
     return func.n_res;
@@ -178,28 +179,29 @@ fn sigHandler(sig: i32, info: *const std.posix.siginfo_t, ctx_ptr: ?*const anyop
     _ = sig;
     _ = info;
 
-    const ctx: *align(1) const std.posix.ucontext_t = @ptrCast(ctx_ptr);
-    var new_ctx: std.posix.ucontext_t = ctx.*;
-    std.debug.relocateContext(&new_ctx);
-    severe("hej!\n", .{});
+    if (debug_as_self) |self| {
+        const ctx: *align(1) const std.posix.ucontext_t = @ptrCast(ctx_ptr);
+        var new_ctx: std.posix.ucontext_t = ctx.*;
+        std.debug.relocateContext(&new_ctx);
+        severe("hej!\n", .{});
 
-    // TODO: some of this logic in OSHA.zig. update it and make it generic!
-    // NB: we want to be able to debug JIT code even if there is no SelfInfo
-    severe("first hello: {x}\n", .{new_ctx.mcontext.gregs[std.posix.REG.RIP]});
-    if (debug_as_self) |self| self.try_inspect(new_ctx.mcontext.gregs[std.posix.REG.RIP]);
-    var it = std.debug.StackIterator.init(null, new_ctx.mcontext.gregs[std.posix.REG.RBP]);
-    defer it.deinit();
-    while (it.next()) |return_address| {
-        severe("hallå eller: {x}\n", .{return_address});
-        if (debug_as_self) |self| self.try_inspect(return_address);
-    }
+        // TODO: some of this logic in OSHA.zig. update it and make it generic!
+        // NB: we want to be able to debug JIT code even if there is no SelfInfo
+        severe("first hello: {x}\n", .{new_ctx.mcontext.gregs[std.posix.REG.RIP]});
+        self.try_inspect(new_ctx.mcontext.gregs[std.posix.REG.RIP]);
+        var it = std.debug.StackIterator.init(null, new_ctx.mcontext.gregs[std.posix.REG.RBP]);
+        defer it.deinit();
+        while (it.next()) |return_address| {
+            severe("hallå eller: {x}\n", .{return_address});
+            self.try_inspect(return_address);
+        }
 
-    {
         const stderr = std.debug.lockStderrWriter(&.{});
         defer std.debug.unlockStderrWriter();
         std.debug.dumpStackTraceFromBase(&new_ctx, stderr);
         stderr.print("hejdå!\n", .{}) catch unreachable;
     }
+
     if (jmp_active) {
         longjmp_f(7, &jmp_buf);
     } else {

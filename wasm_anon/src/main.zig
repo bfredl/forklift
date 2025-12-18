@@ -73,6 +73,7 @@ pub fn main() !u8 {
     var interpreter: wasm_shelf.Interpreter = .init(allocator);
     defer interpreter.deinit();
     var tool: wasm_shelf.HeavyMachineTool = try .init(allocator);
+    tool.trap_verbose = true;
 
     const engine: wasm_shelf.Engine = if (p.args.heavy > 0) .{ .heavy = &tool } else .{ .interpreter = &interpreter };
 
