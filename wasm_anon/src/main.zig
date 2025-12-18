@@ -136,6 +136,7 @@ fn wasi_run(engine: wasm_shelf.Engine, mod: *wasm_shelf.Module, allocator: std.m
 
     if (sym.kind != .func) @panic("_start not a function :(");
 
+    if (engine == .heavy) std.debug.print("DET HÄR BLIR FINEMANG:\n", .{});
     var err_ret: ?[]const u8 = null;
     _ = in.execute_either(engine, sym.idx, &.{}, &.{}, true, &err_ret) catch |err| {
         switch (err) {

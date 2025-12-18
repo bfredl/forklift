@@ -165,6 +165,7 @@ fn sigHandler(sig: i32, info: *const std.posix.siginfo_t, ctx_ptr: ?*const anyop
     _ = sig;
     _ = info;
     _ = ctx_ptr;
+    std.debug.print("hej!\n", .{});
     if (jmp_active) {
         longjmp_f(7, &jmp_buf);
     } else {
@@ -288,7 +289,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
 
     errdefer if (verbose) ir.debug_print(); // show what we got when it ends
 
-    if (verbose or true) {
+    if (verbose) {
         if (f.name) |nam| {
             std.debug.print("\nFOR \"{s}\":\n", .{nam});
         } else if (f.exported) |nam| {

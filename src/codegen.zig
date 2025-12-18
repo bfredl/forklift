@@ -200,12 +200,13 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
     const do_prelude = self.n.items.len > 2 or stacksize > 0 or self.codegen_has_call; // PÅ ETT UNGEFÄR
 
     if (do_prelude) try cfo.enter();
+    var odd_stack = !do_prelude; // it is even with do_prelude because RET + FRAME
     for (ABI.callee_saved[0..self.nsave]) |reg| {
         try cfo.push(r(reg));
+        odd_stack = !odd_stack;
     }
-    if (stacksize > 0) {
-        const padding = (-stacksize) & 0xF;
-        // print("size: {}, extrasize: {}\n", .{ stacksize, padding });
+    if (do_prelude) {
+        const padding = (-stacksize - (if (odd_stack) @as(i32, 8) else 0)) & 0xF;
         try cfo.aritri(.sub, true, .rsp, stacksize + padding);
     }
 
@@ -623,8 +624,10 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
                         },
                         .fun_addr => {
                             if (self.constval(i.op1)) |val| {
-                                std.debug.print("HAHAHA you really thought: {}\n", .{val});
-                                return error.NotImplemented;
+                                // TODO: this really should be allocated. custom callconv
+                                // might actually use RAX..
+                                try cfo.movabs(.rax, val);
+                                try cfo.call_ptr(.rax);
                             } else {
                                 return error.NotImplemented;
                             }
