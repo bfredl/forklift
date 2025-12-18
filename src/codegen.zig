@@ -371,11 +371,9 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
                             },
                         }
                         const rhs_reg = switch (rhs) {
-                            .constval => @panic("aaaaaaaa"),
+                            .constval => return error.NotImplemented,
                             .ipreg => |reg| r(reg),
-                            else => {
-                                @panic("implement 'div [mem]' form");
-                            },
+                            else => return error.NotImplemented, // @panic("implement 'div [mem]' form")
                         };
                         if (rhs_reg == .rax) return error.CRINGE; // just checking...
                         try cfo.zero(.rdx); // baaaa
@@ -511,6 +509,7 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
                                             try cfo.movmi_byte(eaddr, @truncate(@as(u32, @bitCast(c))));
                                         },
                                         .quadword => try cfo.movmi(true, eaddr, @intCast(c)),
+                                        .dword => try cfo.movmi(false, eaddr, @intCast(c)),
                                         else => return error.NotImplemented,
                                     }
                                 },
@@ -622,6 +621,14 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
                             const val = self.constval(i.op1) orelse return error.FLIRError;
                             try cfo.call_rel(@intCast(val));
                         },
+                        .fun_addr => {
+                            if (self.constval(i.op1)) |val| {
+                                std.debug.print("HAHAHA you really thought: {}\n", .{val});
+                                return error.NotImplemented;
+                            } else {
+                                return error.NotImplemented;
+                            }
+                        },
                         .cfo_obj => {
                             const idx = self.constval(i.op1) orelse return error.FLIRError;
                             const off = switch (mod.objs.items[idx].obj) {
@@ -667,6 +674,9 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
                     const src = self.ipval(i.op1) orelse return error.FLIRError;
                     const dest = i.ipval() orelse return error.FLIRError;
                     try movmcs(&cfo, true, dest, src); // TODO: wide
+                },
+                .trap => {
+                    try cfo.trap(); // PALLAS CAT EARLY
                 },
                 .bpf_load_map => {
                     print("platform unsupported: {}\n", .{i.tag});

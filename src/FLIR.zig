@@ -656,6 +656,13 @@ pub fn callret(self: *Self, the_call: u16, typ: defs.SpecType) !u16 {
     return theret;
 }
 
+pub fn trap(self: *Self, node: u16, recoverable: bool) !u16 {
+    // if false, optimization should treat it as a non-local return
+    // if true, make no assumptions (like a syscall or whatever)
+    _ = recoverable;
+    return self.addInst(node, .{ .tag = .trap, .spec = 0, .op1 = NoRef, .op2 = NoRef });
+}
+
 pub fn addPhi(self: *Self, node: u16, vidx: u16, valspec: u8) !u16 {
     const n = &self.n.items[node];
     const ref = try self.addRawInst(.{ .tag = .phi, .op1 = vidx, .op2 = NoRef, .spec = valspec, .f = .{ .kill_op1 = true }, .next = n.phi_list, .node_delete_this = node });
@@ -1046,8 +1053,8 @@ pub fn calc_live(self: *Self) !void {
         // TODO: at this point the number of vregs is known. so a bitset for
         // node X vreg can be allocated here.
 
-        if (self.nvreg > @typeInfo(VRegFlag).int.bits) {
-            std.debug.print("HAHAHAHA {} fast med noder {}:\n", .{ self.nvreg, ni + 1 });
+        if (self.nvreg > @typeInfo(VRegFlag).int.bits or self.n.items.len > @typeInfo(NodeFlag).int.bits) {
+            std.debug.print("HAHAHAHA {}, you really thought HAHAHHAHAHA {}:\n", .{ self.nvreg, self.n.items.len });
             return error.NotImplemented;
         }
 
@@ -1151,7 +1158,6 @@ pub fn calc_live(self: *Self) !void {
                 // TODO: make me a loop membership bitset globally
                 // TODO: if there was a call anywhere in the loop
                 // propagate call clobbers onto the loop invariant vregs
-                if (self.n.items.len > 64) unreachable;
                 var loop_set: u128 = node_flag(@intCast(ni));
                 for (ni + 1..self.n.items.len) |ch_i| {
                     const ch_n = &self.n.items[ch_i];
@@ -1168,11 +1174,6 @@ pub fn calc_live(self: *Self) !void {
             }
             if (ni == 0) break;
         }
-    }
-
-    if (self.n.items.len > @typeInfo(NodeFlag).int.bits) {
-        std.debug.print("HOHOHOHO {} fast med noder {}:\n", .{ self.nvreg, self.n.items.len });
-        return error.NotImplemented;
     }
 
     // step 3: mark the instructions which kill a live range, which will be used by regalloc

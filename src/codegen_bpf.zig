@@ -300,7 +300,7 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
                 },
                 .icmpset => return error.NotImplemented,
                 .iunop => return error.NotImplemented,
-                .select => {
+                .select, .trap => {
                     return error.NotImplemented;
                 },
                 .putphi, .callarg, .retval => {

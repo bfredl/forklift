@@ -82,6 +82,7 @@ fn mem(r: *Reader, wide: bool, sext: bool, memsize: defs.ISize) !MemInst {
 // kinda a def but just the return type of readInst so eh
 pub const Instruction = union(enum) {
     drop: void,
+    unreachable_: void,
 
     local_set: u32,
     local_get: u32,
@@ -138,6 +139,7 @@ pub fn readInst(r: *Reader) !Instruction {
     const byte = try r.readByte();
     return switch (byte) {
         i(.drop) => .{ .drop = {} },
+        i(.unreachable_) => .{ .unreachable_ = {} },
         i(.local_set) => .{ .local_set = try r.readu() },
         i(.local_get) => .{ .local_get = try r.readu() },
         i(.local_tee) => .{ .local_tee = try r.readu() },

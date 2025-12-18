@@ -288,7 +288,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
 
     errdefer if (verbose) ir.debug_print(); // show what we got when it ends
 
-    if (verbose) {
+    if (verbose or true) {
         if (f.name) |nam| {
             std.debug.print("\nFOR \"{s}\":\n", .{nam});
         } else if (f.exported) |nam| {
@@ -308,6 +308,19 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
         switch (inst) {
             .drop => {
                 _ = value_stack.pop().?;
+            },
+            .unreachable_ => {
+                _ = try ir.trap(node, false);
+
+                // TODO: likely FLIR just allowing unlikely orphaned exits should be fine
+                // but check this. for now emit a fake "ret" instruction
+                try ir.addLink(node, 0, exit_node); // branch taken
+                dead_end = true;
+                if (f.n_res > 0) {
+                    if (f.n_res > 1) return error.NotImplemented;
+                    if (f.n_res == 1) try ir.putvar(node, exit_vars[0], IZero);
+                }
+                if (r.peekOpCode() != .end) return error.NotImplemented;
             },
             .local_set => |idx| {
                 const src = value_stack.pop().?;
@@ -626,7 +639,6 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const call, const typidx, const n_params, const n_res = call: {
                     if (idx < in.mod.n_funcs_import) {
                         const imp = &in.funcs_imported[idx];
-                        f.hmt_error = try std.fmt.allocPrint(gpa, "call {} and ret {} but haha {s}\n", .{ imp.n_args, imp.n_res, imp.name_dbg orelse "??" });
                         // todo: unified ABI for callbacks
                         const addr = imp.cb_direct orelse return error.NotImplemented;
                         const typ = in.mod.funcs_imported_types[idx];

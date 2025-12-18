@@ -36,6 +36,7 @@ pub const Tag = enum(u8) {
     callret,
     bpf_load_map,
     xadd,
+    trap,
 };
 
 const Inst = @This();
@@ -188,6 +189,7 @@ pub fn res_type(inst: Inst) ?defs.ValType {
         .callret => inst.mem_type(),
         .bpf_load_map => .intptr,
         .xadd => null,
+        .trap => null,
     };
 }
 
@@ -231,6 +233,7 @@ pub fn n_op(inst: Inst, rw: bool) u2 {
         .alloc => 0,
         .bpf_load_map => 0,
         .xadd => 2, // TODO: atomic instruction group
+        .trap => 0,
     };
 }
 
