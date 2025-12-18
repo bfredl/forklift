@@ -102,9 +102,11 @@ pub fn uv(s: usize) u16 {
 }
 
 pub const Node = struct {
+    // TODO: .{ NoRef, NoRef } and throw error on s[x] == 0 might be "cleaner" but eh
     s: [2]u16 = .{ 0, 0 }, // sucessors
     dfnum: u16 = 0,
 
+    // TODO: inline if npred==1 which is REALLY common
     predref: u16 = 0,
     npred: u16 = 0,
     // NB: might be NoRef if the node was deleted,
@@ -580,6 +582,8 @@ pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
     var counter: u32 = 1;
     while (put_iter != NoRef) {
         const p = &self.i.items[put_iter];
+        // TODO: use vref instead of v.op1 as the id everywhere.
+        // only time we need a compact list is for external metadata like names..:p
         if (p.tag == .putvar and p.op2 == v.op1) {
             p.op1 = refval;
             return;
@@ -684,8 +688,7 @@ pub fn arg(self: *Self, typ: defs.SpecType) !u16 {
 }
 
 pub fn variable(self: *Self, typ: defs.SpecType) !u16 {
-    if (self.n.items.len == 0) return error.FLIRError;
-    const inst = try self.addRawInst(.{ .tag = .variable, .op1 = self.nvar, .op2 = 0, .spec = typ.into(), .next = self.var_list });
+    const inst = try self.addRawInst(.{ .tag = .variable, .op1 = self.nvar, .op2 = NoRef, .spec = typ.into(), .next = self.var_list });
     self.var_list = inst;
     self.nvar += 1;
     return inst;
