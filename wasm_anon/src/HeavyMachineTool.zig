@@ -22,6 +22,14 @@ mod: forklift.CFOModule,
 longjmp_func: u32 = undefined,
 trap_verbose: bool = false,
 
+debug_list: std.ArrayList(DebugItem) = .empty,
+debug_in: ?*Instance = null, // ??????????
+
+const DebugItem = struct {
+    start_off: u32,
+    func_idx: u32,
+};
+
 pub fn init(allocator: std.mem.Allocator) !HeavyMachineTool {
     return .{
         .mod = try .init(allocator),
@@ -119,6 +127,7 @@ pub fn execute(self: *HeavyMachineTool, in: *Instance, idx: u32, params: []const
 
     const f = try self.mod.get_func_ptr_id(trampoline_obj, TrampolineFn);
     jmp_active = true;
+    self.debug_in = in;
     if (self.trap_verbose) debug_as_self = self;
     // std.debug.print("info jmp buf: {x}={}\ntrampolin: {x}={}\n", .{ @intFromPtr(&jmp_buf), @intFromPtr(&jmp_buf), @intFromPtr(f), @intFromPtr(f) });
     const status = f(in.mem.items.ptr, in.mem.items.len, params.ptr, ret.ptr, &jmp_buf);
@@ -169,9 +178,21 @@ fn try_inspect(self: *HeavyMachineTool, addr: usize) void {
     const code = self.mod.code;
     const startaddr: usize = @intFromPtr(code.buf.items.ptr);
     const endaddr: usize = startaddr + code.buf.items.len;
+    const in = self.debug_in orelse return;
     if (startaddr <= addr and addr < endaddr) {
         const off = addr - startaddr;
         severe("OFFSÄTT {} !\n", .{off});
+
+        for (0.., self.debug_list.items) |i, it_after| {
+            if (it_after.start_off > off) {
+                if (i > 0) {
+                    const f = in.mod.funcs_internal[self.debug_list.items[i - 1].func_idx];
+                    const name = if (f.name) |nam| nam else f.exported;
+                    if (name) |nam| severe("NAMN {s}\n", .{nam});
+                }
+                break;
+            }
+        }
     }
 }
 
@@ -245,7 +266,6 @@ pub fn declareFunc(self: *HeavyMachineTool, f: *Function, pos: ?u32) !u32 {
 }
 
 pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Function, verbose: bool) !void {
-    _ = id;
     const ir = &self.flir;
     const gpa = in.mod.allocator;
     const c = try f.ensure_parsed(in.mod);
@@ -741,6 +761,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
 
     // this is a very silly song
     const obj = try self.declareFunc(f, null);
+    try self.debug_list.append(self.mod.gpa, .{ .start_off = @intCast(self.mod.code.buf.items.len), .func_idx = @intCast(id) });
     const target = try forklift.codegen_x86_64(ir, &self.mod, false, obj);
     _ = try self.declareFunc(f, target);
 
