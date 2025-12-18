@@ -118,7 +118,6 @@ pub fn execute(self: *HeavyMachineTool, in: *Instance, idx: u32, params: []const
     const f = try self.mod.get_func_ptr_id(trampoline_obj, TrampolineFn);
     jmp_active = true;
     // std.debug.print("info jmp buf: {x}={}\ntrampolin: {x}={}\n", .{ @intFromPtr(&jmp_buf), @intFromPtr(&jmp_buf), @intFromPtr(f), @intFromPtr(f) });
-    // asm volatile ("int3");
     const status = f(in.mem.items.ptr, in.mem.items.len, params.ptr, ret.ptr, &jmp_buf);
     jmp_active = false;
     if (status != 0) return error.WASMTrap;
@@ -141,6 +140,7 @@ pub fn globalExceptionHandler() void {
     };
 
     posix.sigaction(posix.SIG.FPE, &act, null);
+    posix.sigaction(posix.SIG.TRAP, &act, null);
 }
 
 fn build_longjmp(self: *HeavyMachineTool) !void {
