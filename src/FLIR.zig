@@ -105,7 +105,7 @@ pub const Node = struct {
     dfnum: u16 = 0,
 
     sealed_as_one: bool = false, // we know early that (npred <= 1)
-    predlink: u16 = 0,
+    predlink: u16 = NoRef,
     npred: u16 = 0,
 
     s_pred_next: [2]u16 = .{ NoRef, NoRef },
@@ -342,6 +342,7 @@ pub fn addNodeAfter(self: *Self, node: u16, sealed: bool) !u16 {
 }
 
 pub fn addLink(self: *Self, node_from: u16, branch: u1, node_to: u16, to_sealed: bool) !void {
+    std.debug.print("tree is like {} branch {} to {}\n", .{ node_from, branch, node_to });
     const succ = &self.n.items[node_from].s[branch];
     const s_pred_next = &self.n.items[node_from].s_pred_next[branch];
     if (succ.* != 0 or s_pred_next.* != NoRef) return error.FLIRError;
@@ -701,10 +702,36 @@ pub fn variable(self: *Self, typ: defs.SpecType, init_val: ?u16) !u16 {
     return inst;
 }
 
-pub fn preds(self: *Self, i: u16) []u16 {
-    _ = self;
-    _ = i;
-    @panic("STAY AWAY FROM THIS FUNCTION");
+pub fn predIter(self: *Self, n: u16) struct {
+    node: u16,
+    si: u1,
+    s: *Self,
+    pub fn next(iter: *@This()) ?u16 {
+        if (iter.node == NoRef) return null;
+        const current = iter.node;
+        const node = iter.s.n.items[iter.node];
+        const target = node.s[iter.si];
+        const nextnode = node.s_pred_next[iter.si];
+        iter.node = nextnode;
+        if (nextnode != NoRef) {
+            const p = iter.s.n.items[nextnode];
+            if (p.s[0] != target and p.s[1] != target) @panic("diskho");
+            iter.si = if (p.s[0] != target) 1 else 0;
+        }
+        return current;
+    }
+} {
+    const node = self.n.items[n];
+    const link = node.predlink;
+    if (link != NoRef) {
+        std.debug.print("LINK: {} really to {}\n", .{ link, n });
+        const p = self.n.items[link];
+        if (p.s[0] != n and p.s[1] != n) @panic("diskho");
+        return .{ .node = link, .si = if (p.s[0] != n) 1 else 0, .s = self };
+    } else {
+        return .{ .node = NoRef, .si = 0, .s = self };
+    }
+    return .{};
 }
 
 fn predlink(self: *Self, i: u16, si: u1) !void {
@@ -857,9 +884,13 @@ pub fn reorder_nodes(self: *Self) !void {
                 s.* = newlink[s.*];
             }
         }
-
-        for (self.preds(uv(ni))) |*pi| {
-            pi.* = newlink[pi.*];
+        for (&n.s_pred_next) |*s| {
+            if (s.* != NoRef) {
+                s.* = newlink[s.*];
+            }
+        }
+        if (n.predlink != NoRef) {
+            n.predlink = newlink[n.predlink];
         }
 
         n.loop = newlink[n.loop];

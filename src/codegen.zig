@@ -159,7 +159,8 @@ fn get_eaddr_load_or_lea(self: *FLIR, i: Inst) !EAddr {
 }
 
 pub fn set_pred(self: *FLIR, cfo: *X86Asm, targets: [][2]u32, ni: u16) !void {
-    for (self.preds(ni)) |pred| {
+    var iter = self.predIter(@intCast(ni));
+    while (iter.next()) |pred| {
         const pr = &self.n.items[pred];
         if (pr.is_empty) {
             try set_pred(self, cfo, targets, pred);

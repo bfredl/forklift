@@ -242,7 +242,8 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
         }
         labels[ni] = get_target(code);
         // print("LABEL: {x} {}\n", .{ labels[ni], ni });
-        for (self.preds(uv(ni))) |pred| {
+        var iter = self.predIter(@intCast(ni));
+        while (iter.next()) |pred| {
             const pr = &self.n.items[pred];
             const si: u1 = if (pr.s[0] == ni) 0 else 1;
             if (targets[pred][si] != 0) {

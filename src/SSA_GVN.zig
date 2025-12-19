@@ -133,16 +133,21 @@ fn resolve_phi(self: *FLIR, n: u16, i: *FLIR.Inst, iref: u16, pred_buf: []PredIt
         var onlyref: ?u16 = NoRef;
         const vref = i.op1;
         const vspec = i.spec; // TRICKY: i pointer might get invalidated by read_var()
-        for (self.preds(n), 0..) |p, pi| {
-            var direct_putvar: u16 = NoRef;
-            const ref = try read_var(self, p, vref, vspec, &direct_putvar);
-            // XX: In principle we could already handle "Undefined" being represented
-            // as NoRef, but we don't support undefined yets and we likely want
-            // another sentinel value than Noref, to catch mistakes easier.
-            if (ref != iref) {
-                onlyref = if (onlyref) |only| (if (only == ref or only == NoRef) ref else null) else null;
+        {
+            var iter = self.predIter(@intCast(n));
+            var pi: u16 = 0;
+            while (iter.next()) |p| {
+                var direct_putvar: u16 = NoRef;
+                const ref = try read_var(self, p, vref, vspec, &direct_putvar);
+                // XX: In principle we could already handle "Undefined" being represented
+                // as NoRef, but we don't support undefined yets and we likely want
+                // another sentinel value than Noref, to catch mistakes easier.
+                if (ref != iref) {
+                    onlyref = if (onlyref) |only| (if (only == ref or only == NoRef) ref else null) else null;
+                }
+                pred_buf[pi] = .{ .ref = ref, .direct_putvar = direct_putvar };
+                pi += 1;
             }
-            pred_buf[pi] = .{ .ref = ref, .direct_putvar = direct_putvar };
         }
 
         if (onlyref) |ref| {
@@ -151,7 +156,9 @@ fn resolve_phi(self: *FLIR, n: u16, i: *FLIR.Inst, iref: u16, pred_buf: []PredIt
             i_ref.f.kill_op1 = false; // flag for "resolved". techy we don't depend on op1 anymore :zany_face:
             i_ref.op2 = ref; // if set, this is a trivial alias to phi_i.op2
         } else {
-            for (self.preds(n), 0..) |p, pi| {
+            var iter = self.predIter(@intCast(n));
+            var pi: u16 = 0;
+            while (iter.next()) |p| {
                 if (pred_buf[pi].direct_putvar != NoRef) {
                     const put = &self.i.items[pred_buf[pi].direct_putvar];
                     put.tag = .putphi;
@@ -161,6 +168,7 @@ fn resolve_phi(self: *FLIR, n: u16, i: *FLIR.Inst, iref: u16, pred_buf: []PredIt
                     const vn = &self.n.items[p];
                     vn.putphi_list = try self.addRawInst(.{ .tag = .putphi, .op1 = pred_buf[pi].ref, .op2 = iref, .next = vn.putphi_list, .node_delete_this = p });
                 }
+                pi += 1;
             }
             const i_ref = self.iref(iref).?;
             i_ref.f.kill_op1 = false; // flag for "resolved"
@@ -169,8 +177,9 @@ fn resolve_phi(self: *FLIR, n: u16, i: *FLIR.Inst, iref: u16, pred_buf: []PredIt
     } else if (i.op2 == NoRef) {
         const onlyref: ?u16 = theref: {
             var seen_ref: ?u16 = null;
-            for (self.preds(n)) |v| {
-                const phiref = try read_putphi(self, v, iref) orelse return error.FLIRError;
+            var iter = self.predIter(@intCast(n));
+            while (iter.next()) |p| {
+                const phiref = try read_putphi(self, p, iref) orelse return error.FLIRError;
                 const ref = check_trivial(self, phiref);
                 if (ref != iref) {
                     if (seen_ref) |seen| {

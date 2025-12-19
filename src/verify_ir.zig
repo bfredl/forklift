@@ -103,7 +103,8 @@ pub fn check_ir_valid(self: *FLIR) !void {
             reached[s] = true;
         }
         if (true) { // always now???????????
-            for (self.preds(@intCast(ni))) |pred| {
+            var iter = self.predIter(@intCast(ni));
+            while (iter.next()) |pred| {
                 const pn = self.n.items[pred];
                 if (pn.s[0] != ni and pn.s[1] != ni) {
                     return error.InvalidCFG;

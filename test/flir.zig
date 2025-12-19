@@ -62,18 +62,18 @@ test "diamond cfg" {
     _ = try self.icmp(start, .quadword, .lt, arg1, v);
 
     const left = try self.addNode();
-    self.n.items[start].s[0] = left;
+    try self.addLink(start, 0, left, true);
     const addl = try self.ibinop(left, .quadword, .add, v, arg2);
     try self.putvar(left, v, addl);
 
     const right = try self.addNode();
-    self.n.items[start].s[1] = right;
+    try self.addLink(start, 1, right, true);
     const addr = try self.ibinop(right, .quadword, .add, v, arg1);
     try self.putvar(right, v, addr);
 
     const end = try self.addNode();
-    self.n.items[left].s[0] = end;
-    self.n.items[right].s[0] = end;
+    try self.addLink(left, 0, end, false);
+    try self.addLink(right, 0, end, false);
 
     const const_77 = try self.const_int(77);
     const adde = try self.ibinop(end, .quadword, .add, v, const_77);
