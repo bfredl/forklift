@@ -102,8 +102,7 @@ pub fn check_ir_valid(self: *FLIR) !void {
             if (s > self.n.items.len) return error.InvalidCFG;
             reached[s] = true;
         }
-        // TODO: explicit condition for this
-        if (self.refs.items.len > 0) {
+        if (true) { // always now???????????
             for (self.preds(@intCast(ni))) |pred| {
                 const pn = self.n.items[pred];
                 if (pn.s[0] != ni and pn.s[1] != ni) {

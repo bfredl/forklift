@@ -84,7 +84,7 @@ fn read_var(self: *FLIR, node: u16, vref: u16, vspec: u8, direct_putvar: ?*u16) 
             break :thedef try FLIR.addPhi(self, node, vref, vspec);
         } else if (n.npred == 1 or n.sealed_as_one) {
             // if (self.unsealed and n.sealed_as_one) std.debug.print("FIIIINA fisken\n", .{});
-            const pred = n.predref;
+            const pred = n.predlink;
             // assert recursion eventually terminates
             // TODO: still want this check somehow, we just doesn't fill dfnum yet..
             // assert(self.n.items[pred].dfnum < n.dfnum);

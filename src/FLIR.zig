@@ -43,8 +43,6 @@ blkorder: ArrayList(u16) = .empty,
 // This only handles int and float64 constants,
 // we need something else for "address into string table"
 constvals: ArrayList(u64), // raw data for constants, can contain embedded data
-// This is only used for preds currently, but use it for more stuff??
-refs: ArrayList(u16),
 narg: [2]u16 = .{ 0, 0 },
 
 // free list for blocks. single linked, only use b.items[b_free].pred !
@@ -107,8 +105,11 @@ pub const Node = struct {
     dfnum: u16 = 0,
 
     sealed_as_one: bool = false, // we know early that (npred <= 1)
-    predref: u16 = 0,
+    predlink: u16 = 0,
     npred: u16 = 0,
+
+    s_pred_next: [2]u16 = .{ NoRef, NoRef },
+
     // NB: might be NoRef if the node was deleted,
     // a reachable node must have at least one block even if empty!
     // TODO: now what blocks are not "referenced", first block should be inline (and sm0ler, mayhaps)
@@ -278,7 +279,6 @@ pub fn init(n: u16, allocator: Allocator) !Self {
         .n = try .initCapacity(allocator, n),
         .b = try .initCapacity(allocator, n),
         .i = try .initCapacity(allocator, 4 * n),
-        .refs = try .initCapacity(allocator, 4 * n),
         .constvals = try .initCapacity(allocator, 8),
     };
     self.initConsts();
@@ -308,7 +308,6 @@ pub fn deinit(self: *Self) void {
     self.blkorder.deinit(self.gpa);
     self.preorder.deinit(self.gpa);
     self.var_names.deinit(self.gpa); // actual strings are owned by producer
-    self.refs.deinit(self.gpa);
     self.constvals.deinit(self.gpa);
     self.vregs.deinit(self.gpa);
 }
@@ -344,20 +343,17 @@ pub fn addNodeAfter(self: *Self, node: u16, sealed: bool) !u16 {
 
 pub fn addLink(self: *Self, node_from: u16, branch: u1, node_to: u16, to_sealed: bool) !void {
     const succ = &self.n.items[node_from].s[branch];
-    if (succ.* != 0) return error.FLIRError;
+    const s_pred_next = &self.n.items[node_from].s_pred_next[branch];
+    if (succ.* != 0 or s_pred_next.* != NoRef) return error.FLIRError;
     succ.* = node_to;
 
     const to = &self.n.items[node_to];
     if (to.sealed_as_one) {
         return error.FLIRError;
     }
-    if (to_sealed) {
-        // fucking mess, cannot set npred yet.
-        // TODO: eliminate calc_preds and keep track early!
-        // use linked lists or something to delet self.refs!
-        to.sealed_as_one = true;
-        to.predref = node_from;
-    }
+    s_pred_next.* = to.predlink; // easy!
+    to.predlink = node_from;
+    to.sealed_as_one = to_sealed;
 }
 
 pub fn addRawInst(self: *Self, inst: Inst) !u16 {
@@ -706,88 +702,28 @@ pub fn variable(self: *Self, typ: defs.SpecType, init_val: ?u16) !u16 {
 }
 
 pub fn preds(self: *Self, i: u16) []u16 {
-    const v = &self.n.items[i];
-    if (v.npred == 1) {
-        // TODO: pointer hazard if we add new nodes!!
-        return (&v.predref)[0..1];
-    }
-    return self.refs.items[v.predref..][0..v.npred];
+    _ = self;
+    _ = i;
+    @panic("STAY AWAY FROM THIS FUNCTION");
 }
 
-pub fn cleanup_preds(self: *Self, i: u16) !void {
-    const v = &self.n.items[i];
-    if (v.npred == 1) {
-        // TODO: NOT LIKE THIS
-        if (v.predref == NoRef) {
-            return error.FLIRError; // this shouldn't happen
-        }
-        return;
-    }
-    const p = self.refs.items[v.predref..];
-    var pos: u16 = 0;
-    while (pos < v.npred) {
-        if (p[pos] != NoRef) {
-            pos += 1;
-        } else {
-            // special case pos=(v.npred - 1) works due to immediate deletion:p
-            p[pos] = p[v.npred - 1];
-            v.npred -= 1;
-        }
-    }
-    if (v.npred == 1) {
-        // TODO: NOT LIKE THIS
-        v.predref = self.refs.items[v.predref];
-    }
-}
-
-fn predlink(self: *Self, i: u16, si: u1, split: bool) !void {
+fn predlink(self: *Self, i: u16, si: u1) !void {
     var n = self.n.items;
     const s = n[i].s[si];
     if (s == 0) return;
 
-    if (split and n[s].npred > 1) {
+    if (n[s].npred > 1) {
         const inter = try self.addNode();
         n = self.n.items; // haii
         n[inter].npred = 1;
         n[i].s[si] = inter;
         n[inter].s[0] = s;
-        try addpred(self, s, inter);
-        try addpred(self, inter, i);
-    } else {
-        try addpred(self, s, i);
+        if (true) @panic("YOU CAN (NOT) FIX THIS");
     }
 }
 
-fn addpred(self: *Self, s: u16, i: u16) !void {
-    const n = self.n.items;
-    // special case: single pred is inline
-    if (n[s].npred == 1) {
-        if (n[s].sealed_as_one and n[s].predref != i) return error.FLIRError; // da fuck
-        n[s].predref = i;
-        return;
-    }
-    // tricky: build the reflist per node backwards,
-    // so the end result is the start index
-    if (n[s].predref == 0) {
-        try self.refs.appendNTimes(self.gpa, DEAD, n[s].npred);
-        n[s].predref = uv(self.refs.items.len);
-    }
-    n[s].predref -= 1;
-    self.refs.items[n[s].predref] = i;
-}
-
-pub fn calc_preds(self: *Self) !void {
+pub fn check_critical_edges(self: *Self) !void {
     // TODO: policy for rebuilding refs from scratch?
-    if (self.refs.items.len > 0) unreachable;
-    for (self.n.items) |v| {
-        if (v.s[0] > 0) {
-            self.n.items[v.s[0]].npred += 1;
-        }
-        if (v.s[1] > 0 and v.s[1] != v.s[0]) {
-            self.n.items[v.s[1]].npred += 1;
-        }
-    }
-
     for (0..self.n.items.len) |i| {
         // by value. predlink might reallocate self.n in place!
         const v = self.n.items[i];
@@ -797,8 +733,10 @@ pub fn calc_preds(self: *Self) !void {
         const shared = v.s[1] > 0 and v.s[1] == v.s[0];
         if (shared) return error.NotSureAboutThis;
         const split = v.s[1] > 0;
-        try self.predlink(@intCast(i), 0, split);
-        try self.predlink(@intCast(i), 1, split);
+        if (split) {
+            try self.predlink(@intCast(i), 0);
+            try self.predlink(@intCast(i), 1);
+        }
     }
 }
 
@@ -923,7 +861,6 @@ pub fn reorder_nodes(self: *Self) !void {
         for (self.preds(uv(ni))) |*pi| {
             pi.* = newlink[pi.*];
         }
-        try self.cleanup_preds(uv(ni));
 
         n.loop = newlink[n.loop];
 
@@ -957,29 +894,26 @@ pub fn const_fold_legalize(self: *Self) !void {
             const i = item.i;
             if (i.tag == .icmp) {
                 if (self.peep_icmp_const(i.intcond(), i.f.wide, i.op1, i.op2)) |res| {
-                    const deleted = if (res) n.s[0] else n.s[1];
-                    if (res) n.s[0] = n.s[1];
+                    const del_idx: u1 = if (res) 0 else 1;
+                    const deleted = n.s[del_idx];
+                    const next_for_deleted = n.s_pred_next[del_idx];
+                    if (res) {
+                        n.s[0] = n.s[1];
+                        n.s_pred_next[0] = n.s_pred_next[1];
+                    }
                     n.s[1] = 0;
+                    n.s_pred_next[1] = NoRef;
                     self.delete_itersafe(item);
 
                     const v = &self.n.items[deleted];
                     // TODO: rethink this, deleting preds should be easier..
                     if (v.npred > 1) {
-                        const p = self.refs.items[v.predref..];
-                        for (0..v.npred) |ipred| {
-                            if (p[ipred] == ni) {
-                                p[ipred] = p[v.npred - 1];
-                                v.npred -= 1;
-                                break;
-                            }
-                        }
-                        if (v.npred == 1) {
-                            // HIIIIII
-                            v.predref = self.refs.items[v.predref];
-                        }
+                        _ = next_for_deleted;
+                        _ = ni;
+                        @panic("do it");
                     } else if (v.npred == 1) {
                         // TODO: he be DED jim!
-                        v.predref = 0;
+                        v.predlink = 0;
                         v.npred = 0;
                         // v.sealed_as_one = false;
                     }
@@ -2271,7 +2205,7 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
     // the IR, i e no (locally) constant ops, no dead succs
 
     // TODO: missed opportunity: some branches are already trivial
-    try self.calc_preds();
+    try self.check_critical_edges();
 
     if (check) try self.check_ir_valid();
     try self.resolve_ssa();
