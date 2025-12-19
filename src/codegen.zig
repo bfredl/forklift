@@ -244,7 +244,7 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
                     // work is done by putphi, this is just optional debug info
                     if (options.dbg_trap_join_nodes) {
                         if (i.ipreg()) |reg| {
-                            if (self.get_varname(i.op1)) |nam| {
+                            if (self.dbg_get_varname(item.ref)) |nam| {
                                 try code.value_map.append(self.gpa, .{ .pos = n_target, .reg = reg, .name = nam });
                             }
                         }

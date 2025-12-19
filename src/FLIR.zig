@@ -582,9 +582,7 @@ pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
     var counter: u32 = 1;
     while (put_iter != NoRef) {
         const p = &self.i.items[put_iter];
-        // TODO: use vref instead of v.op1 as the id everywhere.
-        // only time we need a compact list is for external metadata like names..:p
-        if (p.tag == .putvar and p.op2 == v.op1) {
+        if (p.tag == .putvar and p.op2 == vref) {
             p.op1 = refval;
             return;
         }
@@ -592,7 +590,7 @@ pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
         counter += 1;
     }
     std.debug.print("\nCANTER {}\n", .{counter});
-    n.putphi_list = try self.addRawInst(.{ .tag = .putvar, .op1 = refval, .op2 = v.op1, .next = n.putphi_list, .node_delete_this = node });
+    n.putphi_list = try self.addRawInst(.{ .tag = .putvar, .op1 = refval, .op2 = vref, .next = n.putphi_list, .node_delete_this = node });
 }
 
 pub fn ret(self: *Self, node: u16) !void {
@@ -670,9 +668,9 @@ pub fn trap(self: *Self, node: u16, recoverable: bool) !u16 {
     return self.addInst(node, .{ .tag = .trap, .spec = 0, .op1 = NoRef, .op2 = NoRef });
 }
 
-pub fn addPhi(self: *Self, node: u16, vidx: u16, valspec: u8) !u16 {
+pub fn addPhi(self: *Self, node: u16, vref: u16, valspec: u8) !u16 {
     const n = &self.n.items[node];
-    const ref = try self.addRawInst(.{ .tag = .phi, .op1 = vidx, .op2 = NoRef, .spec = valspec, .f = .{ .kill_op1 = true }, .next = n.phi_list, .node_delete_this = node });
+    const ref = try self.addRawInst(.{ .tag = .phi, .op1 = vref, .op2 = NoRef, .spec = valspec, .f = .{ .kill_op1 = true }, .next = n.phi_list, .node_delete_this = node });
     n.phi_list = ref;
     return ref;
 }
@@ -2298,6 +2296,17 @@ pub fn empty(self: *Self, ni: u16, allow_succ: bool) bool {
     return true;
 }
 
-pub fn get_varname(self: *Self, idx: u16) ?[]const u8 {
-    return if (self.var_names.items.len > idx) self.var_names.items[idx] else null;
+pub fn dbg_get_varname(self: *Self, ref: u16) ?[]const u8 {
+    const i = self.iref(ref) orelse return null;
+    const vidx = vidx: {
+        if (i.tag == .phi) {
+            break :vidx if (i.f.kill_op1) // unresolved, op1 is pointer to .var
+                (self.iref(i.op1) orelse return null).op1
+            else
+                i.op1;
+        } else if (i.tag == .variable) {
+            break :vidx ref;
+        } else return null;
+    };
+    return if (self.var_names.items.len > vidx) self.var_names.items[vidx] else null;
 }

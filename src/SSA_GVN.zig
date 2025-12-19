@@ -32,14 +32,14 @@ pub fn resolve_ssa(self: *FLIR) !void {
 pub fn read_ref(self: *FLIR, node: u16, ref: u16) !u16 {
     const i = self.iref(ref) orelse return ref;
     if (i.tag == .variable) {
-        return try read_var(self, node, i.op1, i.spec, null);
+        return try read_var(self, node, ref, i.spec, null);
     } else {
         // already on SSA-form, nothing to do
         return ref;
     }
 }
 
-fn read_var(self: *FLIR, node: u16, vidx: u16, vspec: u8, direct_putvar: ?*u16) !u16 {
+fn read_var(self: *FLIR, node: u16, vref: u16, vspec: u8, direct_putvar: ?*u16) !u16 {
     // It matters where you are
     const n = self.n.items[node];
 
@@ -49,7 +49,7 @@ fn read_var(self: *FLIR, node: u16, vidx: u16, vspec: u8, direct_putvar: ?*u16) 
     var put_iter = n.putphi_list;
     while (put_iter != NoRef) {
         const p = &self.i.items[put_iter];
-        if (p.tag == .putvar and p.op2 == vidx) {
+        if (p.tag == .putvar and p.op2 == vref) {
             if (direct_putvar) |put| {
                 put.* = put_iter;
             }
@@ -61,7 +61,7 @@ fn read_var(self: *FLIR, node: u16, vidx: u16, vspec: u8, direct_putvar: ?*u16) 
     var phi_iter = n.phi_list;
     while (phi_iter != NoRef) {
         const p = &self.i.items[phi_iter];
-        if (p.op1 == vidx) {
+        if (p.op1 == vref) {
             return phi_iter;
         }
         phi_iter = p.next;
@@ -72,7 +72,7 @@ fn read_var(self: *FLIR, node: u16, vidx: u16, vspec: u8, direct_putvar: ?*u16) 
             // as an optimization, we could check if all predecessors
             // are filled (pred[i].dfnum < n.dfnum), and in that case
             // fill the phi node already;
-            break :thedef try FLIR.addPhi(self, node, vidx, vspec);
+            break :thedef try FLIR.addPhi(self, node, vref, vspec);
         } else if (n.npred == 1) {
             const pred = self.refs.items[n.predref];
             // assert recursion eventually terminates
@@ -80,7 +80,7 @@ fn read_var(self: *FLIR, node: u16, vidx: u16, vspec: u8, direct_putvar: ?*u16) 
             // assert(self.n.items[pred].dfnum < n.dfnum);
 
             // no longer direct, discard direct_putvar
-            break :thedef try read_var(self, pred, vidx, vspec, null);
+            break :thedef try read_var(self, pred, vref, vspec, null);
         } else { // n.npred == 0
             return error.FLIRError; // undefined var
         }
@@ -121,18 +121,18 @@ fn resolve_phi(self: *FLIR, n: u16, i: *FLIR.Inst, iref: u16, pred_buf: []PredIt
         changed = true;
         // NoRef: no values seen yet, null: contradiction seen
         var onlyref: ?u16 = NoRef;
-        const vidx = i.op1; // TRICKY: i pointer might get invalidated by read_var()
-        const vspec = i.spec;
-        for (self.preds(n), 0..) |v, vi| {
+        const vref = i.op1;
+        const vspec = i.spec; // TRICKY: i pointer might get invalidated by read_var()
+        for (self.preds(n), 0..) |p, pi| {
             var direct_putvar: u16 = NoRef;
-            const ref = try read_var(self, v, vidx, vspec, &direct_putvar);
+            const ref = try read_var(self, p, vref, vspec, &direct_putvar);
             // XX: In principle we could already handle "Undefined" being represented
             // as NoRef, but we don't support undefined yets and we likely want
             // another sentinel value than Noref, to catch mistakes easier.
             if (ref != iref) {
                 onlyref = if (onlyref) |only| (if (only == ref or only == NoRef) ref else null) else null;
             }
-            pred_buf[vi] = .{ .ref = ref, .direct_putvar = direct_putvar };
+            pred_buf[pi] = .{ .ref = ref, .direct_putvar = direct_putvar };
         }
 
         if (onlyref) |ref| {
@@ -141,15 +141,15 @@ fn resolve_phi(self: *FLIR, n: u16, i: *FLIR.Inst, iref: u16, pred_buf: []PredIt
             i_ref.f.kill_op1 = false; // flag for "resolved". techy we don't depend on op1 anymore :zany_face:
             i_ref.op2 = ref; // if set, this is a trivial alias to phi_i.op2
         } else {
-            for (self.preds(n), 0..) |v, vi| {
-                if (pred_buf[vi].direct_putvar != NoRef) {
-                    const p = &self.i.items[pred_buf[vi].direct_putvar];
-                    p.tag = .putphi;
-                    p.op1 = pred_buf[vi].ref;
-                    p.op2 = iref;
+            for (self.preds(n), 0..) |p, pi| {
+                if (pred_buf[pi].direct_putvar != NoRef) {
+                    const put = &self.i.items[pred_buf[pi].direct_putvar];
+                    put.tag = .putphi;
+                    put.op1 = pred_buf[pi].ref;
+                    put.op2 = iref;
                 } else {
-                    const vn = &self.n.items[v];
-                    vn.putphi_list = try self.addRawInst(.{ .tag = .putphi, .op1 = pred_buf[vi].ref, .op2 = iref, .next = vn.putphi_list, .node_delete_this = v });
+                    const vn = &self.n.items[p];
+                    vn.putphi_list = try self.addRawInst(.{ .tag = .putphi, .op1 = pred_buf[pi].ref, .op2 = iref, .next = vn.putphi_list, .node_delete_this = p });
                 }
             }
             const i_ref = self.iref(iref).?;
@@ -240,6 +240,13 @@ fn cleanup_trivial_phi_and_vars(self: *FLIR) !void {
         var next_ptr: *u16 = &n.phi_list;
         while (next_ptr.* != NoRef) {
             const i = self.iref(next_ptr.*) orelse return error.FLIRError;
+            if (self.iref(i.op1)) |ivar| {
+                if (ivar.tag != .variable) return error.FLIRError;
+                // only for debugging: refer to origin variable by index
+                // (NOT A PROMISE TO KEEP CSSA, optimization will break that)
+                // i_ref.op1 = self.iref(vref).?.op1;
+                i.op1 = ivar.op1;
+            }
             if (i.op2 != NoRef) {
                 const delenda = next_ptr.*;
                 next_ptr.* = i.next;

@@ -275,7 +275,8 @@ pub fn print_inst(self: *FLIR, ref: u16, i: *FLIR.Inst) void {
     } else if (i.tag == .icmp) {
         print(".{s}", .{@tagName(i.intcond())});
     } else if (i.tag == .phi) {
-        if (self.get_varname(i.op1)) |nam| {
+        // TODO: likely stale in all
+        if (self.dbg_get_varname(ref)) |nam| {
             print(" {s}", .{nam});
         } else if (self.unsealed) {
             print(" ${}", .{i.op1});
@@ -316,20 +317,17 @@ pub fn print_inst(self: *FLIR, ref: u16, i: *FLIR.Inst) void {
         print(" ~~", .{});
     }
     if (i.tag == .putphi) {
-        const targ = if (self.iref(i.op2)) |iref| iref.* else empty_inst;
-        const src = if (self.iref(i.op1)) |iref| iref.* else empty_inst;
-        const targvar = if (targ.tag == .phi) targ.op1 else NoRef;
-        const srcvar = if (src.tag == .phi) src.op1 else NoRef;
-        const targnam = self.get_varname(targvar);
-        if (srcvar == targvar) {
-            if (targnam) |nam| {
-                print(" ({s})", .{nam});
+        const srcnam = self.dbg_get_varname(i.op1);
+        const targnam = self.dbg_get_varname(i.op2);
+        // TODO: ?? compare src_idx == targ_idx by vindex here, this was just a sloppy hack
+        if (targnam) |targ| {
+            if (targ.ptr == (srcnam orelse "").ptr) { // aaaaaa
+                print(" ({s})", .{targ});
+            } else {
+                print(" ({s} <- {s})", .{ targ, srcnam orelse "*" });
             }
-        } else {
-            const srcnam = self.get_varname(srcvar);
-            if (srcnam != null or targnam != null) {
-                print(" ({s} <- {s})", .{ targnam orelse "*", srcnam orelse "*" });
-            }
+        } else if (srcnam) |nam| {
+            print(" (* <- {s})", .{nam});
         }
 
         if (self.ipreg(i.op2)) |reg| {
@@ -380,7 +378,7 @@ fn print_node(self: *FLIR, n: *FLIR.Node) void {
         const i = &self.i.items[put_iter];
         if (i.tag == .putvar) {
             print("  VAR ", .{});
-            if (self.get_varname(i.op2)) |nam| {
+            if (self.dbg_get_varname(i.op2)) |nam| {
                 print("{s}", .{nam});
             } else {
                 print("${}", .{i.op2});
@@ -535,7 +533,7 @@ pub fn print_debug_map(self: *FLIR, ni: u16, target: u32) void {
     while (it.next()) |item| {
         const i = item.i;
         if (i.tag != .phi) break;
-        if (self.get_varname(i.op1)) |nam| {
+        if (self.dbg_get_varname(item.ref)) |nam| {
             print("{s}: ", .{nam});
             if (i.ipreg()) |reg| {
                 const tag = @tagName(X86Asm.IPReg.from(reg));

@@ -66,6 +66,7 @@ pub fn build(b: *std.Build) void {
         .filters = b.option([]const []const u8, "test-filter", "Skip tests that do not match any filter") orelse &[0][]const u8{},
     });
     test_user.root_module.addImport("forklift", forklift);
+    b.installArtifact(test_user);
     const run_test_user = b.addRunArtifact(test_user);
 
     // requires root or virtualization, so separate
