@@ -82,7 +82,7 @@ fn read_var(self: *FLIR, node: u16, vref: u16, vspec: u8, direct_putvar: ?*u16) 
             // fill the phi node already;
             break :thedef try FLIR.addPhi(self, node, vref, vspec);
         } else if (n.npred == 1) {
-            const pred = self.refs.items[n.predref];
+            const pred = n.predref;
             // assert recursion eventually terminates
             // TODO: still want this check somehow, we just doesn't fill dfnum yet..
             // assert(self.n.items[pred].dfnum < n.dfnum);

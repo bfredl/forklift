@@ -579,7 +579,7 @@ pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
 
     const n = &self.n.items[node];
     var put_iter = n.putphi_list;
-    // var counter: u32 = 1;
+    var counter: u32 = 1;
     while (put_iter != NoRef) {
         const p = &self.i.items[put_iter];
         if (p.tag == .putvar and p.op2 == vref) {
@@ -587,9 +587,9 @@ pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
             return;
         }
         put_iter = p.next;
-        // counter += 1;
+        counter += 1;
     }
-    // std.debug.print("\nCANTER {}\n", .{counter});
+    std.debug.print("\nCANTER {} {}\n", .{ node == 0, counter });
     n.putphi_list = try self.addRawInst(.{ .tag = .putvar, .op1 = refval, .op2 = vref, .next = n.putphi_list, .node_delete_this = node });
 }
 
@@ -694,12 +694,23 @@ pub fn variable(self: *Self, typ: defs.SpecType, init_val: ?u16) !u16 {
 }
 
 pub fn preds(self: *Self, i: u16) []u16 {
-    const v = self.n.items[i];
+    const v = &self.n.items[i];
+    if (v.npred == 1) {
+        // TODO: pointer hazard if we add new nodes!!
+        return (&v.predref)[0..1];
+    }
     return self.refs.items[v.predref..][0..v.npred];
 }
 
 pub fn cleanup_preds(self: *Self, i: u16) void {
     const v = &self.n.items[i];
+    if (v.npred == 1) {
+        // TODO: NOT LIKE THIS
+        if (v.predref == NoRef) {
+            v.npred = 0;
+        }
+        return;
+    }
     const p = self.refs.items[v.predref..];
     var pos: u16 = 0;
     while (pos < v.npred) {
@@ -710,6 +721,10 @@ pub fn cleanup_preds(self: *Self, i: u16) void {
             p[pos] = p[v.npred - 1];
             v.npred -= 1;
         }
+    }
+    if (v.npred == 1) {
+        // TODO: NOT LIKE THIS
+        v.predref = self.refs.items[v.predref];
     }
 }
 
@@ -733,6 +748,11 @@ fn predlink(self: *Self, i: u16, si: u1, split: bool) !void {
 
 fn addpred(self: *Self, s: u16, i: u16) !void {
     const n = self.n.items;
+    // special case: single pred is inline
+    if (n[s].npred == 1) {
+        n[s].predref = i;
+        return;
+    }
     // tricky: build the reflist per node backwards,
     // so the end result is the start index
     if (n[s].predref == 0) {
@@ -928,7 +948,7 @@ pub fn const_fold_legalize(self: *Self) !void {
 
                     const v = &self.n.items[deleted];
                     // TODO: rethink this, deleting preds should be easier..
-                    if (v.npred > 0) {
+                    if (v.npred > 1) {
                         const p = self.refs.items[v.predref..];
                         for (0..v.npred) |ipred| {
                             if (p[ipred] == ni) {
@@ -937,6 +957,14 @@ pub fn const_fold_legalize(self: *Self) !void {
                                 break;
                             }
                         }
+                        if (v.npred == 1) {
+                            // HIIIIII
+                            v.predref = self.refs.items[v.predref];
+                        }
+                    } else if (v.npred == 1) {
+                        // TODO: he be DED jim!
+                        v.predref = 0;
+                        v.npred = 0;
                     }
                 } else {
                     self.peep_icmp_swap(i);
