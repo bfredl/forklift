@@ -287,11 +287,9 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
         for (0..f.n_params) |i| {
             const mut = (f.args_mut & (@as(u64, 1) << @as(u6, @intCast((i & 63))))) != 0;
             if (mut) {
-                const src = locals[i];
                 // dbg("TYP: {}\n", .{f.local_types[i]});
                 const typ: forklift.defs.SpecType = specType(f.local_types[i]) orelse return error.NotImplemented;
-                locals[i] = try ir.variable(typ);
-                try ir.putvar(node, locals[i], src);
+                locals[i] = try ir.variable(typ, locals[i]);
             }
         }
     }
@@ -318,7 +316,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     try ir.ret(exit_node);
     for (0..f.n_res) |i| {
         const tret = specType(f.res_types[i]) orelse return error.NotImplemented;
-        exit_vars[i] = try ir.variable(tret);
+        exit_vars[i] = try ir.variable(tret, null);
         try ir.retval(exit_node, tret, exit_vars[i]);
     }
     // FAIL: integrate with multiple res_vars because of the wasm multivalue blocks extension
@@ -334,15 +332,14 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
             const n_decl = try r.readu();
             const typ: defs.ValType = @enumFromInt(try r.readByte());
             const init_val = StackValue.default(typ) orelse return error.InvalidFormat;
+            // JÄMMER: maybe just ir.zero(spectype) ??
+            const t = specType(typ) orelse return error.NotImplemented;
+            const initv = try switch (t) {
+                .avxval => |k| if (k == .sd) ir.const_f64(node, 0) else ir.const_f32(node, 0),
+                .intptr => ir.const_uint(init_val.u32()),
+            };
             for (0..n_decl) |_| {
-                const t = specType(typ) orelse return error.NotImplemented;
-                locals[i] = try ir.variable(t);
-                // JÄMMER: maybe just ir.zero(spectype) ??
-                const initv = try switch (t) {
-                    .avxval => |k| if (k == .sd) ir.const_f64(node, 0) else ir.const_f32(node, 0),
-                    .intptr => ir.const_uint(init_val.u32()),
-                };
-                try ir.putvar(node, locals[i], initv);
+                locals[i] = try ir.variable(t, initv);
                 i += 1;
             }
         }
@@ -428,7 +425,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const exit = try ir.addNode();
                 // technically just a single phi. but FLIR.variable() is meant to be cheap enough to not nead
                 // a separate API for "gimmie one phi".
-                const res_var = if (n_results > 0) try ir.variable(.{ .intptr = .dword }) else NoRef;
+                const res_var = if (n_results > 0) try ir.variable(.{ .intptr = .dword }, null) else NoRef;
                 // TODO: with n_args, value_stack_level is without the args
                 try label_stack.append(gpa, .{ .c_ip = c_ip, .ir_target = exit, .loop = false, .res_var = res_var, .value_stack_level = value_stack.items.len });
             },
@@ -452,7 +449,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const exit = try ir.addNode();
                 const else_ = if (c_inst == .else_) try ir.addNode() else exit;
 
-                const res_var = if (n_results > 0) try ir.variable(.{ .intptr = .dword }) else NoRef;
+                const res_var = if (n_results > 0) try ir.variable(.{ .intptr = .dword }, null) else NoRef;
                 try label_stack.append(gpa, .{ .c_ip = c_ip, .ir_target = exit, .else_target = else_, .loop = false, .res_var = res_var, .value_stack_level = value_stack.items.len });
 
                 try ir.addLink(node, 0, else_);

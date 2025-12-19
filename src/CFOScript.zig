@@ -610,7 +610,7 @@ fn do_parse(self: *Self) !bool {
                 const item = try nonexisting(&self.vars, name, "variable");
                 const typ = try self.maybe_colon_type();
 
-                const val = try self.ir.variable(typ orelse int_ctx);
+                const val = try self.ir.variable(typ orelse int_ctx, null);
                 item.* = .{ .ref = val, .is_mut = true };
 
                 if (self.t.nonws() == ',') {

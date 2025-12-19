@@ -55,11 +55,10 @@ test "diamond cfg" {
     const start = try self.addNode();
     const arg1 = try self.arg(.{ .intptr = .quadword });
     const arg2 = try self.arg(.{ .intptr = .quadword });
-    const v = try self.variable(.{ .intptr = .quadword });
 
     // const const_0 = try FLIR.IntZero;
     const const_42 = try self.const_int(42);
-    try self.putvar(start, v, const_42);
+    const v = try self.variable(.{ .intptr = .quadword }, const_42);
     _ = try self.icmp(start, .quadword, .lt, arg1, v);
 
     const left = try self.addNode();

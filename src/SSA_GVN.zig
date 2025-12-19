@@ -68,7 +68,15 @@ fn read_var(self: *FLIR, node: u16, vref: u16, vspec: u8, direct_putvar: ?*u16) 
     }
 
     const def: u16 = thedef: {
-        if (self.unsealed or n.npred > 1) {
+        if (node == 0) {
+            // NB: might be overriden by a putvar above
+            const vvar = self.iref(vref) orelse return error.FLIRError;
+            if (vvar.op2 != NoRef) {
+                break :thedef vvar.op2;
+            } else {
+                return error.FLIRError;
+            }
+        } else if (self.unsealed or n.npred > 1) {
             // as an optimization, we could check if all predecessors
             // are filled (pred[i].dfnum < n.dfnum), and in that case
             // fill the phi node already;

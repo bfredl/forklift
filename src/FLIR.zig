@@ -579,7 +579,7 @@ pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
 
     const n = &self.n.items[node];
     var put_iter = n.putphi_list;
-    var counter: u32 = 1;
+    // var counter: u32 = 1;
     while (put_iter != NoRef) {
         const p = &self.i.items[put_iter];
         if (p.tag == .putvar and p.op2 == vref) {
@@ -587,9 +587,9 @@ pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
             return;
         }
         put_iter = p.next;
-        counter += 1;
+        // counter += 1;
     }
-    std.debug.print("\nCANTER {}\n", .{counter});
+    // std.debug.print("\nCANTER {}\n", .{counter});
     n.putphi_list = try self.addRawInst(.{ .tag = .putvar, .op1 = refval, .op2 = vref, .next = n.putphi_list, .node_delete_this = node });
 }
 
@@ -638,6 +638,7 @@ pub fn callarg(self: *Self, node: u16, toinst: u16, ref: u16, typ: defs.SpecType
         .op2 = tocall,
         .next = NoRef,
     }, node);
+    inst = self.iref(toinst) orelse return error.FLIRError;
     inst.next = nextarg;
     return nextarg;
 }
@@ -685,8 +686,8 @@ pub fn arg(self: *Self, typ: defs.SpecType) !u16 {
     return inst;
 }
 
-pub fn variable(self: *Self, typ: defs.SpecType) !u16 {
-    const inst = try self.addRawInst(.{ .tag = .variable, .op1 = self.nvar, .op2 = NoRef, .spec = typ.into(), .next = self.var_list });
+pub fn variable(self: *Self, typ: defs.SpecType, init_val: ?u16) !u16 {
+    const inst = try self.addRawInst(.{ .tag = .variable, .op1 = self.nvar, .op2 = init_val orelse NoRef, .spec = typ.into(), .next = self.var_list });
     self.var_list = inst;
     self.nvar += 1;
     return inst;
