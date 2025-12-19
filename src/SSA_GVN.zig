@@ -68,6 +68,7 @@ fn read_var(self: *FLIR, node: u16, vref: u16, vspec: u8, direct_putvar: ?*u16) 
     }
 
     const def: u16 = thedef: {
+        const use_early_sealing = true;
         if (node == 0) {
             // NB: might be overriden by a putvar above
             const vvar = self.iref(vref) orelse return error.FLIRError;
@@ -76,7 +77,7 @@ fn read_var(self: *FLIR, node: u16, vref: u16, vspec: u8, direct_putvar: ?*u16) 
             } else {
                 return error.FLIRError;
             }
-        } else if ((self.unsealed and !n.sealed_as_one) or n.npred > 1) {
+        } else if ((self.unsealed and !(use_early_sealing and n.sealed_as_one)) or n.npred > 1) {
             // as an optimization, we could check if all predecessors
             // are filled (pred[i].dfnum < n.dfnum), and in that case
             // fill the phi node already;
