@@ -106,7 +106,7 @@ pub const Node = struct {
     s: [2]u16 = .{ 0, 0 }, // sucessors
     dfnum: u16 = 0,
 
-    // TODO: inline if npred==1 which is REALLY common
+    sealed_as_one: bool = false, // we know early that (npred <= 1)
     predref: u16 = 0,
     npred: u16 = 0,
     // NB: might be NoRef if the node was deleted,
@@ -336,16 +336,28 @@ pub fn addNode(self: *Self) !u16 {
 }
 
 // not-taken/unconditional branch of `n` set to the new node
-pub fn addNodeAfter(self: *Self, node: u16) !u16 {
+pub fn addNodeAfter(self: *Self, node: u16, sealed: bool) !u16 {
     const new_node = try self.addNode();
-    try self.addLink(node, 0, new_node);
+    try self.addLink(node, 0, new_node, sealed);
     return new_node;
 }
 
-pub fn addLink(self: *Self, node_from: u16, branch: u1, node_to: u16) !void {
+pub fn addLink(self: *Self, node_from: u16, branch: u1, node_to: u16, to_sealed: bool) !void {
     const succ = &self.n.items[node_from].s[branch];
     if (succ.* != 0) return error.FLIRError;
     succ.* = node_to;
+
+    const to = &self.n.items[node_to];
+    if (to.sealed_as_one) {
+        return error.FLIRError;
+    }
+    if (to_sealed) {
+        // fucking mess, cannot set npred yet.
+        // TODO: eliminate calc_preds and keep track early!
+        // use linked lists or something to delet self.refs!
+        to.sealed_as_one = true;
+        to.predref = node_from;
+    }
 }
 
 pub fn addRawInst(self: *Self, inst: Inst) !u16 {
@@ -579,7 +591,7 @@ pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
 
     const n = &self.n.items[node];
     var put_iter = n.putphi_list;
-    var counter: u32 = 1;
+    // var counter: u32 = 1;
     while (put_iter != NoRef) {
         const p = &self.i.items[put_iter];
         if (p.tag == .putvar and p.op2 == vref) {
@@ -587,9 +599,9 @@ pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
             return;
         }
         put_iter = p.next;
-        counter += 1;
+        // counter += 1;
     }
-    std.debug.print("\nCANTER {} {}\n", .{ node == 0, counter });
+    // std.debug.print("\nCANTER {} {}\n", .{ node == 0, counter });
     n.putphi_list = try self.addRawInst(.{ .tag = .putvar, .op1 = refval, .op2 = vref, .next = n.putphi_list, .node_delete_this = node });
 }
 
@@ -702,12 +714,12 @@ pub fn preds(self: *Self, i: u16) []u16 {
     return self.refs.items[v.predref..][0..v.npred];
 }
 
-pub fn cleanup_preds(self: *Self, i: u16) void {
+pub fn cleanup_preds(self: *Self, i: u16) !void {
     const v = &self.n.items[i];
     if (v.npred == 1) {
         // TODO: NOT LIKE THIS
         if (v.predref == NoRef) {
-            v.npred = 0;
+            return error.FLIRError; // this shouldn't happen
         }
         return;
     }
@@ -750,6 +762,7 @@ fn addpred(self: *Self, s: u16, i: u16) !void {
     const n = self.n.items;
     // special case: single pred is inline
     if (n[s].npred == 1) {
+        if (n[s].sealed_as_one and n[s].predref != i) return error.FLIRError; // da fuck
         n[s].predref = i;
         return;
     }
@@ -778,6 +791,9 @@ pub fn calc_preds(self: *Self) !void {
     for (0..self.n.items.len) |i| {
         // by value. predlink might reallocate self.n in place!
         const v = self.n.items[i];
+
+        if (v.sealed_as_one and v.npred > 1) return error.FLIRError; // YOU LIED
+
         const shared = v.s[1] > 0 and v.s[1] == v.s[0];
         if (shared) return error.NotSureAboutThis;
         const split = v.s[1] > 0;
@@ -907,7 +923,7 @@ pub fn reorder_nodes(self: *Self) !void {
         for (self.preds(uv(ni))) |*pi| {
             pi.* = newlink[pi.*];
         }
-        self.cleanup_preds(uv(ni));
+        try self.cleanup_preds(uv(ni));
 
         n.loop = newlink[n.loop];
 
@@ -965,6 +981,7 @@ pub fn const_fold_legalize(self: *Self) !void {
                         // TODO: he be DED jim!
                         v.predref = 0;
                         v.npred = 0;
+                        // v.sealed_as_one = false;
                     }
                 } else {
                     self.peep_icmp_swap(i);

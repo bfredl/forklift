@@ -76,12 +76,13 @@ fn read_var(self: *FLIR, node: u16, vref: u16, vspec: u8, direct_putvar: ?*u16) 
             } else {
                 return error.FLIRError;
             }
-        } else if (self.unsealed or n.npred > 1) {
+        } else if ((self.unsealed and !n.sealed_as_one) or n.npred > 1) {
             // as an optimization, we could check if all predecessors
             // are filled (pred[i].dfnum < n.dfnum), and in that case
             // fill the phi node already;
             break :thedef try FLIR.addPhi(self, node, vref, vspec);
-        } else if (n.npred == 1) {
+        } else if (n.npred == 1 or n.sealed_as_one) {
+            // if (self.unsealed and n.sealed_as_one) std.debug.print("FIIIINA fisken\n", .{});
             const pred = n.predref;
             // assert recursion eventually terminates
             // TODO: still want this check somehow, we just doesn't fill dfnum yet..

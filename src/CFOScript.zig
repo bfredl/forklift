@@ -369,7 +369,7 @@ pub fn braced_block(self: *Self) !?bool {
 }
 
 pub fn loop(self: *Self) !void {
-    const entry = try self.ir.addNodeAfter(self.curnode);
+    const entry = try self.ir.addNodeAfter(self.curnode, false);
     const exit = try self.ir.addNode();
 
     self.curnode = entry;
@@ -384,7 +384,7 @@ pub fn loop(self: *Self) !void {
     _ = try self.braced_block();
     try self.t.lbrk();
 
-    try self.ir.addLink(self.curnode, 0, entry);
+    try self.ir.addLink(self.curnode, 0, entry, false);
     self.curnode = exit;
 }
 
@@ -397,7 +397,7 @@ pub fn break_stmt(self: *Self, branch: u1) !void {
     while (loopen) |l| {
         step -= 1;
         if (step == 0) {
-            try self.ir.addLink(self.curnode, branch, l.exit);
+            try self.ir.addLink(self.curnode, branch, l.exit, false);
             return;
         }
         loopen = l.next;
@@ -411,7 +411,7 @@ pub fn if_stmt(self: *Self) !void {
     _ = try self.cond_expr(typ);
     try self.t.expect_char(')');
     const prev_node = self.curnode;
-    const other = try self.ir.addNodeAfter(prev_node);
+    const other = try self.ir.addNodeAfter(prev_node, false); // maybe sometimes?
     if (self.t.keyword()) |kw2| {
         if (mem.eql(u8, kw2, "break")) {
             try self.break_stmt(1);
@@ -422,17 +422,17 @@ pub fn if_stmt(self: *Self) !void {
     } else {
         const then = try self.ir.addNode();
         self.curnode = then;
-        try self.ir.addLink(prev_node, 1, then);
+        try self.ir.addLink(prev_node, 1, then, true);
         _ = (try self.braced_block()) orelse return error.SyntaxError;
         if (self.t.keyword()) |kw| {
             if (mem.eql(u8, kw, "else")) {
                 // TODO: support if (foo) { stuff; break;} else {bar;} even tho it is technically redundant
-                const after = try self.ir.addNodeAfter(self.curnode);
+                const after = try self.ir.addNodeAfter(self.curnode, false);
                 self.curnode = other;
                 _ = (try self.braced_block()) orelse return error.SyntaxError;
                 try self.t.lbrk();
                 if (self.curnode != FLIR.NoRef) {
-                    try self.ir.addLink(self.curnode, 0, after);
+                    try self.ir.addLink(self.curnode, 0, after, false);
                 }
                 self.curnode = after;
             } else {
@@ -441,7 +441,7 @@ pub fn if_stmt(self: *Self) !void {
         } else {
             try self.t.lbrk();
             if (self.curnode != FLIR.NoRef) {
-                try self.ir.addLink(self.curnode, 0, other);
+                try self.ir.addLink(self.curnode, 0, other, false);
             }
             self.curnode = other;
         }

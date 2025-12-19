@@ -373,7 +373,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
 
                 // TODO: likely FLIR just allowing unlikely orphaned exits should be fine
                 // but check this. for now emit a fake "ret" instruction
-                try ir.addLink(node, 0, exit_node); // branch taken
+                try ir.addLink(node, 0, exit_node, false); // branch taken
                 dead_end = true;
                 if (f.n_res > 0) {
                     if (f.n_res > 1) return error.NotImplemented;
@@ -413,7 +413,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const n_args, const n_results = try typ.arity(in.mod);
                 if (n_args != 0 or n_results > 1) return error.NotImplemented;
                 c_ip += 1;
-                const entry = try ir.addNodeAfter(node);
+                const entry = try ir.addNodeAfter(node, false);
                 node = entry;
                 try label_stack.append(gpa, .{ .c_ip = c_ip, .ir_target = entry, .loop = true, .res_var = NoRef, .value_stack_level = value_stack.items.len });
             },
@@ -452,8 +452,8 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const res_var = if (n_results > 0) try ir.variable(.{ .intptr = .dword }, null) else NoRef;
                 try label_stack.append(gpa, .{ .c_ip = c_ip, .ir_target = exit, .else_target = else_, .loop = false, .res_var = res_var, .value_stack_level = value_stack.items.len });
 
-                try ir.addLink(node, 0, else_);
-                try ir.addLink(node, 1, then); // branch taken
+                try ir.addLink(node, 0, else_, else_ != exit);
+                try ir.addLink(node, 1, then, true); // branch taken
                 node = then;
             },
             .else_ => {
@@ -468,7 +468,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     if (has_res) {
                         try ir.putvar(node, label.res_var, value_stack.pop().?);
                     }
-                    try ir.addLink(node, 0, label.ir_target);
+                    try ir.addLink(node, 0, label.ir_target, false);
                 } else {
                     dead_end = false;
                     if (value_stack.items.len < label.value_stack_level) return error.InternalCompilerError;
@@ -495,7 +495,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                         } else if (has_res) {
                             try ir.putvar(node, label.res_var, value_stack.pop().?);
                         }
-                        try ir.addLink(node, 0, label.ir_target);
+                        try ir.addLink(node, 0, label.ir_target, false);
                     } else {
                         if (value_stack.items.len < label.value_stack_level) return error.InternalCompilerError;
                         value_stack.items.len = label.value_stack_level;
@@ -519,7 +519,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 }
             },
             .ret => {
-                try ir.addLink(node, 0, exit_node);
+                try ir.addLink(node, 0, exit_node, false);
                 if (f.n_res > 0) {
                     if (f.n_res > 1) return error.NotImplemented;
                     if (f.n_res == 1) {
@@ -547,9 +547,9 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     // don't pop in case branch NOT taken
                     try ir.putvar(node, target.res_var, value_stack.items[value_stack.items.len - 1]);
                 }
-                try ir.addLink(node, if (inst == .br_if) 1 else 0, target.ir_target); // branch taken
+                try ir.addLink(node, if (inst == .br_if) 1 else 0, target.ir_target, false); // branch taken
                 if (inst == .br_if) {
-                    node = try ir.addNodeAfter(node);
+                    node = try ir.addNodeAfter(node, true);
                 } else {
                     if (r.peekOpCode() != .end and r.peekOpCode() != .else_) {
                         const exit_from = label_stack.items[label_stack.items.len - 1].c_ip;
