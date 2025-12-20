@@ -349,12 +349,13 @@ pub fn addLink(self: *Self, node_from: u16, branch: u1, node_to: u16, to_sealed:
     succ.* = node_to;
 
     const to = &self.n.items[node_to];
-    if (to.sealed_as_one) {
+    if (to.sealed_as_one or (to_sealed and to.npred > 0)) {
         return error.FLIRError;
     }
     s_pred_next.* = to.predlink; // easy!
     to.predlink = node_from;
     to.sealed_as_one = to_sealed;
+    to.npred += 1;
 }
 
 pub fn addRawInst(self: *Self, inst: Inst) !u16 {

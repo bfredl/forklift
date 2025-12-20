@@ -91,16 +91,16 @@ pub fn check_ir_valid(self: *FLIR) !void {
     if (comptime FLIR.minimal) {
         return;
     }
-    const reached = try self.gpa.alloc(bool, self.n.items.len);
-    defer self.gpa.free(reached);
-    @memset(reached, false);
+    const reached_by = try self.gpa.alloc(i32, self.n.items.len);
+    defer self.gpa.free(reached_by);
+    @memset(reached_by, 0);
 
     var worklist: ArrayList(u16) = .empty;
     defer worklist.deinit(self.gpa);
     for (self.n.items, 0..) |*n, ni| {
         for (n.s) |s| {
             if (s > self.n.items.len) return error.InvalidCFG;
-            reached[s] = true;
+            if (s != 0) reached_by[s] += 1;
         }
         if (true) { // always now???????????
             var iter = self.predIter(@intCast(ni));
@@ -136,12 +136,21 @@ pub fn check_ir_valid(self: *FLIR) !void {
     for (self.n.items, 0..) |*n, ni| {
         const last = try get_jmp_or_last(self, n);
         const is_branch = (last == .icmp or last == .fcmp);
+        const reachable = ni == 0 or reached_by[ni] > 0;
         if (is_branch != (n.s[1] != 0)) return error.InvalidCFG;
         if (is_branch and n.is_return) return error.InvalidCFG;
         if (n.is_return and n.s[0] != 0) return error.InvalidCFG;
-        if (n.s[0] == 0 and (!n.is_return and reached[ni])) return error.InvalidCFG;
+        if (n.s[0] == 0 and (!n.is_return and reachable)) return error.InvalidCFG;
         // TODO: also !reached and n.s[0] != 0 (not verified by remove_empty)
-        if (!reached[ni] and (last != null)) return error.InvalidCFG;
+        if (!reachable and (last != null)) return error.InvalidCFG;
+
+        var iter = self.predIter(uv(ni));
+        var pi: u16 = 0;
+        while (iter.next()) |_| {
+            pi += 1;
+        }
+        if (pi != reached_by[ni]) return error.InvalidCFG;
+        if (pi != n.npred) return error.InvalidCFG;
     }
 }
 
