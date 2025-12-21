@@ -342,7 +342,6 @@ pub fn addNodeAfter(self: *Self, node: u16, sealed: bool) !u16 {
 }
 
 pub fn addLink(self: *Self, node_from: u16, branch: u1, node_to: u16, to_sealed: bool) !void {
-    std.debug.print("tree is like {} branch {} to {}\n", .{ node_from, branch, node_to });
     const succ = &self.n.items[node_from].s[branch];
     const s_pred_next = &self.n.items[node_from].s_pred_next[branch];
     if (succ.* != 0 or s_pred_next.* != NoRef) return error.FLIRError;
@@ -725,7 +724,6 @@ pub fn predIter(self: *Self, n: u16) struct {
     const node = self.n.items[n];
     const link = node.predlink;
     if (link != NoRef) {
-        std.debug.print("LINK: {} really to {}\n", .{ link, n });
         const p = self.n.items[link];
         if (p.s[0] != n and p.s[1] != n) @panic("diskho");
         return .{ .node = link, .si = if (p.s[0] != n) 1 else 0, .s = self };
@@ -735,7 +733,7 @@ pub fn predIter(self: *Self, n: u16) struct {
     return .{};
 }
 
-fn predlink(self: *Self, i: u16, si: u1) !void {
+fn check_link(self: *Self, i: u16, si: u1) !void {
     var n = self.n.items;
     const s = n[i].s[si];
     if (s == 0) return;
@@ -746,14 +744,37 @@ fn predlink(self: *Self, i: u16, si: u1) !void {
         n[inter].npred = 1;
         n[i].s[si] = inter;
         n[inter].s[0] = s;
-        if (true) @panic("YOU CAN (NOT) FIX THIS");
+        n[inter].predlink = i;
+
+        // alternatively call into some reusable code to delet the link and
+        // then add two more.
+
+        n[inter].s_pred_next[0] = n[i].s_pred_next[si];
+        n[i].s_pred_next[si] = NoRef;
+        if (n[s].predlink == i) {
+            n[s].predlink = inter;
+        } else {
+            var nod = n[s].predlink;
+            while (true) {
+                if (nod == NoRef) return error.FLIRError;
+                const nodbranch: u1 = if (n[nod].s[0] == s) 0 else 1;
+                if (nodbranch == 1 and n[nod].s[1] != s) return error.FLIRError;
+
+                if (n[nod].s_pred_next[nodbranch] == i) {
+                    n[nod].s_pred_next[nodbranch] = inter;
+                    break;
+                } else {
+                    nod = n[nod].s_pred_next[nodbranch];
+                }
+            }
+        }
     }
 }
 
 pub fn check_critical_edges(self: *Self) !void {
     // TODO: policy for rebuilding refs from scratch?
     for (0..self.n.items.len) |i| {
-        // by value. predlink might reallocate self.n in place!
+        // by value. check_link might reallocate self.n in place!
         const v = self.n.items[i];
 
         if (v.sealed_as_one and v.npred > 1) return error.FLIRError; // YOU LIED
@@ -762,9 +783,11 @@ pub fn check_critical_edges(self: *Self) !void {
         if (shared) return error.NotSureAboutThis;
         const split = v.s[1] > 0;
         if (split) {
-            try self.predlink(@intCast(i), 0);
-            try self.predlink(@intCast(i), 1);
+            try self.check_link(@intCast(i), 0);
+            try self.check_link(@intCast(i), 1);
         }
+
+        // if (true and true) try self.check_ir_valid();
     }
 }
 
@@ -874,6 +897,7 @@ pub fn reorder_nodes(self: *Self) !void {
         newpos += 1;
     }
 
+    if (newpos < self.n.items.len) @panic("are we?"); // pred code is suss, rewrite
     assert(newpos <= self.n.items.len);
     // oopsie woopsie, we killed some dead nodes!
     self.n.items.len = newpos;
