@@ -343,17 +343,24 @@ pub fn addNodeAfter(self: *Self, node: u16, sealed: bool) !u16 {
 
 pub fn addLink(self: *Self, node_from: u16, branch: u1, node_to: u16, to_sealed: bool) !void {
     const succ = &self.n.items[node_from].s[branch];
-    const s_pred_next = &self.n.items[node_from].s_pred_next[branch];
-    if (succ.* != 0 or s_pred_next.* != NoRef) return error.FLIRError;
+    if (succ.* != 0) return error.FLIRError;
     succ.* = node_to;
 
     const to = &self.n.items[node_to];
     if (to.sealed_as_one or (to_sealed and to.npred > 0)) {
         return error.FLIRError;
     }
+    to.sealed_as_one = to_sealed;
+    try self.setPredNext(node_from, branch, node_to);
+}
+
+fn setPredNext(self: *Self, node_from: u16, branch: u1, node_to: u16) !void {
+    const s_pred_next = &self.n.items[node_from].s_pred_next[branch];
+    if (s_pred_next.* != NoRef) return error.FLIRError;
+
+    const to = &self.n.items[node_to];
     s_pred_next.* = to.predlink; // easy!
     to.predlink = node_from;
-    to.sealed_as_one = to_sealed;
     to.npred += 1;
 }
 
@@ -882,6 +889,11 @@ pub fn reorder_nodes(self: *Self) !void {
         const ni = if (oldlink[old_ni] != NoRef) oldlink[old_ni] else old_ni;
         const n = &self.n.items[ni];
 
+        n.npred = 0;
+        n.predlink = NoRef;
+        n.s_pred_next[0] = NoRef;
+        n.s_pred_next[1] = NoRef;
+
         newlink[old_ni] = newpos;
 
         if (ni != newpos) {
@@ -897,25 +909,19 @@ pub fn reorder_nodes(self: *Self) !void {
         newpos += 1;
     }
 
-    if (newpos < self.n.items.len) @panic("are we?"); // pred code is suss, rewrite
+    assert(newpos > 0 and newlink[0] == 0);
     assert(newpos <= self.n.items.len);
+
     // oopsie woopsie, we killed some dead nodes!
     self.n.items.len = newpos;
 
     // fixup references:
     for (self.n.items, 0..) |*n, ni| {
-        for (&n.s) |*s| {
-            if (s.* != NoRef) {
+        for (0.., &n.s) |bi, *s| {
+            if (s.* != 0) {
                 s.* = newlink[s.*];
+                try self.setPredNext(uv(ni), @intCast(bi), s.*);
             }
-        }
-        for (&n.s_pred_next) |*s| {
-            if (s.* != NoRef) {
-                s.* = newlink[s.*];
-            }
-        }
-        if (n.predlink != NoRef) {
-            n.predlink = newlink[n.predlink];
         }
 
         n.loop = newlink[n.loop];
