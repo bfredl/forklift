@@ -426,7 +426,8 @@ fn print_mcval(i: *FLIR.Inst) void {
         print(" =>", .{});
     }
     switch (i.mckind) {
-        .frameslot => print(" [rbp-8*{}]", .{i.mcidx}),
+        .frameslot => print(" [slot {}]", .{i.mcidx}),
+        .memarg => print(" [rbp+8*{}]", .{i.mcidx}),
         .ipreg => print(" ${s}", .{@tagName(@as(X86Asm.IPReg, @enumFromInt(i.mcidx)))}),
         .vfreg => print(" $ymm{}", .{i.mcidx}),
         else => {

@@ -89,3 +89,8 @@ test "swap 3" {
     try fluffer(6, &.{ p(2), p(0), p(1), p(3), p(4), p(5) });
     try fluffer(6, &.{ p(1), p(2), p(0), p(3), p(4), p(5) });
 }
+
+test "from stack" {
+    try fluffer(7, &.{p(6)});
+    try fluffer(8, &.{ p(7), p(6) });
+}

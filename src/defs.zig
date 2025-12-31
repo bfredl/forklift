@@ -259,7 +259,8 @@ pub const MemoryIntrinsic = enum(u8) {
 pub const IPMCVal = union(enum) {
     ipreg: IPReg,
     constval: i32, //sign extended in 64-bit context
-    frameslot: u8,
+    frameslot: u8, // variables in our frame
+    memarg: u8, // memory argument in caller's frame
     // both these adresses constant data stored in memory
     // "constref" implies loading the actual value
     // while "constptr" loads a pointer to the constant memory
@@ -308,8 +309,8 @@ pub const MCKind = enum(u8) {
     // unallocated, but has a vfreg hint
     unallocated_vfreghint,
 
-    // TODO: support non-uniform sizes of spilled value
     frameslot,
+    memarg,
     // unused value, perhaps should have been deleted before alloc
     dead,
     // not stored as such, will be emitted togheter with the next inst

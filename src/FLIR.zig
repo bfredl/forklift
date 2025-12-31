@@ -44,6 +44,7 @@ blkorder: ArrayList(u16) = .empty,
 // we need something else for "address into string table"
 constvals: ArrayList(u64), // raw data for constants, can contain embedded data
 narg: [2]u16 = .{ 0, 0 },
+stackarg: bool = false,
 
 // free list for blocks. single linked, only use b.items[b_free].pred !
 b_free: u16 = NoRef,
@@ -1839,11 +1840,14 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
                 },
                 .arg => {
                     if (i.mem_type() == .intptr) {
-                        if (i.op1 >= ABI.argregs.len) return error.NotImplemented;
-                        // tricky: do we use this to encode that the arg came from there?
-                        // or should spec be changed to the reg number
-                        i.mckind = .unallocated_ipreghint;
-                        i.mcidx = ABI.argregs[i.op1].id();
+                        if (i.op1 < ABI.argregs.len) {
+                            // tricky: do we use this to encode that the arg came from there?
+                            // or should spec be changed to the reg number
+                            i.mckind = .unallocated_ipreghint;
+                            i.mcidx = ABI.argregs[i.op1].id();
+                        } else {
+                            i.mckind = .unallocated_raw;
+                        }
                     } else {
                         if (i.op1 >= 16) return error.NotImplemented;
                         i.mckind = .unallocated_vfreghint;

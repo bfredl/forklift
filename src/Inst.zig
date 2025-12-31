@@ -257,7 +257,10 @@ pub fn avxreg(i: Inst) ?u4 {
 
 pub fn ipval(i: Inst) ?defs.IPMCVal {
     if (i.ipreg()) |reg| return .{ .ipreg = reg };
+    // These two could be merged here.. check that it also makes sense
+    // for AArch64
     if (i.mckind == .frameslot) return .{ .frameslot = i.mcidx };
+    if (i.mckind == .memarg) return .{ .memarg = i.mcidx };
     return null;
 }
 

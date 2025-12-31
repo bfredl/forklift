@@ -20,12 +20,13 @@ fn r(reg: IPReg) X86Asm.IPReg {
     return @enumFromInt(reg.id());
 }
 
-fn slotoff(slotid: anytype) i32 {
-    return -8 * (1 + @as(i32, @intCast(slotid)));
+fn slotea(slotid: anytype) EAddr {
+    const off: i32 = -8 * (1 + @as(i32, @intCast(slotid)));
+    return X86Asm.a(.rbp).o(off);
 }
 
-fn slotea(slotid: anytype) EAddr {
-    return X86Asm.a(.rbp).o(slotoff(slotid));
+fn memargea(argid: u32) EAddr {
+    return X86Asm.a(.rbp).o(8 * @as(i32, @intCast(argid)));
 }
 
 fn movri_zero(cfo: *X86Asm, w: bool, dst: IPReg, src: i32) !void {
@@ -40,6 +41,7 @@ fn movri_zero(cfo: *X86Asm, w: bool, dst: IPReg, src: i32) !void {
 fn regmovmc(cfo: *X86Asm, w: bool, dst: IPReg, src: IPMCVal) !void {
     switch (src) {
         .frameslot => |f| try cfo.movrm(w, r(dst), slotea(f)),
+        .memarg => |f| try cfo.movrm(w, r(dst), memargea(f)),
         .ipreg => |reg| if (dst != reg) try cfo.mov(w, r(dst), r(reg)),
         .constval => |c| try movri_zero(cfo, w, dst, @intCast(c)),
         .constref, .constptr => |idx| {
@@ -60,7 +62,9 @@ fn avxmovconst(cfo: *X86Asm, fmode: FMode, dst: u4, const_idx: u16) !void {
 
 fn regaritmc(cfo: *X86Asm, w: bool, op: AOp, dst: IPReg, src: IPMCVal) !void {
     switch (src) {
-        .frameslot => |f| try cfo.aritrm(op, w, r(dst), X86Asm.a(.rbp).o(slotoff(f))),
+        // TODO: merge frameslot and memarg at the time we have a IPMCVal?
+        .frameslot => |f| try cfo.aritrm(op, w, r(dst), slotea(f)),
+        .memarg => |f| try cfo.aritrm(op, w, r(dst), memargea(f)),
         .ipreg => |reg| try cfo.arit(op, w, r(dst), r(reg)),
         .constval => |c| try cfo.aritri(op, w, r(dst), @intCast(c)),
         .constref, .constptr => return error.NotImplemented,
@@ -70,6 +74,7 @@ fn regaritmc(cfo: *X86Asm, w: bool, op: AOp, dst: IPReg, src: IPMCVal) !void {
 fn mcmovreg(cfo: *X86Asm, w: bool, dst: IPMCVal, src: IPReg) !void {
     switch (dst) {
         .frameslot => |f| try cfo.movmr(w, slotea(f), r(src)),
+        .memarg => |f| try cfo.movmr(w, memargea(f), r(src)),
         .ipreg => |reg| if (reg != src) try cfo.mov(w, r(reg), r(src)),
         .constval, .constref, .constptr => return error.FLIRError, // AURORA BOREALIS?
     }
@@ -123,7 +128,7 @@ const EERROR = error{ SpillError, @"TODO: unfused lea", FLIRError };
 fn get_eaddr(self: *FLIR, ref: u16) EERROR!EAddr {
     const i = self.iref(ref).?;
     if (i.tag == .alloc) {
-        return X86Asm.a(.rbp).o(slotoff(i.op1));
+        return slotea(i.op1);
     } else if (i.tag == .lea) {
         if (i.ipreg()) |addr| return X86Asm.a(r(addr));
         return get_eaddr_load_or_lea(self, i.*);
@@ -256,10 +261,20 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
                     // ALSO TRICKY: should i.op1 actually be the specific register?
                     switch (i.mem_type()) {
                         .intptr => |size| {
-                            if (i.op1 >= ABI.argregs.len) return error.NotImplemented;
-                            const src = ABI.argregs[i.op1];
-                            const dst = i.ipval() orelse return error.FLIRError;
-                            try mcmovreg(&cfo, size == .quadword, dst, src);
+                            if (i.op1 < ABI.argregs.len) {
+                                const src = ABI.argregs[i.op1];
+                                const dst = i.ipval() orelse return error.FLIRError;
+                                try mcmovreg(&cfo, size == .quadword, dst, src);
+                            } else {
+                                const argidx = i.op1 - 6;
+                                // TODO: when handning spilling, we need to handle the special case
+                                // of values beginning as spill slots (as we treat parent frame as
+                                // immutable, we can load it multiple times)
+                                const dst = i.ipreg() orelse return error.FLIRError;
+                                // 0 and 1 are caller's RBP and the return address, respectively
+                                const ipval: IPMCVal = .{ .memarg = @intCast(2 + argidx) };
+                                try regmovmc(&cfo, true, dst, ipval);
+                            }
                         },
                         .avxval => |fmode| {
                             const reg = i.avxreg() orelse return error.FLIRError;
@@ -279,13 +294,13 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
 
                     if (op.is_bitop()) {
                         switch (src) {
-                            .frameslot => |_| return error.WIPError,
+                            .frameslot, .memarg => |_| return error.WIPError,
                             .ipreg => |reg| try cfo.bitunop(op, w, r(dst), r(reg)),
                             .constval, .constref, .constptr => return error.FLIRError,
                         }
                     } else if (op.is_sign_extend()) |size| {
                         switch (src) {
-                            .frameslot => |_| return error.WIPError,
+                            .frameslot, .memarg => |_| return error.WIPError,
                             .ipreg => |reg| try cfo.movsx(w, r(dst), r(reg), size),
                             .constval, .constref, .constptr => return error.FLIRError,
                         }
@@ -593,8 +608,8 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
                     switch (ispec) {
                         .convert => switch (val) {
                             // TODO:
-                            // .frameslot => |f| try cfo.movrm(w, r(dst), X86Asm.a(.rbp).o(slotoff(f))),
-                            .frameslot => return error.NotImplemented,
+                            // .frameslot => |f| try cfo.movrm(w, r(dst), slotea(f)),
+                            .frameslot, .memarg => return error.NotImplemented,
                             .ipreg => |reg| try cfo.vcvtsi2s_rr(i.fmode_op(), dst, true, r(reg)),
                             .constval, .constref, .constptr => return error.FLIRError, // mandatory cfold for things like this?
                         },
