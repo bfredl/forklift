@@ -116,8 +116,13 @@ fn resolve_node(self: *FLIR, ni: u16, n: *FLIR.Node, pred_buf: []PredItem) !bool
     while (it != NoRef) {
         const i = &self.i.items[it];
         const next = i.next;
-        if (i.tag != .phi) @panic("GRAAAK");
-        any = any or try resolve_phi(self, ni, i, it, pred_buf);
+        if (i.tag == .phi) {
+            any = any or try resolve_phi(self, ni, i, it, pred_buf);
+        } else if (i.tag == .arg) {
+            // ok
+        } else {
+            @panic("GRAAAK"); // NOT OK
+        }
         it = next;
     }
     return any;
@@ -259,6 +264,10 @@ fn cleanup_trivial_phi_and_vars(self: *FLIR) !void {
         var next_ptr: *u16 = &n.phi_list;
         while (next_ptr.* != NoRef) {
             const i = self.iref(next_ptr.*) orelse return error.FLIRError;
+            if (i.tag != .phi) {
+                next_ptr = &i.next;
+                continue;
+            }
             if (self.iref(i.op1)) |ivar| {
                 if (ivar.tag != .variable) return error.FLIRError;
                 // only for debugging: refer to origin variable by index

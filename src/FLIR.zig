@@ -43,7 +43,6 @@ blkorder: ArrayList(u16) = .empty,
 // This only handles int and float64 constants,
 // we need something else for "address into string table"
 constvals: ArrayList(u64), // raw data for constants, can contain embedded data
-narg: [2]u16 = .{ 0, 0 },
 stackarg: bool = false,
 
 // free list for blocks. single linked, only use b.items[b_free].pred !
@@ -80,6 +79,8 @@ var_names: ArrayList(?[]const u8) = .empty,
 
 // currently mandatory for correctness
 construction_peep: bool = true,
+
+last_added_arg: u16 = NoRef,
 
 // filler value for unintialized refs. not a sentinel for
 // actually invalid refs!
@@ -693,13 +694,17 @@ pub fn addPhi(self: *Self, node: u16, vref: u16, valspec: u8) !u16 {
     return ref;
 }
 
-// TODO: maintain wf of block 0: first all args, then all vars.
-
 pub fn arg(self: *Self, typ: defs.SpecType) !u16 {
     if (self.n.items.len == 0) return error.FLIRError;
-    const counter: u1 = if (typ == .avxval) 1 else 0; // COUNTER FOR SMALL CYLINDRICAL OBJECTS
-    const inst = try self.addInst(0, .{ .tag = .arg, .op1 = self.narg[counter], .op2 = 0, .spec = typ.into() });
-    self.narg[counter] += 1;
+    // const counter: u1 = if (typ == .avxval) 1 else 0; // COUNTER FOR SMALL CYLINDRICAL OBJECTS
+    const inst = try self.addRawInst(.{ .tag = .arg, .op1 = 0, .op2 = 0, .spec = typ.into(), .node_delete_this = 0 });
+    if (self.last_added_arg != NoRef) {
+        self.iref(self.last_added_arg).?.next = inst;
+    } else {
+        if (self.n.items[0].phi_list != NoRef) return error.FLIRError; // HUGEL?
+        self.n.items[0].phi_list = inst;
+    }
+    self.last_added_arg = inst;
     return inst;
 }
 
@@ -1382,56 +1387,6 @@ pub fn alloc(self: *Self, node: u16, size: u8) !u16 {
     return self.addInst(node, .{ .tag = .alloc, .op1 = slot, .op2 = 0, .spec = intspec(.dword).into(), .mckind = .fused });
 }
 
-// fills up some registers, and then goes to the stack.
-// reuses op1 if it is from the same block and we are the last user
-pub fn trivial_alloc(self: *Self) !void {
-    // TRRICKY: start with the ABI arg registers, and just skip as many args as we have
-    const regs: [8]defs.IPReg = undefined;
-    var used: usize = self.narg;
-    var avxused: u8 = 0;
-    for (self.n.items) |*n| {
-        var cur_blk: ?u16 = n.firstblk;
-        while (cur_blk) |blk| {
-            var b = &self.b.items[blk];
-            for (b.i, 0..) |*i, idx| {
-                const ref = toref(blk, uv(idx));
-
-                if (i.has_res() and i.mckind.unallocated()) {
-                    const regkind: defs.MCKind = if (i.res_type() == .avxval) .vfreg else .ipreg;
-                    const op1 = if (i.n_op(false) > 0) self.iref(i.op1) else null;
-                    if (op1) |o| {
-                        if (o.mckind == regkind and o.vreg() == null and o.last_use == ref) {
-                            i.mckind = regkind;
-                            i.mcidx = o.mcidx;
-                            continue;
-                        }
-                    }
-                    if (i.res_type() == .avxval) {
-                        if (avxused == 16) {
-                            return error.GOOOF;
-                        }
-                        i.mckind = .vfreg;
-                        i.mcidx = avxused;
-                        avxused += 1;
-                    } else if (used < regs.len) {
-                        i.mckind = .ipreg;
-                        i.mcidx = regs[used].id();
-                        used += 1;
-                    } else {
-                        i.mckind = .frameslot;
-                        if (self.nslots == 255) {
-                            return error.UDunGoofed;
-                        }
-                        i.mcidx = self.nslots;
-                        self.nslots += 1;
-                    }
-                }
-            }
-            cur_blk = b.next();
-        }
-    }
-}
-
 // we consider there to be 3 kinds of intervals:
 // vreg intervalls:
 //   1. born at definition point
@@ -1561,7 +1516,9 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
 }
 
 pub fn alloc_inst(self: *Self, comptime ABI: type, i: *Inst, free_regs_ip: *[n_ipreg]bool, free_regs_avx: *[16]bool, highest_used: *u8) !void {
-    if (!(i.has_res() and i.mckind.unallocated())) {
+    // also return value from functions, division result on intel machines, etc etc
+    const fixed = i.tag == .arg;
+    if (!(i.has_res() and (fixed or i.mckind.unallocated()))) {
         // TODO: handle vregs with a pre-allocated register
         return;
     }
@@ -1630,16 +1587,18 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, i: *Inst, free_regs_ip: *[n_i
 
     // NB: currently there is no praxis for back-propagating reghints
     // like these should obviosly work across a (%1 = phi; ret %1) and so on and so on
-    if (i.mckind == .unallocated_ipreghint) {
+    if (i.mckind == .unallocated_ipreghint or i.mckind == .ipreg) {
         if (i.res_type() != .intptr) unreachable;
         if (usable_regs[i.mcidx]) {
             chosen_reg = i.mcidx;
         }
-    } else if (i.mckind == .unallocated_vfreghint) {
+    } else if (i.mckind == .unallocated_vfreghint or i.mckind == .vfreg) {
         if (i.res_type() != .avxval) unreachable;
         if (usable_regs[i.mcidx]) {
             chosen_reg = i.mcidx;
         }
+    } else {
+        // either unallocated, or perhaps a memoryval
     }
 
     if (chosen_reg == null) {
@@ -1667,6 +1626,18 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, i: *Inst, free_regs_ip: *[n_i
 
     const chosen = chosen_reg orelse return error.NotImplemented; // "implement interval splitting"
 
+    if (fixed) {
+        if (i.mckind == .ipreg or i.mckind == .vfreg) {
+            if (i.mcidx != chosen) {
+                // @panic("TODO EINS");
+                std.debug.print("PLEASE STAY AWAY FROM THIS CREATURE.\n", .{});
+                return;
+            }
+        } else {
+            std.debug.print("acting inerror for {s}, assume errors :3\n", .{@tagName(i.mckind)});
+            return;
+        }
+    }
     free_regs[chosen] = false;
     i.mckind = reg_kind;
     i.mcidx = chosen;
@@ -1700,6 +1671,36 @@ pub fn abi_call_info(self: *Self, comptime ABI: type, i: *Inst) !ABICallInfo {
 }
 
 pub fn set_abi(self: *Self, comptime ABI: type) !void {
+    if (self.n.items.len == 0) return error.FLIRError;
+    {
+        // SO GOOFY: args are kinda the phi nodes for the first block
+        var n_ipval: u8 = 0;
+        var n_avx: u8 = 0;
+        var n_memory: u8 = 2; // zero and one is caller's RBP and the return address, respectively
+        var a = self.n.items[0].phi_list;
+        while (a != NoRef) {
+            const i = self.iref(a) orelse return error.FLIRError;
+            // TODO: allow custom callconvs by mckind being prefilled
+            if (i.mem_type() == .intptr) {
+                if (n_ipval < ABI.argregs.len) {
+                    i.mckind = .ipreg;
+                    i.mcidx = ABI.argregs[n_ipval].id();
+                    n_ipval += 1;
+                } else {
+                    i.mckind = .memarg;
+                    i.mcidx = n_memory;
+                    n_memory += 1;
+                }
+            } else {
+                if (n_avx >= 16) return error.NotImplemented;
+                i.mckind = .vfreg;
+                i.mcidx = n_avx;
+                n_avx += 1;
+            }
+            a = i.next;
+        }
+    }
+
     for (self.n.items) |*n| {
         // TODO: if args existed nested in i_call.next we wouldn't need this :relieved:
         var it = self.ins_iterator(n.lastblk);
@@ -1765,22 +1766,6 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
                             }
                             r = rret.next;
                         }
-                    }
-                },
-                .arg => {
-                    if (i.mem_type() == .intptr) {
-                        if (i.op1 < ABI.argregs.len) {
-                            // tricky: do we use this to encode that the arg came from there?
-                            // or should spec be changed to the reg number
-                            i.mckind = .unallocated_ipreghint;
-                            i.mcidx = ABI.argregs[i.op1].id();
-                        } else {
-                            i.mckind = .unallocated_raw;
-                        }
-                    } else {
-                        if (i.op1 >= 16) return error.NotImplemented;
-                        i.mckind = .unallocated_vfreghint;
-                        i.mcidx = @intCast(i.op1);
                     }
                 },
                 else => {},

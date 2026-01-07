@@ -248,40 +248,13 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
                 .freelist => @panic("KATASTROFEN"),
                 .phi => {
                     // work is done by putphi, this is just optional debug info
+                    // TODO: broken due to list??
                     if (options.dbg_trap_join_nodes) {
                         if (i.ipreg()) |reg| {
                             if (self.dbg_get_varname(item.ref)) |nam| {
                                 try code.value_map.append(self.gpa, .{ .pos = n_target, .reg = reg, .name = nam });
                             }
                         }
-                    }
-                },
-                .arg => {
-                    // TODO: if "arg" is like a move instruction it should be a movins!
-                    // ALSO TRICKY: should i.op1 actually be the specific register?
-                    switch (i.mem_type()) {
-                        .intptr => |size| {
-                            if (i.op1 < ABI.argregs.len) {
-                                const src = ABI.argregs[i.op1];
-                                const dst = i.ipval() orelse return error.FLIRError;
-                                try mcmovreg(&cfo, size == .quadword, dst, src);
-                            } else {
-                                const argidx = i.op1 - 6;
-                                // TODO: when handning spilling, we need to handle the special case
-                                // of values beginning as spill slots (as we treat parent frame as
-                                // immutable, we can load it multiple times)
-                                const dst = i.ipreg() orelse return error.FLIRError;
-                                // 0 and 1 are caller's RBP and the return address, respectively
-                                const ipval: IPMCVal = .{ .memarg = @intCast(2 + argidx) };
-                                try regmovmc(&cfo, true, dst, ipval);
-                            }
-                        },
-                        .avxval => |fmode| {
-                            const reg = i.avxreg() orelse return error.FLIRError;
-                            if (i.op1 != reg) {
-                                try cfo.vmovf(fmode, 0, reg);
-                            }
-                        },
                     }
                 },
                 // lea relative RBP when used
@@ -422,7 +395,7 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
                 },
                 // parallel move family
                 // callret wants to be be friends :pleading_face:
-                .putphi, .callarg, .retval => {
+                .copy, .putphi, .callarg, .retval => {
                     // fubbigt: the idea is than movins_read will return null
                     // exactly when reading an UNDEF, incase this insn becomes a no-op
                     const w = true; // TODO: aaaaaaaaaaaa
@@ -671,7 +644,7 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
                         else => return error.FLIRError,
                     }
                 },
-                // TODO: into parallel move group
+                // TODO: this should not be executable, emit .copy instead!
                 .callret => {
                     switch (i.mem_type()) {
                         .intptr => |size| {
@@ -688,12 +661,6 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
                         },
                     }
                 },
-                .copy => {
-                    // TODO: of course also avxvals can be copied!
-                    const src = self.ipval(i.op1) orelse return error.FLIRError;
-                    const dest = i.ipval() orelse return error.FLIRError;
-                    try movmcs(&cfo, true, dest, src); // TODO: wide
-                },
                 .trap => {
                     try cfo.trap(); // PALLAS CAT EARLY
                 },
@@ -701,7 +668,7 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
                     print("platform unsupported: {}\n", .{i.tag});
                     return error.FLIRError;
                 },
-                .variable, .putvar, .xadd => {
+                .variable, .putvar, .xadd, .arg => {
                     print("unhandled tag: {}\n", .{i.tag});
                     return error.FLIRError;
                 },
