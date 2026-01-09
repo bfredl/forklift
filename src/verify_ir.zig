@@ -339,8 +339,13 @@ pub fn print_inst(self: *FLIR, ref: u16, i: *FLIR.Inst) void {
     var opnext = i.next_as_op();
     if (opnext != NoRef and i.tag != .call) print("not implemented??\n", .{});
     while (opnext != NoRef) {
+        print(",", .{});
         const ii = self.iref(opnext) orelse @panic("aa");
-        print_op(self, ", ", ii.f.kill_op1, ii.op1);
+        if (ii.tag == .callarg) {
+            print_mcval(ii);
+            print(" <- ", .{});
+        } else print(" ", .{});
+        print_op(self, "", ii.f.kill_op1, ii.op1);
         opnext = ii.next;
     }
     print("\n", .{});
@@ -409,7 +414,7 @@ fn print_op(self: *FLIR, pre: []const u8, kill: bool, ref: u16) void {
 }
 
 fn print_mcval(i: *FLIR.Inst) void {
-    if (i.tag != .phi and i.tag != .arg and !i.mckind.unallocated() and i.mckind != .fused) {
+    if (i.tag != .phi and i.tag != .arg and i.tag != .callarg and !i.mckind.unallocated() and i.mckind != .fused) {
         print(" =>", .{});
     }
     switch (i.mckind) {

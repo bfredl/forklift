@@ -1413,6 +1413,7 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
             const vr = self.iref(vref.ref).?;
             const flag = vreg_flag(@intCast(vi));
             if ((flag & n.live_in) != 0) {
+                std.debug.print("FYFFF {}\n", .{vref});
                 if (vr.mckind == .ipreg) free_regs_ip[vr.mcidx] = false;
                 if (vr.mckind == .vfreg) free_regs_avx[vr.mcidx] = false;
             }
@@ -1421,6 +1422,7 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
         var phi = n.phi_list;
         while (phi != NoRef) {
             const i = &self.i.items[phi];
+            std.debug.print("allocating {}\n", .{phi});
             try self.alloc_inst(ABI, i, &free_regs_ip, &free_regs_avx, &highest_used);
             phi = i.next;
         }
@@ -1461,6 +1463,7 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
                     }
                 }
 
+                std.debug.print("Allocating {}\n", .{item.ref});
                 try self.alloc_inst(ABI, i, &free_regs_ip, &free_regs_avx, &highest_used);
             } else {
                 var opnext = i.next_as_op();
@@ -1537,11 +1540,13 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, i: *Inst, free_regs_ip: *[n_i
         const v = self.vregs.items[vreg];
         const imask = v.live_in;
         conflicts |= v.conflicts; // fixed reg conflicts
-        for (self.vregs.items) |vref| {
+        for (0.., self.vregs.items) |ivreg, vref| {
+            if (vreg == ivreg) continue;
             const vr = self.iref(vref.ref).?;
             if (vr.mckind != reg_kind) continue;
             if ((imask & vref.live_in) != 0) {
                 // mckind checked above
+                std.debug.print("MAY HE FRIFFFF {}\n", .{vr.mcidx});
                 usable_regs[vr.mcidx] = false;
                 break;
             }
@@ -1588,7 +1593,10 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, i: *Inst, free_regs_ip: *[n_i
     // like these should obviosly work across a (%1 = phi; ret %1) and so on and so on
     if (i.mckind == .unallocated_ipreghint or i.mckind == .ipreg) {
         if (i.res_type() != .intptr) unreachable;
+
+        std.debug.print("MAY HE CHOSE {}\n", .{i.mcidx});
         if (usable_regs[i.mcidx]) {
+            std.debug.print("YES {}\n", .{i.mcidx});
             chosen_reg = i.mcidx;
         }
     } else if (i.mckind == .unallocated_vfreghint or i.mckind == .vfreg) {
@@ -1628,9 +1636,9 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, i: *Inst, free_regs_ip: *[n_i
     if (fixed) {
         if (i.mckind == .ipreg or i.mckind == .vfreg) {
             if (i.mcidx != chosen) {
-                // @panic("TODO EINS");
                 std.debug.print("PLEASE STAY AWAY FROM THIS CREATURE.\n", .{});
-                return;
+                @panic("TODO EINS");
+                // return;
             }
         } else {
             std.debug.print("acting inerror for {s}, assume errors :3\n", .{@tagName(i.mckind)});
@@ -2211,6 +2219,7 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
     }
 
     try self.set_abi(ABI);
+    self.debug_print();
 
     if (check) try self.check_ir_valid();
 
@@ -2218,6 +2227,8 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
     if (check) try self.check_ir_valid();
     if (check) try self.check_vregs();
 
+    std.debug.print("\n\nbollllll\n", .{});
+    self.debug_print();
     try self.scan_alloc(ABI);
     try self.resolve_moves(); // GLYTTIT
     if (check) try self.check_ir_valid();
