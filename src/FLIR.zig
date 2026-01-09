@@ -194,7 +194,6 @@ pub const Block = struct {
     node: u16,
     succ: u16 = NoRef,
     pred: u16 = NoRef,
-    fakenum_: u16 = undefined, // only used for printing. could be eliminated if we really need it
     i: [BLK_SIZE]u16 = .{NoRef} ** BLK_SIZE,
 
     pub fn next(self: @This()) ?u16 {

@@ -198,19 +198,6 @@ pub fn debug_print(self: *FLIR) void {
         return;
     }
 
-    var fake_idx: u16 = 0;
-    // TODO: something like %nodeid.ref_in_node might be preferrable
-    for (self.n.items) |*n| {
-        var cur_blk: ?u16 = n.firstblk;
-        while (cur_blk) |blk| {
-            const b = &self.b.items[blk];
-            b.fakenum_ = fake_idx;
-            fake_idx += 1;
-
-            cur_blk = b.next();
-        }
-    }
-
     print("\n", .{});
     for (self.n.items, 0..) |*n, i| {
         print("node {} (npred {}, loop {}):", .{ i, n.npred, n.loop });
