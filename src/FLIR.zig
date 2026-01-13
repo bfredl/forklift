@@ -1401,7 +1401,8 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
     const reg_first_save = 9;
     var highest_used: u8 = 0;
 
-    for (self.n.items) |*n| {
+    for (0.., self.n.items) |nir, *n| {
+        const ni = uv(nir);
         // registers currently free.
         var free_regs_ip: [n_ipreg]bool = .{true} ** n_ipreg;
         var free_regs_avx: [16]bool = .{true} ** 16;
@@ -1419,14 +1420,28 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
             }
         }
 
-        var phi = n.phi_list;
-        while (phi != NoRef) {
-            const i = &self.i.items[phi];
-            std.debug.print("allocating {}\n", .{phi});
-            try self.alloc_inst(ABI, i, &free_regs_ip, &free_regs_avx, &highest_used);
-            phi = i.next;
-        }
         var it = self.ins_iterator(n.firstblk);
+
+        // TODO: this is tricky, we need to do something like mark all register args
+        // as "used" (and thus blocked for all other args than itself)
+        // alternatively run through all args twice, and at first round only allow
+        // trivial allocations (keep register arg as it is)
+        var phi = n.phi_list;
+        var lastphi: u16 = NoRef;
+        while (phi != NoRef) {
+            std.debug.print("allocating {}\n", .{phi});
+            const newnum = try self.alloc_inst(ABI, ni, phi, &free_regs_ip, &free_regs_avx, &highest_used, &it);
+            if (newnum) |num| {
+                if (lastphi != NoRef) {
+                    self.i.items[lastphi].next = num;
+                } else {
+                    n.phi_list = num;
+                }
+            }
+
+            lastphi = phi;
+            phi = self.i.items[phi].next;
+        }
         while (it.next()) |item| {
             const i = item.i;
             // const ref = item.ref;
@@ -1464,7 +1479,8 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
                 }
 
                 std.debug.print("Allocating {}\n", .{item.ref});
-                try self.alloc_inst(ABI, i, &free_regs_ip, &free_regs_avx, &highest_used);
+                const num = try self.alloc_inst(ABI, ni, item.ref, &free_regs_ip, &free_regs_avx, &highest_used, &it);
+                if (num) |_| return error.FLIRError; // not possible yet
             } else {
                 var opnext = i.next_as_op();
                 while (opnext != NoRef) {
@@ -1484,7 +1500,8 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
                     // Even if `.callret` instructions end up "fixed", somewhere
                     // around here the cereal spiller would need to consider to
                     // split it anyway, to the same effect
-                    try self.alloc_inst(ABI, ii, &free_regs_ip, &free_regs_avx, &highest_used);
+                    const num = try self.alloc_inst(ABI, ni, rnext, &free_regs_ip, &free_regs_avx, &highest_used, null);
+                    if (num) |_| return error.FLIRError; // not done yet
                     rnext = ii.next;
                 }
             }
@@ -1517,12 +1534,13 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
     }
 }
 
-pub fn alloc_inst(self: *Self, comptime ABI: type, i: *Inst, free_regs_ip: *[n_ipreg]bool, free_regs_avx: *[16]bool, highest_used: *u8) !void {
+pub fn alloc_inst(self: *Self, comptime ABI: type, node: u16, iid: u16, free_regs_ip: *[n_ipreg]bool, free_regs_avx: *[16]bool, highest_used: *u8, iter_for_ins: ?*InsIterator) !?u16 {
     // also return value from functions, division result on intel machines, etc etc
+    var i = self.iref(iid) orelse unreachable;
     const fixed = i.tag == .arg;
     if (!(i.has_res() and (fixed or i.mckind.unallocated()))) {
         // TODO: handle vregs with a pre-allocated register
-        return;
+        return null;
     }
 
     const is_avx = (i.res_type() == .avxval);
@@ -1636,18 +1654,26 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, i: *Inst, free_regs_ip: *[n_i
     if (fixed) {
         if (i.mckind == .ipreg or i.mckind == .vfreg) {
             if (i.mcidx != chosen) {
-                std.debug.print("PLEASE STAY AWAY FROM THIS CREATURE.\n", .{});
-                @panic("TODO EINS");
-                // return;
+                std.debug.print("going to crazy town...\n", .{});
+                // tricky: we make the copy use the number of i;
+                const kind = i.mckind;
+                const copyspec = i.mem_type().into();
+                const newarg = try self.addRawInst(i.*);
+                const copy: Inst = .{ .tag = .copy, .op1 = newarg, .op2 = NoRef, .mckind = kind, .mcidx = chosen, .spec = copyspec };
+                self.i.items[iid] = copy;
+                try self.put_for_movelist(node, iter_for_ins, iid);
+
+                return newarg;
             }
         } else {
             std.debug.print("acting inerror for {s}, assume errors :3\n", .{@tagName(i.mckind)});
-            return;
+            return null;
         }
     }
     free_regs[chosen] = false;
     i.mckind = reg_kind;
     i.mcidx = chosen;
+    return null;
 }
 
 // TODO: maybe unify with mckind/mcidx repr for an instruction??
@@ -1926,7 +1952,7 @@ pub fn resolve_moves(self: *Self) !void {
     for (self.n.items, 0..) |*n, ni| {
         try self.resolve_movelist(uv(ni), n.putphi_list, null);
 
-        var iter = self.ins_iterator(n.lastblk);
+        var iter = self.ins_iterator(n.firstblk);
         while (iter.peek()) |it| {
             if (it.i.tag == .call) {
                 try self.resolve_movelist(uv(ni), it.i.next, &iter);
@@ -1942,9 +1968,7 @@ pub fn resolve_moves(self: *Self) !void {
 pub fn movins_dest(self: *Self, movins: *Inst) !*Inst {
     return switch (movins.tag) {
         .putphi => self.iref(movins.op2) orelse return error.FLIRError,
-        .callarg => movins,
-        .retval => movins,
-        .callret => movins,
+        .callarg, .retval, .callret, .copy => movins,
         else => error.FLIRError,
     };
 }
@@ -1965,7 +1989,7 @@ fn movins_read(self: *Self, movins: *Inst) !?MCReadRef {
         // THIS is ugly as fuck. We probably want callret just to just be fixed mcvals, and then
         // let the splitter add a renumbering copy as needed. then MCReadRef can be lybill
         .callret => .{ .mckind = if (movins.mem_type() == .avxval) .vfreg else .ipreg, .mcidx = @intCast(movins.op2) },
-        .putphi, .callarg, .retval => .from((self.iref(movins.op1) orelse return null).*),
+        .putphi, .callarg, .retval, .copy => .from((self.iref(movins.op1) orelse return null).*),
         else => error.FLIRError,
     };
 }
@@ -1978,7 +2002,7 @@ const EitherVal = union(enum) {
 pub fn movins_read_val(self: *Self, i: *Inst) !?EitherVal {
     return switch (i.tag) {
         .callret => if (i.mem_type() == .avxval) .{ .avxreg = @intCast(i.op2) } else .{ .ipval = .{ .ipreg = @enumFromInt(i.op2) } },
-        .putphi, .callarg, .retval => if (self.ipval(i.op1)) |ival| .{ .ipval = ival } else if (self.avxreg(i.op1)) |reg| .{ .avxreg = reg } else null,
+        .putphi, .callarg, .retval, .copy => if (self.ipval(i.op1)) |ival| .{ .ipval = ival } else if (self.avxreg(i.op1)) |reg| .{ .avxreg = reg } else null,
         else => error.FLIRError,
     };
 }
@@ -2230,6 +2254,8 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
     std.debug.print("\n\nbollllll\n", .{});
     self.debug_print();
     try self.scan_alloc(ABI);
+    std.debug.print("\n\nWAR TIME\n", .{});
+    self.debug_print();
     try self.resolve_moves(); // GLYTTIT
     if (check) try self.check_ir_valid();
 
