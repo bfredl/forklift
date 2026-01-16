@@ -1651,6 +1651,7 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, node: u16, iid: u16, free_reg
 
     const chosen = chosen_reg orelse return error.NotImplemented; // "implement interval splitting"
 
+    free_regs[chosen] = false;
     if (fixed) {
         if (i.mckind == .ipreg or i.mckind == .vfreg) {
             if (i.mcidx != chosen) {
@@ -1670,7 +1671,6 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, node: u16, iid: u16, free_reg
             return null;
         }
     }
-    free_regs[chosen] = false;
     i.mckind = reg_kind;
     i.mcidx = chosen;
     return null;
