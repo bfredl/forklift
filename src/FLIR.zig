@@ -1654,7 +1654,6 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, node: u16, iid: u16, free_reg
         }
         // tricky: we make the copy use the number of i;
         const copyspec = i.mem_type().into();
-        std.debug.print("going to crazy town for {s}...\n", .{@tagName(i.mckind)});
         const newarg = try self.addRawInst(i.*);
         const copy: Inst = .{ .tag = .copy, .op1 = newarg, .op2 = NoRef, .mckind = reg_kind, .mcidx = chosen, .spec = copyspec };
         self.i.items[iid] = copy;
