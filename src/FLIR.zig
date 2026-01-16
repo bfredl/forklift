@@ -1414,7 +1414,6 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
             const vr = self.iref(vref.ref).?;
             const flag = vreg_flag(@intCast(vi));
             if ((flag & n.live_in) != 0) {
-                std.debug.print("FYFFF {}\n", .{vref});
                 if (vr.mckind == .ipreg) free_regs_ip[vr.mcidx] = false;
                 if (vr.mckind == .vfreg) free_regs_avx[vr.mcidx] = false;
             }
@@ -1429,7 +1428,6 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
         var phi = n.phi_list;
         var lastphi: u16 = NoRef;
         while (phi != NoRef) {
-            std.debug.print("allocating {}\n", .{phi});
             const newnum = try self.alloc_inst(ABI, ni, phi, &free_regs_ip, &free_regs_avx, &highest_used, &it);
             if (newnum) |num| {
                 if (lastphi != NoRef) {
@@ -1478,7 +1476,6 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
                     }
                 }
 
-                std.debug.print("Allocating {}\n", .{item.ref});
                 const num = try self.alloc_inst(ABI, ni, item.ref, &free_regs_ip, &free_regs_avx, &highest_used, &it);
                 if (num) |_| return error.FLIRError; // not possible yet
             } else {
@@ -1564,7 +1561,6 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, node: u16, iid: u16, free_reg
             if (vr.mckind != reg_kind) continue;
             if ((imask & vref.live_in) != 0) {
                 // mckind checked above
-                std.debug.print("MAY HE FRIFFFF {}\n", .{vr.mcidx});
                 usable_regs[vr.mcidx] = false;
                 break;
             }
@@ -1611,10 +1607,7 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, node: u16, iid: u16, free_reg
     // like these should obviosly work across a (%1 = phi; ret %1) and so on and so on
     if (i.mckind == .unallocated_ipreghint or i.mckind == .ipreg) {
         if (i.res_type() != .intptr) unreachable;
-
-        std.debug.print("MAY HE CHOSE {}\n", .{i.mcidx});
         if (usable_regs[i.mcidx]) {
-            std.debug.print("YES {}\n", .{i.mcidx});
             chosen_reg = i.mcidx;
         }
     } else if (i.mckind == .unallocated_vfreghint or i.mckind == .vfreg) {
@@ -1653,23 +1646,21 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, node: u16, iid: u16, free_reg
 
     free_regs[chosen] = false;
     if (fixed) {
-        if (i.mckind == .ipreg or i.mckind == .vfreg) {
-            if (i.mcidx != chosen) {
-                std.debug.print("going to crazy town...\n", .{});
-                // tricky: we make the copy use the number of i;
-                const kind = i.mckind;
-                const copyspec = i.mem_type().into();
-                const newarg = try self.addRawInst(i.*);
-                const copy: Inst = .{ .tag = .copy, .op1 = newarg, .op2 = NoRef, .mckind = kind, .mcidx = chosen, .spec = copyspec };
-                self.i.items[iid] = copy;
-                try self.put_for_movelist(node, iter_for_ins, iid);
-
-                return newarg;
-            }
-        } else {
-            std.debug.print("acting inerror for {s}, assume errors :3\n", .{@tagName(i.mckind)});
+        if ((i.mckind == .ipreg or i.mckind == .vfreg) and i.mcidx == chosen) {
+            // exact match, we're done
+            // TODO: it is weird that there is no marker on the ins going from
+            // unallocated to allocated here!
             return null;
         }
+        // tricky: we make the copy use the number of i;
+        const copyspec = i.mem_type().into();
+        std.debug.print("going to crazy town for {s}...\n", .{@tagName(i.mckind)});
+        const newarg = try self.addRawInst(i.*);
+        const copy: Inst = .{ .tag = .copy, .op1 = newarg, .op2 = NoRef, .mckind = reg_kind, .mcidx = chosen, .spec = copyspec };
+        self.i.items[iid] = copy;
+        try self.put_for_movelist(node, iter_for_ins, iid);
+
+        return newarg;
     }
     i.mckind = reg_kind;
     i.mcidx = chosen;
@@ -2243,7 +2234,6 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
     }
 
     try self.set_abi(ABI);
-    self.debug_print();
 
     if (check) try self.check_ir_valid();
 
@@ -2251,11 +2241,7 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
     if (check) try self.check_ir_valid();
     if (check) try self.check_vregs();
 
-    std.debug.print("\n\nbollllll\n", .{});
-    self.debug_print();
     try self.scan_alloc(ABI);
-    std.debug.print("\n\nWAR TIME\n", .{});
-    self.debug_print();
     try self.resolve_moves(); // GLYTTIT
     if (check) try self.check_ir_valid();
 
