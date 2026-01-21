@@ -1742,16 +1742,22 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
                     self.codegen_has_call = true;
                     {
                         var a = i.next;
-                        var inum: u8 = 0;
+                        var iregnum: u8 = 0;
                         var avxnum: u8 = 0;
+                        var memnum: u8 = 0;
                         while (a != NoRef) {
                             const iarg = self.iref(a) orelse return error.FLIRError;
                             switch (iarg.mem_type()) {
                                 .intptr => {
-                                    if (inum >= call_info.args.len) return error.NotImplemented;
-                                    iarg.mckind = .ipreg;
-                                    iarg.mcidx = @intFromEnum(call_info.args[inum]);
-                                    inum += 1;
+                                    if (iregnum < call_info.args.len) {
+                                        iarg.mckind = .ipreg;
+                                        iarg.mcidx = @intFromEnum(call_info.args[iregnum]);
+                                        iregnum += 1;
+                                    } else {
+                                        iarg.mckind = .call_memarg;
+                                        iarg.mcidx = memnum;
+                                        memnum += 1;
+                                    }
                                 },
                                 .avxval => {
                                     if (avxnum >= 16) return error.NotImplemented;
@@ -2008,6 +2014,16 @@ pub fn trivial(self: *Self, movins: *Inst) !bool {
 }
 
 pub fn conflict(self: *Self, before: *Inst, after: *Inst) !bool {
+    // note if only "after", check for a read conflict before.
+    if (before.mckind == .call_memarg) {
+        if (before.tag != .callarg) return error.FLIRError;
+        if (after.mckind == .call_memarg) {
+            if (after.tag != .callarg) return error.FLIRError;
+            // do highest indicies first
+            return (before.mcidx < after.mcidx);
+        }
+        return false;
+    }
     const written = try self.movins_dest(before);
     const read = try self.movins_read(after) orelse return false;
     return mc_equal(written, read);

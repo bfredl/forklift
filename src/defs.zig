@@ -317,6 +317,9 @@ pub const MCKind = enum(u8) {
     // example "lea" and then "store", or "load" and then ibinop/vmath
     fused,
 
+    // this is from the caller's perspective, push on the stack just before a "call"
+    call_memarg,
+
     constval, // constvals[i] interpreted as "data"
     constptr, // pointer to a constvals[i] emitted value
 
