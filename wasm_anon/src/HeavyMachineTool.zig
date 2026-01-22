@@ -76,7 +76,7 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance, filter: ?[]const 
                 selekted = true;
             }
         }
-        self.compileFunc(in, i, f, false) catch |e| switch (e) {
+        self.compileFunc(in, i, f, true) catch |e| switch (e) {
             error.NotImplemented => {
                 if (f.hmt_error == null) {
                     f.hmt_error = "??UNKNOWN";

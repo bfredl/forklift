@@ -1726,12 +1726,13 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
 
     for (self.n.items) |*n| {
         // TODO: if args existed nested in i_call.next we wouldn't need this :relieved:
-        var it = self.ins_iterator(n.lastblk);
+        var it = self.ins_iterator(n.firstblk);
         var last_call_info: ABICallInfo = undefined;
         while (it.next()) |item| {
             const i: *Inst = item.i;
+            // TODO: this is broken!!!
             // non-standard callconvs can be annotated by pre-setting mckind/mcindx
-            if (!i.mckind.unallocated()) continue;
+            // if (!i.mckind.unallocated()) continue;
             switch (i.tag) {
                 .call => {
                     // currently, as a compromise, `call_info` lists how integers should behave.
