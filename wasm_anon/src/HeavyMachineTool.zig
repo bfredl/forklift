@@ -712,7 +712,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     break :call .{ try ir.call(node, .cfo_obj, try ir.const_uint(obj)), func.typeidx, func.n_params, func.n_res };
                 };
 
-                const max_params = 4;
+                const max_params = 5;
 
                 if (n_params > max_params or n_res > 1) {
                     f.hmt_error = try std.fmt.allocPrint(gpa, "THERE WERE NO CALLS TODAY: {} => {}", .{ n_params, n_res });

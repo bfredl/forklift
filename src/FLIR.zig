@@ -1059,7 +1059,7 @@ pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) !void {
             i.f.is_vreg = true;
             i.vreg_scratch = self.nvreg;
             self.nvreg += 1;
-            self.vregs.appendAssumeCapacity(.{ .ref = used, .def_node = def_node });
+            try self.vregs.append(self.gpa, .{ .ref = used, .def_node = def_node });
         }
     }
 }
@@ -1071,7 +1071,7 @@ pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) !void {
 // not idempotent! does not reset n_use=0 first.
 pub fn calc_live(self: *Self) !void {
     // TODO: NOT LIKE THIS
-    try self.vregs.ensureTotalCapacity(self.gpa, 64);
+    try self.vregs.ensureTotalCapacity(self.gpa, @typeInfo(VRegFlag).int.bits);
 
     // step1: allocate vregs for results that leak from the block
     for (self.n.items, 0..) |*n, ni| {
