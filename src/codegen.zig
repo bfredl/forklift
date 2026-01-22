@@ -537,7 +537,10 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
                                         else => return error.NotImplemented,
                                     }
                                 },
-                                else => return error.SpillError,
+                                else => {
+                                    print("NOW YOU DID IT: {}\n", .{i.*});
+                                    return error.SpillError;
+                                },
                             }
                         },
                         .avxval => |fmode| {

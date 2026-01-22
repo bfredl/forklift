@@ -1428,6 +1428,7 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
         var phi = n.phi_list;
         var lastphi: u16 = NoRef;
         while (phi != NoRef) {
+            const next = self.i.items[phi].next;
             const newnum = try self.alloc_inst(ABI, ni, phi, &free_regs_ip, &free_regs_avx, &highest_used, &it);
             if (newnum) |num| {
                 if (lastphi != NoRef) {
@@ -1438,7 +1439,7 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
             }
 
             lastphi = phi;
-            phi = self.i.items[phi].next;
+            phi = next;
         }
         while (it.next()) |item| {
             const i = item.i;
