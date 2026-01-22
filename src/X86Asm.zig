@@ -589,6 +589,24 @@ pub fn push(self: *Self, src: IPReg) !void {
     try self.wb(0x50 + @as(u8, src.lowId()));
 }
 
+pub fn pushi(self: *Self, imm: i32) !void {
+    // single byte is sign-extended, use shorter form if it was equivalent
+    if (maybe_imm8(imm)) |imm8| {
+        try self.wb(0x6a);
+        try self.wbi(imm8);
+    } else {
+        try self.wb(0x68);
+        try self.wdi(imm);
+    }
+}
+
+pub fn pushm(self: *Self, ea: EAddr) !void {
+    if (true) @panic("I HAVEN'T TESTED THIS SHIT");
+    try self.rex_wrxb(true, false, ea.x(), ea.b());
+    try self.wb(0xff);
+    try self.modRmEA(6, ea);
+}
+
 pub fn pop(self: *Self, dst: IPReg) !void {
     try self.rex_wrxb(false, false, false, dst.ext());
     try self.wb(0x58 + @as(u8, dst.lowId()));

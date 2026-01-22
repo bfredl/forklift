@@ -52,7 +52,6 @@ fn fluffer(narg: usize, spec: []const ArgSpec) !void {
 
     try self.ret(start);
     try self.test_analysis(FLIR.X86ABI, true);
-    // self.debug_print();
 
     const target = try codegen(&self, &mod, false, null);
     try mod.code.finalize();

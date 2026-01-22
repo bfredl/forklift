@@ -422,13 +422,15 @@ fn print_mcval(i: *FLIR.Inst) void {
         .memarg => print(" [rbp+8*{}]", .{i.mcidx}),
         .ipreg => print(" ${s}", .{@tagName(@as(X86Asm.IPReg, @enumFromInt(i.mcidx)))}),
         .vfreg => print(" $ymm{}", .{i.mcidx}),
-        else => {
+        .call_memarg => print(" eightbyte {}", .{i.mcidx}),
+        .unallocated_raw => {
             if (i.tag == .load or i.tag == .phi or i.tag == .arg) {
                 if (i.res_type()) |t| {
                     print(" {s}", .{@tagName(t)});
                 }
             }
         },
+        else => |k| print(" .{s} {}", .{ @tagName(k), i.mcidx }),
     }
 }
 

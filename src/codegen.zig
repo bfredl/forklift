@@ -112,6 +112,25 @@ fn swapmcs(cfo: *X86Asm, w: bool, dst: IPMCVal, src: IPMCVal) !void {
         },
     }
 }
+
+// always pushes WIDE (a single EIGHTBYTE)
+fn pushmc(cfo: *X86Asm, src: IPMCVal) !void {
+    switch (src) {
+        .frameslot => |f| try cfo.pushm(slotea(f)),
+        .memarg => |f| try cfo.pushm(memargea(f)),
+        .ipreg => |reg| try cfo.push(r(reg)),
+        .constval => |c| try cfo.pushi(c),
+        .constref, .constptr => |idx| {
+            if (src == .constptr) {
+                return error.WIPError;
+            } else {
+                try cfo.pushm(X86Asm.rel_placeholder());
+            }
+            try cfo.code.func_constants.append(cfo.code.gpa, .{ .pos = cfo.code.get_target() - 4, .idx = idx });
+        },
+    }
+}
+
 pub fn makejmp(self: *FLIR, cfo: *X86Asm, cond: ?X86Asm.Cond, ni: u16, si: u1, labels: []u32, targets: [][2]u32) !void {
     const succ = self.find_nonempty(self.n.items[ni].s[si]);
     // NOTE: we assume blk 0 always has the prologue (push rbp; mov rbp, rsp)
@@ -241,6 +260,7 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
         var cond: ?X86Asm.Cond = null;
         var it = self.ins_iterator(n.firstblk);
         var swap_source: ?defs.IPMCVal = null;
+        var n_eightbytes_pushed_for_call: i32 = 0;
         while (it.next()) |item| {
             const i = item.i;
 
@@ -401,21 +421,35 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
                     const w = true; // TODO: aaaaaaaaaaaa
                     if (try self.movins_read_val(i)) |readval| switch (readval) {
                         .ipval => |src| {
-                            const dest = (try self.movins_dest(i)).ipval() orelse return error.FLIRError;
-                            if (i.f.do_swap) {
-                                if (swap_source) |swap_src| {
-                                    try swapmcs(&cfo, w, dest, swap_src); // PLOCKA INTE UPP DEN
+                            const dest_ins = try self.movins_dest(i);
+                            if (dest_ins.ipval()) |dest| {
+                                if (i.f.do_swap) {
+                                    if (swap_source) |swap_src| {
+                                        try swapmcs(&cfo, w, dest, swap_src); // PLOCKA INTE UPP DEN
+                                    } else {
+                                        try swapmcs(&cfo, w, dest, src);
+                                        swap_source = src;
+                                    }
+                                } else if (i.f.swap_done) {
+                                    // do nothing, for N cyclic values we do N-1 swaps
+                                    // but clear the state for another group
+                                    swap_source = null;
                                 } else {
-                                    try swapmcs(&cfo, w, dest, src);
-                                    swap_source = src;
+                                    // TODO: phi of avxval
+                                    try movmcs(&cfo, w, dest, src);
                                 }
-                            } else if (i.f.swap_done) {
-                                // do nothing, for N cyclic values we do N-1 swaps
-                                // but clear the state for another group
-                                swap_source = null;
+                            } else if (dest_ins.mckind == .call_memarg) {
+                                if (n_eightbytes_pushed_for_call == 0) {
+                                    // ABI: stack alignment
+                                    if (dest_ins.mcidx % 2 == 1) {
+                                        try cfo.aritri(.sub, true, .rsp, 8);
+                                        n_eightbytes_pushed_for_call += 1;
+                                    }
+                                }
+                                try pushmc(&cfo, src);
+                                n_eightbytes_pushed_for_call += 1;
                             } else {
-                                // TODO: phi of avxval
-                                try movmcs(&cfo, w, dest, src);
+                                return error.FLIRError;
                             }
                         },
                         .avxreg => |src| {
@@ -642,6 +676,10 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
                             }
                         },
                         else => return error.FLIRError,
+                    }
+                    if (n_eightbytes_pushed_for_call != 0) {
+                        try cfo.aritri(.add, true, .rsp, 8 * n_eightbytes_pushed_for_call);
+                        n_eightbytes_pushed_for_call = 0;
                     }
                 },
                 // TODO: this should not be executable, emit .copy instead!
