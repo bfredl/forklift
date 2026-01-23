@@ -13,11 +13,6 @@ const defs = @import("./defs.zig");
 buf: std.ArrayListAligned(u8, page_alignment),
 gpa: std.mem.Allocator,
 
-/// offset of each encoded instruction. Might not be needed
-/// but useful for debugging.
-inst_off: std.ArrayList(u32) = .empty,
-inst_dbg: std.ArrayList(usize) = .empty,
-
 func_constants: std.ArrayList(Relocation) = .empty, // TODO: ??????
 
 value_map: std.ArrayList(ValueDebugInfo) = .empty,
@@ -38,12 +33,6 @@ pub const ValueDebugInfo = struct {
 
 pub fn get_target(self: *Self) u32 {
     return @intCast(self.buf.items.len);
-}
-
-pub fn new_inst(self: *Self, addr: usize) !void {
-    const size = @as(u32, @intCast(self.get_target()));
-    try self.inst_off.append(self.gpa, size);
-    try self.inst_dbg.append(self.gpa, addr);
 }
 
 const buf_alloc = std.heap.page_allocator;
@@ -70,8 +59,6 @@ pub fn deinit(self: *Self) void {
     // TODO: only in debug mode (as clobbers the array, needs r/w)
     posix.mprotect(self.buf.items.ptr[0..self.buf.capacity], posix.PROT.READ | posix.PROT.WRITE) catch unreachable;
     self.buf.deinit(buf_alloc);
-    self.inst_off.deinit(self.gpa);
-    self.inst_dbg.deinit(self.gpa);
     self.func_constants.deinit(self.gpa);
     self.value_map.deinit(self.gpa);
 }
@@ -92,16 +79,6 @@ pub fn lookup(self: *Self, addr: usize) usize {
         }
     }
     return addr;
-}
-
-pub fn dbg_test(self: *Self) !void {
-    const stderr = std.io.getStdErr().writer();
-    const dbginfo = try debug.getSelfDebugInfo();
-    const tty_config = debug.detectTTYConfig();
-    for (self.inst_dbg.items, 0..) |x, i| {
-        print("{} {}\n", .{ i, x });
-        try debug.printSourceAtAddress(dbginfo, stderr, x, tty_config);
-    }
 }
 
 pub fn finalize(self: *Self) !void {

@@ -187,9 +187,11 @@ fn try_inspect(self: *HeavyMachineTool, addr: usize) void {
         for (0.., self.debug_list.items) |i, it_after| {
             if (it_after.start_off > off) {
                 if (i > 0) {
-                    const f = in.mod.funcs_internal[self.debug_list.items[i - 1].func_idx];
+                    const internal_idx = self.debug_list.items[i - 1].func_idx;
+                    const f = in.mod.funcs_internal[internal_idx];
                     const name = if (f.name) |nam| nam else f.exported;
-                    if (name) |nam| severe("NAMN {s}\n", .{nam});
+                    if (name) |nam| severe("NAMN {s} AND ", .{nam});
+                    severe("internal index: {} \n", .{internal_idx});
                     if (f.hmt_error) |err| severe("jalla fixa: {s}\n", .{err});
                 }
                 break;

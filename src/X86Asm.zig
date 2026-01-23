@@ -10,10 +10,6 @@ const ISize = defs.ISize;
 code: *@import("./CodeBuffer.zig"),
 long_jump_mode: bool = false,
 
-fn new_inst(self: *Self, addr: usize) !void {
-    try self.code.new_inst(addr);
-}
-
 // TODO: use appendAssumeCapacity in a smart way like arch/x86_64
 pub fn wb(self: *Self, opcode: u8) !void {
     try self.code.buf_append(opcode);
@@ -427,7 +423,6 @@ pub fn vex0f(self: *Self, w: bool, r: bool, x: bool, b: bool, vv: u4, l: bool, p
 
 // control flow
 pub fn ret(self: *Self) !void {
-    try self.new_inst(@returnAddress());
     try self.wb(0xC3);
 }
 
@@ -438,32 +433,27 @@ pub fn retnasm(self: *Self) !void {
 }
 
 pub fn enter(self: *Self) !void {
-    try self.new_inst(@returnAddress());
     try self.wb(0x55); // PUSH rbp
     try self.mov(true, .rbp, .rsp);
 }
 
 pub fn leave(self: *Self) !void {
-    try self.new_inst(@returnAddress());
     try self.mov(true, .rsp, .rbp);
     try self.wb(0x5D); // POP rbp
 }
 
 pub fn trap(self: *Self) !void {
-    try self.new_inst(@returnAddress());
     // WHEEEEEEEE!
     try self.wb(0xCC); // INT 03h
 }
 
 pub fn syscall(self: *Self) !void {
-    try self.new_inst(@returnAddress());
     // hello?
     try self.wb(0x0F);
     try self.wb(0x05);
 }
 
 pub fn call_rel(self: *Self, addr: u32) !void {
-    try self.new_inst(@returnAddress());
     const rel_pos = self.code.get_target() + 5;
     // TODO: check bounds
     const diff = if (addr == defs.INVALID_OFFSET)
@@ -482,21 +472,18 @@ pub fn maybe_call_rel_abs(self: *Self, addr: *const u8) !?void {
     const short_diff = @as(i32, @truncate(diff));
     if (diff != short_diff) return null;
 
-    try self.new_inst(@returnAddress());
     try self.wb(0xE8);
     try self.wdi(short_diff);
     return {};
 }
 
 pub fn call_ptr(self: *Self, reg: IPReg) !void {
-    try self.new_inst(@returnAddress());
     try self.rex_wrxb(false, false, false, reg.ext());
     try self.wb(0xFF);
     try self.modRm(0b11, 2, reg.lowId());
 }
 
 pub fn set(self: *Self, reg: IPReg, cond: Cond) !void {
-    try self.new_inst(@returnAddress());
     try self.rex_wrxb_force(false, false, false, reg.ext(), reg.highlike());
     try self.wb(0x0F);
     try self.wb(0x90 + cond.off());
@@ -506,7 +493,6 @@ pub fn set(self: *Self, reg: IPReg, cond: Cond) !void {
 
 // there..
 pub fn jfwd(self: *Self, cond: ?Cond) !u32 {
-    try self.new_inst(@returnAddress());
     const long = self.long_jump_mode;
     if (cond) |c| {
         if (long) {
@@ -557,7 +543,6 @@ pub fn set_lea(self: *Self, pos: u32, target: u32) void {
 
 // .. and back again
 pub fn jbck(self: *Self, cond: ?Cond, target: u32) !void {
-    try self.new_inst(@returnAddress());
     const off = @as(i32, @intCast(target)) - (@as(i32, @intCast(self.code.buf.items.len)) + 2);
     if (maybe_imm8(off)) |off8| {
         try self.wb(if (cond) |c| 0x70 + c.off() else 0xEB);
@@ -615,7 +600,6 @@ pub fn pop(self: *Self, dst: IPReg) !void {
 // mov and arithmetic
 
 inline fn op_rr(self: *Self, opcode: u8, w: bool, dst: IPReg, src: IPReg) !void {
-    try self.new_inst(@returnAddress());
     try self.rex_wrxb(w, dst.ext(), false, src.ext());
     try self.wb(opcode); // OP reg, \rm
     try self.modRm(0b11, dst.lowId(), src.lowId());
@@ -626,7 +610,6 @@ pub fn mov(self: *Self, w: bool, dst: IPReg, src: IPReg) !void {
 }
 
 pub fn zero(self: *Self, dst: IPReg) !void {
-    try self.new_inst(@returnAddress());
     try self.rex_wrxb(dst.ext(), dst.ext(), false, dst.ext());
     try self.wb(0x33); // xor reg, \rm
     try self.modRm(0b11, dst.lowId(), dst.lowId());
@@ -634,7 +617,6 @@ pub fn zero(self: *Self, dst: IPReg) !void {
 
 // TODO: not all IntUnOp:s are bitops!!
 pub fn bitunop(self: *Self, op: defs.IntUnOp, w: bool, dst: IPReg, src: IPReg) !void {
-    try self.new_inst(@returnAddress());
     try self.wb(0xF3);
     try self.rex_wrxb(w, dst.ext(), false, src.ext());
     try self.wb(0x0F);
@@ -652,7 +634,6 @@ pub fn arit(self: *Self, op: AOp, w: bool, dst: IPReg, src: IPReg) !void {
 }
 
 pub inline fn op_rm(self: *Self, opcode: u8, w: bool, reg: IPReg, ea: EAddr) !void {
-    try self.new_inst(@returnAddress());
     try self.rex_wrxb(w, reg.ext(), ea.x(), ea.b());
     try self.wb(opcode);
     try self.modRmEA(reg.lowId(), ea);
@@ -677,7 +658,6 @@ pub fn movrm(self: *Self, w: bool, dst: IPReg, src: EAddr) !void {
 pub fn movrm_zx(self: *Self, dst: IPReg, src: EAddr, size: ISize) !void {
     // 32-bit MOV is implicitly zero extended to 64-bit
     if (size == .dword or size == .quadword) return self.movrm(size == .quadword, dst, src);
-    try self.new_inst(@returnAddress());
     try self.rex_wrxb(false, dst.ext(), src.x(), src.b());
     try self.wb(0x0F);
     try self.wb(if (size == .word) 0xB7 else 0xB6);
@@ -688,14 +668,12 @@ pub fn movrm_zx(self: *Self, dst: IPReg, src: EAddr, size: ISize) !void {
 pub fn movrm_sx(self: *Self, w: bool, dst: IPReg, src: EAddr, size: ISize) !void {
     if (size == .quadword and !w) return error.Invalid; // DO NOT DO THAT
     if (size == .quadword or (size == .dword and !w)) return self.movrm(size == .quadword, dst, src);
-    try self.new_inst(@returnAddress());
     try self.rex_wrxb(w, dst.ext(), src.x(), src.b());
     try self.op_sx(size);
     try self.modRmEA(dst.lowId(), src);
 }
 
 pub fn movzx_byte(self: *Self, dst: IPReg, src: IPReg) !void {
-    try self.new_inst(@returnAddress());
     try self.rex_wrxb_force(false, dst.ext(), false, src.ext(), src.highlike());
     try self.wb(0x0F);
     try self.wb(0xB6);
@@ -703,7 +681,6 @@ pub fn movzx_byte(self: *Self, dst: IPReg, src: IPReg) !void {
 }
 
 pub fn movsx(self: *Self, w: bool, dst: IPReg, src: IPReg, src_size: ISize) !void {
-    try self.new_inst(@returnAddress());
     const highlike_byte = src_size == .byte and src.highlike();
     try self.rex_wrxb_force(w, dst.ext(), false, src.ext(), highlike_byte);
     try self.op_sx(src_size);
@@ -724,7 +701,6 @@ pub fn movmr(self: *Self, w: bool, dst: EAddr, src: IPReg) !void {
 }
 
 pub fn movmr_size(self: *Self, dst: EAddr, src: IPReg, size: ISize) !void {
-    try self.new_inst(@returnAddress());
     // REX prefix should be forced for r4-r7 to avoid AH/BH/CD/DH
     try self.rex_wrxb_force(size == .quadword, src.ext(), dst.x(), dst.b(), size == .byte and src.highlike());
     switch (size) {
@@ -755,7 +731,6 @@ pub fn lea(self: *Self, dst: IPReg, src: EAddr) !void {
 // this is useful i e to keep a pointer to section
 // of constants in an ordinary register
 pub fn lealink(self: *Self, dst: IPReg) !u32 {
-    try self.new_inst(@returnAddress());
     try self.rex_wrxb(true, dst.ext(), false, false);
     try self.wb(0x8d);
     try self.modRm(0x00, dst.lowId(), 0x05); // lea reg, [rip+??]
@@ -781,7 +756,6 @@ pub fn movabs(self: *Self, dst: IPReg, src: u64) !void {
 
 // TODO: movabs is shorter for src > 0
 pub fn movri(self: *Self, w: bool, dst: IPReg, src: i32) !void {
-    try self.new_inst(@returnAddress());
     // "mov rax, 1337" can be reduced to "mov eax, 1337"
     const wide = w and (src < 0 or dst.ext());
     try self.rex_wrxb(wide, false, false, dst.ext());
@@ -792,7 +766,6 @@ pub fn movri(self: *Self, w: bool, dst: IPReg, src: i32) !void {
 
 pub fn aritri(self: *Self, op: AOp, w: bool, dst: IPReg, imm: i32) !void {
     const imm8 = maybe_imm8(imm);
-    try self.new_inst(@returnAddress());
     try self.rex_wrxb(w, false, false, dst.ext());
     try self.wb(if (imm8 != null) 0x83 else 0x81);
     try self.modRm(0b11, op.opx(), dst.lowId());
@@ -801,7 +774,6 @@ pub fn aritri(self: *Self, op: AOp, w: bool, dst: IPReg, imm: i32) !void {
 
 pub fn aritmi(self: *Self, op: AOp, w: bool, ea: EAddr, imm: i32) !void {
     const imm8 = maybe_imm8(imm);
-    try self.new_inst(@returnAddress());
     try self.rex_wrxb(w, false, ea.x(), ea.b());
     try self.wb(if (imm8 != null) 0x83 else 0x81);
     try self.modRmEA(op.opx(), ea);
@@ -809,7 +781,6 @@ pub fn aritmi(self: *Self, op: AOp, w: bool, ea: EAddr, imm: i32) !void {
 }
 
 pub fn movmi(self: *Self, w: bool, dst: EAddr, src: i32) !void {
-    try self.new_inst(@returnAddress());
     try self.rex_wrxb(w, false, dst.x(), dst.b());
     try self.wb(0xc7); // MOV \rm, imm32
     try self.modRmEA(0b000, dst);
@@ -817,7 +788,6 @@ pub fn movmi(self: *Self, w: bool, dst: EAddr, src: i32) !void {
 }
 
 pub fn movmi_byte(self: *Self, dst: EAddr, src: u8) !void {
-    try self.new_inst(@returnAddress());
     try self.wb(0xc6); // MOV \rm, imm32
     try self.modRmEA(0b000, dst);
     try self.wb(src);
@@ -827,7 +797,6 @@ pub fn movmi_byte(self: *Self, dst: EAddr, src: u8) !void {
 
 // DST = DST * SRC
 pub fn imulrr(self: *Self, w: bool, dst: IPReg, src: IPReg) !void {
-    try self.new_inst(@returnAddress());
     try self.rex_wrxb(w, dst.ext(), false, src.ext());
     try self.wb(0x0f); // IMUL reg, \rm
     try self.wb(0xaf);
@@ -836,7 +805,6 @@ pub fn imulrr(self: *Self, w: bool, dst: IPReg, src: IPReg) !void {
 
 // DST = DST * SRC
 pub fn imulrm(self: *Self, w: bool, dst: IPReg, src: EAddr) !void {
-    try self.new_inst(@returnAddress());
     try self.rex_wrxb(w, dst.ext(), src.x(), src.b());
     try self.wb(0x0f); // IMUL reg, \rm
     try self.wb(0xaf);
@@ -845,7 +813,6 @@ pub fn imulrm(self: *Self, w: bool, dst: IPReg, src: EAddr) !void {
 
 // DST = SRC * imm
 pub fn imulrri(self: *Self, w: bool, dst: IPReg, src: IPReg, factor: i32) !void {
-    try self.new_inst(@returnAddress());
     try self.rex_wrxb(w, dst.ext(), false, src.ext());
     const small_factor: ?i8 = maybe_imm8(factor);
 
@@ -860,7 +827,6 @@ pub fn imulrri(self: *Self, w: bool, dst: IPReg, src: IPReg, factor: i32) !void 
 
 // RDX:RAX = RAX * SRC
 pub fn mulr(self: *Self, src: IPReg) !void {
-    try self.new_inst(@returnAddress());
     try self.rex_wrxb(true, false, false, src.ext());
     try self.wb(0xf7); // MUL \rm
     try self.modRm(0b11, 4, src.lowId());
@@ -868,7 +834,6 @@ pub fn mulr(self: *Self, src: IPReg) !void {
 
 // RAX = RAX:RDX / src, RDX = reminder
 pub fn div(self: *Self, w: bool, src: IPReg, signed: bool) !void {
-    try self.new_inst(@returnAddress());
     try self.rex_wrxb(w, false, false, src.ext());
     try self.wb(0xf7); // IDIV \rm
     try self.modRm(0b11, if (signed) 7 else 6, src.lowId());
@@ -876,7 +841,6 @@ pub fn div(self: *Self, w: bool, src: IPReg, signed: bool) !void {
 
 // jibble RDX before signed division
 pub fn cdq_cqo(self: *Self, w: bool) !void {
-    try self.new_inst(@returnAddress());
     try self.rex_wrxb(w, false, false, false);
     try self.wb(0x99); // CDQ or CQO
 }
@@ -885,7 +849,6 @@ pub fn cdq_cqo(self: *Self, w: bool) !void {
 
 // shift with immediate count. use shorthand version when count==1
 fn shlike_ri(self: *Self, w: bool, dst: IPReg, op: u3, count: u8) !void {
-    try self.new_inst(@returnAddress());
     try self.rex_wrxb(w, false, false, dst.ext());
     try self.wb(if (count == 1) 0xD1 else 0xC1); // Sxx \rm, 1
     try self.modRm(0b11, op, dst.lowId());
@@ -900,7 +863,6 @@ pub fn rot_ri(self: *Self, w: bool, dst: IPReg, is_right: bool, count: u8) !void
 }
 
 pub fn rot_rc(self: *Self, w: bool, dst: IPReg, is_right: bool) !void {
-    try self.new_inst(@returnAddress());
     try self.rex_wrxb(w, false, false, dst.ext());
     try self.wb(0xD3);
     try self.modRm(0b11, if (is_right) 1 else 0, dst.lowId());
@@ -909,7 +871,6 @@ pub fn rot_rc(self: *Self, w: bool, dst: IPReg, is_right: bool) !void {
 // string instructions
 
 pub fn stos(self: *Self, rep: bool, size: ISize) !void {
-    try self.new_inst(@returnAddress());
     if (rep) try self.wb(0xf3);
     switch (size) {
         .byte => try self.wb(0xaa),
@@ -930,14 +891,12 @@ pub fn stos(self: *Self, rep: bool, size: ISize) !void {
 // old school SSE forms might be shorter for some 128/scalar ops?
 
 pub inline fn vop_rr(self: *Self, op: u8, fmode: FMode, dst: u4, src1: u4, src2: u4) !void {
-    try self.new_inst(@returnAddress());
     try self.vex0fwig(dst > 7, false, src2 > 7, src1, fmode.l(), fmode.pp());
     try self.wb(op);
     try self.modRm(0b11, @truncate(dst), @truncate(src2));
 }
 
 pub inline fn vop_rm(self: *Self, op: u8, fmode: FMode, reg: u4, vreg: u4, ea: EAddr) !void {
-    try self.new_inst(@returnAddress());
     try self.vex0fwig(reg > 7, ea.x(), ea.b(), vreg, fmode.l(), fmode.pp());
     try self.wb(op);
     try self.modRmEA(@truncate(reg), ea);
@@ -979,7 +938,6 @@ pub fn vmovamr(self: *Self, fmode: FMode, dst: EAddr, src: u4) !void {
 
 // note: not all fmodes makes sense (and pd2 is not mentioned in the manual)
 pub fn vbroadcast(self: *Self, fmode: FMode, dst: u4, src: EAddr) !void {
-    try self.new_inst(@returnAddress());
     try self.vex3(false, dst > 7, src.x(), src.b(), .h0F38, 0, fmode.l(), .h66);
     try self.wb(if (fmode.double()) 0x19 else 0x18);
     try self.modRmEA(@truncate(dst), src);
@@ -1064,14 +1022,12 @@ pub fn vcvtsx2si_rr(self: *Self, fmode: FMode, w: bool, dst: IPReg, src: u4) !vo
 
 // integer vector instructions
 pub inline fn vop_i_rr(self: *Self, op: u8, wide: bool, pp: PP, dst: u4, src1: u4, src2: u4) !void {
-    try self.new_inst(@returnAddress());
     try self.vex0fwig(dst > 7, false, src2 > 7, src1, wide, pp);
     try self.wb(op);
     try self.modRm(0b11, @truncate(dst), @truncate(src2));
 }
 
 pub inline fn vop_i_rm(self: *Self, op: u8, wide: bool, pp: PP, reg: u4, vreg: u4, ea: EAddr) !void {
-    try self.new_inst(@returnAddress());
     try self.vex0fwig(reg > 7, ea.x(), ea.b(), vreg, wide, pp);
     try self.wb(op);
     try self.modRmEA(@truncate(reg), ea);
@@ -1098,7 +1054,6 @@ pub fn vmovdqumr(self: *Self, wide: bool, dst: EAddr, src: u4) !void {
 }
 
 pub fn vmovdq_iv(self: *Self, wide: bool, dst: IPReg, src: u4) !void {
-    try self.new_inst(@returnAddress());
     try self.vex0f(wide, src > 7, false, dst.ext(), 0, false, .h66);
     try self.wb(0x7e);
     try self.modRm(0b11, @truncate(src), dst.lowId());
@@ -1122,7 +1077,6 @@ pub fn vzeroall(self: *Self) !void {
 // BMI instructions: GPR operations coded with VEX
 
 pub inline fn bmi_rr(self: *Self, op: u8, wide: bool, pp: PP, dst: IPReg, src1: IPReg, src2: IPReg) !void {
-    try self.new_inst(@returnAddress());
     try self.vex3(wide, dst.ext(), false, src1.ext(), .h0F38, src2.id(), false, pp);
     try self.wb(op);
     try self.modRm(0b11, dst.lowId(), src1.lowId());
