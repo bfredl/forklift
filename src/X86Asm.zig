@@ -745,7 +745,7 @@ pub fn movabs(self: *Self, dst: IPReg, src: u64) !void {
     const quad = src > 0xFFFFFFFF;
     const sm0l = src <= 0xFFFF;
     if (sm0l) try self.wb(0x66);
-    try self.rex_wrxb(quad, dst.ext(), false, false);
+    try self.rex_wrxb(quad, false, false, dst.ext());
     try self.wb(0xb8 + @as(u8, dst.lowId()));
     if (quad) {
         try self.wq(src);
