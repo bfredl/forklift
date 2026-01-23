@@ -333,6 +333,8 @@ pub const MCKind = enum(u8) {
     }
 };
 
+pub const FLIRDebugItem = struct { offsett: u16, flir_ins: u16 };
+
 const builtin = @import("builtin");
 const std = @import("std");
 const BPF = std.os.linux.BPF;

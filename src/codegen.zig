@@ -201,7 +201,7 @@ pub fn set_pred(self: *FLIR, cfo: *X86Asm, targets: [][2]u32, ni: u16) !void {
 // TODO: a lot of codegen.zig should be shared between plattforms
 const ABI = FLIR.X86ABI;
 
-pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u32 {
+pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32, flir_debuglist: ?[]defs.FLIRDebugItem) !u32 {
     const labels = try self.gpa.alloc(u32, self.n.items.len);
     const targets = try self.gpa.alloc([2]u32, self.n.items.len);
     defer self.gpa.free(labels);
@@ -211,6 +211,9 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
     var cfo = X86Asm{ .code = code };
     @memset(labels, 0);
     @memset(targets, .{ 0, 0 });
+
+    const debuglist = flir_debuglist orelse @constCast(&[0]defs.FLIRDebugItem{});
+    _ = debuglist;
 
     cfo.long_jump_mode = true; // TODO: as an option
 
