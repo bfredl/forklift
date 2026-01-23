@@ -154,6 +154,7 @@ pub fn globalExceptionHandler() void {
 
     posix.sigaction(posix.SIG.FPE, &act, null);
     posix.sigaction(posix.SIG.TRAP, &act, null);
+    posix.sigaction(posix.SIG.SEGV, &act, null);
 }
 
 fn build_longjmp(self: *HeavyMachineTool) !void {
