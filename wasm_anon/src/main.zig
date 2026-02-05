@@ -17,6 +17,7 @@ const params = clap.parseParamsComptime(
     \\-s, --stats <str>      Dump some stats on exit
     \\-d, --disasm <str>     Disassemble block
     \\-c, --compile <str>... Compile block using ThunderLightning
+    \\--dbg_func <str>       Heavy machine func debug tool
     \\-m, --heavy            Compile entire module using HeavyMachineTool
     \\--stdin <str>          override wasi stdin
     \\<str>
@@ -100,7 +101,7 @@ pub fn main() !u8 {
         if (n_res != 1) dbg("TODO: n_res\n", .{});
         dbg("{s}({}) == {}\n", .{ callname, num, res[0].i32 });
     } else {
-        const status = try wasi_run(engine, &mod, allocator, @ptrCast(p.args.stdin));
+        const status = try wasi_run(engine, &mod, allocator, @ptrCast(p.args.stdin), p.args.dbg_func);
         return @intCast(@min(status, 255));
     }
     return 0;
@@ -112,7 +113,7 @@ const WASIState = struct {
 };
 
 // NB: engine is a tagged pointer
-fn wasi_run(engine: wasm_shelf.Engine, mod: *wasm_shelf.Module, allocator: std.mem.Allocator, stdin: ?[:0]const u8) !u32 {
+fn wasi_run(engine: wasm_shelf.Engine, mod: *wasm_shelf.Module, allocator: std.mem.Allocator, stdin: ?[:0]const u8, filter: ?[]const u8) !u32 {
     if (stdin) |path| {
         const fd = try std.posix.openZ(path, .{ .ACCMODE = .RDONLY }, 0);
         try std.posix.dup2(fd, 0);
@@ -131,7 +132,7 @@ fn wasi_run(engine: wasm_shelf.Engine, mod: *wasm_shelf.Module, allocator: std.m
     var in = try wasm_shelf.Instance.init(mod, &imports);
     defer in.deinit();
 
-    try in.maybe_compile(engine);
+    try in.maybe_compile(engine, filter);
 
     const sym = try mod.lookup_export("_start") orelse @panic("_start not found");
 

@@ -67,16 +67,15 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance, filter: ?[]const 
     for (0.., mod.funcs_internal) |i, *f| {
         var selekted = false;
         if (filter) |fname| {
-            // luring: if not exported it is likely a helper we might need
-            // ta den med ändån.
-            if (f.exported) |ename| {
+            const name = if (f.name) |nam| nam else f.exported;
+            if (name) |ename| {
                 if (!std.mem.eql(u8, fname, ename)) {
                     continue;
                 }
                 selekted = true;
             }
         }
-        self.compileFunc(in, i, f, false) catch |e| switch (e) {
+        self.compileFunc(in, i, f, selekted) catch |e| switch (e) {
             error.NotImplemented => {
                 if (f.hmt_error == null) {
                     f.hmt_error = "??UNKNOWN";

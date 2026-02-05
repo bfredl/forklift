@@ -107,9 +107,9 @@ pub fn execute_either(in: *Instance, engine: Engine, idx: u32, params: []const d
     };
 }
 
-pub fn maybe_compile(in: *Instance, engine: Engine) !void {
+pub fn maybe_compile(in: *Instance, engine: Engine, filter: ?[]const u8) !void {
     switch (engine) {
         .interpreter => {},
-        .heavy => |h| try h.compileInstance(in, null),
+        .heavy => |h| try h.compileInstance(in, filter),
     }
 }
