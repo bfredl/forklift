@@ -287,13 +287,13 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
 
                     if (op.is_bitop()) {
                         switch (src) {
-                            .frameslot, .memarg => |_| return error.WIPError,
+                            .frameslot, .memarg => return error.WIPError,
                             .ipreg => |reg| try cfo.bitunop(op, w, r(dst), r(reg)),
                             .constval, .constref, .constptr => return error.FLIRError,
                         }
                     } else if (op.is_sign_extend()) |size| {
                         switch (src) {
-                            .frameslot, .memarg => |_| return error.WIPError,
+                            .frameslot, .memarg => return error.WIPError,
                             .ipreg => |reg| try cfo.movsx(w, r(dst), r(reg), size),
                             .constval, .constref, .constptr => return error.FLIRError,
                         }

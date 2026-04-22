@@ -1089,13 +1089,20 @@ pub fn sx(self: *Self, w: bool, op: ShiftOp, dst: IPReg, src1: IPReg, src2: IPRe
 // output functions
 
 pub fn dbg_nasm(self: *const Self, allocator: Allocator) !void {
-    var nasm = std.process.Child.init(&[_][]const u8{ "ndisasm", "-b", "64", "-" }, allocator);
+    // we have unsafePerformIO at home
+    var unsafePerformIO: std.Io.Threaded = .init_single_threaded;
+    //  "gpa is only used for  `Io.VTable.[group]async` `Io.VTable.[group]concurrent`"
+    //  So that was a fucking lie..
+    unsafePerformIO.allocator = allocator;
+    const io = unsafePerformIO.io();
+    var nasm = try std.process.spawn(io, .{
+        .argv = &[_][]const u8{ "ndisasm", "-b", "64", "-" },
+        .stdin = .pipe,
+    });
     // defer nasm.deinit();
-    nasm.stdin_behavior = .Pipe;
     std.debug.print("\n", .{});
-    try nasm.spawn();
-    _ = try nasm.stdin.?.write(self.code.buf.items);
-    _ = nasm.stdin.?.close();
+    _ = try nasm.stdin.?.writeStreamingAll(io, self.code.buf.items);
+    _ = nasm.stdin.?.close(io);
     nasm.stdin = null;
-    _ = try nasm.wait();
+    _ = try nasm.wait(io);
 }

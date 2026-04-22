@@ -7,7 +7,6 @@ const io = std.io;
 
 var the_cfo: ?*CodeBuffer = null;
 
-const REG = std.os.linux.REG;
 pub const context_order: [16]u8 = .{
     REG.RAX,
     REG.RCX,
@@ -27,12 +26,50 @@ pub const context_order: [16]u8 = .{
     REG.R15,
 };
 
-fn sigHandler(sig: i32, info: *const posix.siginfo_t, ctx_ptr: ?*const anyopaque) callconv(.c) void {
+const greg_t = usize;
+const gregset_t = [23]greg_t;
+const ucontext = extern struct {
+    _flags: usize,
+    _link: ?*ucontext,
+    _stack: std.os.linux.stack_t,
+    mcontext: extern struct {
+        gregs: gregset_t,
+    },
+};
+
+pub const REG = struct {
+    pub const R8 = 0;
+    pub const R9 = 1;
+    pub const R10 = 2;
+    pub const R11 = 3;
+    pub const R12 = 4;
+    pub const R13 = 5;
+    pub const R14 = 6;
+    pub const R15 = 7;
+    pub const RDI = 8;
+    pub const RSI = 9;
+    pub const RBP = 10;
+    pub const RBX = 11;
+    pub const RDX = 12;
+    pub const RAX = 13;
+    pub const RCX = 14;
+    pub const RSP = 15;
+    pub const RIP = 16;
+    pub const EFL = 17;
+    pub const CSGSFS = 18;
+    pub const ERR = 19;
+    pub const TRAPNO = 20;
+    pub const OLDMASK = 21;
+    pub const CR2 = 22;
+};
+
+fn sigHandler(sig: posix.SIG, info: *const posix.siginfo_t, ctx_ptr: ?*const anyopaque) callconv(.c) void {
     // TODO: bull, just use a big enough buffer and always do a single syscall write in the
     // end, no locks needed
     var buffer: [64]u8 = undefined;
-    const s = std.debug.lockStderrWriter(&buffer);
-    defer std.debug.unlockStderrWriter();
+    const slock = std.debug.lockStderr(&buffer);
+    defer std.debug.unlockStderr();
+    const s = &slock.file_writer.interface;
 
     const addr = @intFromPtr(info.fields.sigfault.addr);
 
@@ -40,22 +77,22 @@ fn sigHandler(sig: i32, info: *const posix.siginfo_t, ctx_ptr: ?*const anyopaque
     // ideally we should be able to do some pre-processing
     // and then "chain" the default handler
     const desc = switch (sig) {
-        posix.SIG.SEGV => "Segmentation fault",
-        posix.SIG.ILL => "Illegal instruction",
-        posix.SIG.BUS => "Bus error",
-        posix.SIG.TRAP => "Trap",
+        .SEGV => "Segmentation fault",
+        .ILL => "Illegal instruction",
+        .BUS => "Bus error",
+        .TRAP => "Trap",
         else => "???",
     };
 
-    const ctx: *const posix.ucontext_t = @ptrCast(@alignCast(ctx_ptr));
-    var ip: usize = @intCast(ctx.mcontext.gregs[posix.REG.RIP]);
-    const bp: usize = @intCast(ctx.mcontext.gregs[posix.REG.RBP]);
+    const ctx: *const ucontext = @ptrCast(@alignCast(ctx_ptr));
+    var ip: usize = @intCast(ctx.mcontext.gregs[REG.RIP]);
+    const bp: usize = @intCast(ctx.mcontext.gregs[REG.RBP]);
     s.print("\nDo not indulge in stunt driving or horseplay!\n", .{}) catch unreachable;
 
     if (sig != posix.SIG.TRAP) {
         s.print("\n{s} at address 0x{x}\n\n", .{ desc, addr }) catch unreachable;
-        s.print("RAX {x}\n", .{ctx.mcontext.gregs[posix.REG.RAX]}) catch unreachable;
-        s.print("RCX {x}\n\n", .{ctx.mcontext.gregs[posix.REG.RCX]}) catch unreachable;
+        s.print("RAX {x}\n", .{ctx.mcontext.gregs[REG.RAX]}) catch unreachable;
+        s.print("RCX {x}\n\n", .{ctx.mcontext.gregs[REG.RCX]}) catch unreachable;
     }
 
     if (the_cfo) |c| {

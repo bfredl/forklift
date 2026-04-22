@@ -125,9 +125,9 @@ fn regjmpmc(code: *CFOModule, op: Insn.JmpOp, dst: IPReg, src: IPMCVal) !u32 {
     const pos = get_target(&code.bpf_code);
     switch (src) {
         .frameslot => return error.FLIRError,
-        .ipreg => |_| unreachable,
+        .ipreg => unreachable,
         // TODO: FLIR.ABI needs to encode constraints like "imm which fits in a i32"
-        .constval => |_| unreachable,
+        .constval => unreachable,
         .constref, .constptr, .memarg => return error.FLIRError,
         //     var inst = I.jmp(op, dst, src.op1, 0x7FFF);
     }

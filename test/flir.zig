@@ -611,10 +611,14 @@ test "syscall" {
 
     defer cfo.deinit();
     const fun = cfo.get_ptr(0, AFunc);
-    const pid = try posix.fork();
-    if (pid > 0) {
-        const status = posix.waitpid(pid, 0);
-        try expect(usize, 11 * 256, status.status);
+    const pid = posix.system.fork();
+    if (pid < 0) {
+        @panic("kcAjaj");
+    } else if (pid > 0) {
+        var status: u32 = undefined;
+        const errno = posix.system.waitpid(@intCast(pid), &status, 0);
+        if (posix.errno(errno) != .SUCCESS) @panic("SYSTEM FAILURE");
+        try expect(usize, 11 * 256, status);
     } else {
         _ = fun(11);
         @panic("exit syscall failed");

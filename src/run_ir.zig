@@ -15,12 +15,12 @@ pub fn usage() void {
     print("no.\n", .{});
 }
 
-pub fn readall(allocator: mem.Allocator, filename: []u8) ![]u8 {
-    const fil = try std.fs.cwd().openFile(filename, .{});
-    const stat = try posix.fstat(fil.handle);
+pub fn readall(io: std.Io, gpa: mem.Allocator, filename: []const u8) ![]u8 {
+    const fil = try std.Io.Dir.cwd().openFile(io, filename, .{});
+    const stat = try fil.stat(io);
     const size = std.math.cast(usize, stat.size) orelse return error.FileTooBig;
-    const buf = try allocator.alloc(u8, size);
-    if (try fil.readAll(buf) < size) {
+    const buf = try gpa.alloc(u8, size);
+    if (try fil.readStreaming(io, &.{buf}) < size) {
         return error.IOError;
     }
     return buf;
@@ -28,8 +28,9 @@ pub fn readall(allocator: mem.Allocator, filename: []u8) ![]u8 {
 
 pub var options: defs.DebugOptions = .{};
 
-pub fn main() !void {
-    const argv = std.os.argv;
+pub fn main(init: std.process.Init) !void {
+    const argv = init.minimal.args.vector;
+    const io = init.io;
     if (argv.len < 2) return usage();
     var nextarg: u8 = 1;
     const firstarg = mem.span(argv[nextarg]);
@@ -61,29 +62,25 @@ pub fn main() !void {
     nextarg += 1;
 
     const mode = @import("builtin").mode;
-    var gpa = if (mode == .Debug)
-        std.heap.GeneralPurposeAllocator(.{}){}
-    else
-        std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    const allocator = gpa.allocator();
+    var gpa = if (mode == .Debug) init.gpa else init.arena.allocator();
 
-    const buf = try readall(allocator, filearg);
-    defer allocator.free(buf);
+    const buf = try readall(io, gpa, filearg);
+    defer gpa.free(buf);
 
     const arg1 = firstarg: {
         if (argv.len <= nextarg) break :firstarg null;
         const span = mem.span(argv[nextarg]);
         nextarg += 1;
-        break :firstarg if (inline_arg1) span else try readall(allocator, span);
+        break :firstarg if (inline_arg1) span else try readall(io, gpa, span);
     };
-    defer if (!inline_arg1) if (arg1) |b| allocator.free(b);
-    const inbuf2 = if (argv.len > nextarg) try readall(allocator, mem.span(argv[nextarg])) else null;
-    defer if (inbuf2) |b| allocator.free(b);
+    defer if (!inline_arg1) if (arg1) |b| gpa.free(b);
+    const inbuf2 = if (argv.len > nextarg) try readall(io, gpa, mem.span(argv[nextarg])) else null;
+    defer if (inbuf2) |b| gpa.free(b);
 
-    var module: @import("./CFOModule.zig") = try .init(allocator);
+    var module: @import("./CFOModule.zig") = try .init(gpa);
 
     // try parser.fd_objs.put("count", map_count);
-    try parse_mod(&module, allocator, buf, false, false);
+    try parse_mod(&module, gpa, buf, false, false);
 
     if (arg1) |b| {
         try module.code.finalize();
@@ -93,6 +90,6 @@ pub fn main() !void {
         const SFunc = *const fn (arg1: [*]u8, arg2: usize, arg3: ?[*]u8, arg4: usize) callconv(.c) usize;
         const fun = try module.get_func_ptr("main", SFunc);
         const ptr2, const len2 = if (inbuf2) |b2| .{ b2.ptr, b2.len } else .{ null, 0 };
-        print("res: {}\n", .{fun(b.ptr, b.len, ptr2, len2)});
+        print("res: {}\n", .{fun(@constCast(b.ptr), b.len, ptr2, len2)});
     }
 }

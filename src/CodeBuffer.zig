@@ -57,7 +57,7 @@ pub fn buf_appendNTimes(self: *Self, byte: u8, n: usize) !void {
 }
 pub fn deinit(self: *Self) void {
     // TODO: only in debug mode (as clobbers the array, needs r/w)
-    posix.mprotect(self.buf.items.ptr[0..self.buf.capacity], posix.PROT.READ | posix.PROT.WRITE) catch unreachable;
+    _ = posix.system.mprotect(self.buf.items.ptr, self.buf.capacity, .{ .READ = true, .WRITE = true });
     self.buf.deinit(buf_alloc);
     self.func_constants.deinit(self.gpa);
     self.value_map.deinit(self.gpa);
@@ -82,7 +82,11 @@ pub fn lookup(self: *Self, addr: usize) usize {
 }
 
 pub fn finalize(self: *Self) !void {
-    try posix.mprotect(self.buf.items.ptr[0..self.buf.capacity], posix.PROT.READ | posix.PROT.EXEC);
+    const res = posix.system.mprotect(self.buf.items.ptr, self.buf.capacity, .{ .READ = true, .EXEC = true });
+    switch (posix.errno(res)) {
+        .SUCCESS => {},
+        else => |err| return posix.unexpectedErrno(err),
+    }
 }
 
 pub fn get_ptr(self: *Self, target: u32, comptime T: type) T {

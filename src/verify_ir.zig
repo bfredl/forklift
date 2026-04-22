@@ -317,7 +317,7 @@ pub fn print_inst(self: *FLIR, ref: u16, i: *FLIR.Inst) void {
         const targnam = self.dbg_get_varname(i.op2);
         // TODO: ?? compare src_idx == targ_idx by vindex here, this was just a sloppy hack
         if (targnam) |targ| {
-            if (targ.ptr == (srcnam orelse "").ptr) { // aaaaaa
+            if (if (srcnam) |src| targ.ptr == src.ptr else true) { // aaaaaa
                 print(" ({s})", .{targ});
             } else {
                 print(" ({s} <- {s})", .{ targ, srcnam orelse "*" });

@@ -42,7 +42,8 @@ cur_loop: ?*const Loop = null,
 
 t: Tokenizer,
 
-vars: std.StringArrayHashMap(IdInfo),
+vars: std.array_hash_map.String(IdInfo),
+gpa: Allocator,
 const IdInfo = struct {
     ref: u16,
     is_mut: bool, // assignable
@@ -63,8 +64,8 @@ fn require(val: anytype, what: []const u8) ParseError!@TypeOf(val.?) {
     };
 }
 
-pub fn nonexisting(map: anytype, key: []const u8, what: []const u8) ParseError!@TypeOf(map.getPtr(key).?) {
-    const item = try map.getOrPut(key);
+pub fn nonexisting(map: anytype, key: []const u8, what: []const u8, gpa: Allocator) ParseError!@TypeOf(map.getPtr(key).?) {
+    const item = try map.getOrPut(gpa, key);
     if (item.found_existing) {
         print("duplicate {s} {s}!\n", .{ what, key });
         return error.ParseError;
@@ -99,14 +100,14 @@ pub fn expr_0(self: *Self, type_ctx: SpecType) !?u16 {
                     .sd => try self.ir.const_f64(self.curnode, @floatFromInt(i)),
                     else => @panic("HAIII"),
                 },
-                .intptr => |_| try self.ir.const_uint(@intCast(i)),
+                .intptr => try self.ir.const_uint(@intCast(i)),
             };
         },
         '\'' => {
             const val = try self.t.ascii_quote();
             return switch (type_ctx) {
-                .avxval => |_| error.FLIRError, // or maybe, if it becomes simpler
-                .intptr => |_| try self.ir.const_int(val),
+                .avxval => error.FLIRError, // or maybe, if it becomes simpler
+                .intptr => try self.ir.const_int(val),
             };
         },
         '(' => {
@@ -504,7 +505,7 @@ pub fn stmt(self: *Self) !?bool {
         did_ret = true;
     } else if (mem.eql(u8, kw, "let")) {
         const name = self.t.keyword() orelse return error.SyntaxError;
-        const item = try nonexisting(&self.vars, name, "variable");
+        const item = try nonexisting(&self.vars, name, "variable", self.gpa);
         const type_ctx = try self.maybe_colon_type() orelse int_ctx;
         try self.t.expect_char('=');
         const val = try self.expr_toplevel(type_ctx);
@@ -590,7 +591,7 @@ fn scoped_block(self: *Self) ParseError!bool {
 fn do_parse(self: *Self) !bool {
     try self.t.expect_char('(');
     while (self.t.keyword()) |name| {
-        const item = try nonexisting(&self.vars, name, "argument");
+        const item = try nonexisting(&self.vars, name, "argument", self.gpa);
         const val = try self.ir.arg(.{ .intptr = .quadword });
         item.* = .{ .ref = val, .is_mut = false };
         if (self.t.nonws() == ',') {
@@ -607,7 +608,7 @@ fn do_parse(self: *Self) !bool {
         if (mem.eql(u8, kw, "vars")) {
             _ = self.t.keyword();
             while (self.t.keyword()) |name| {
-                const item = try nonexisting(&self.vars, name, "variable");
+                const item = try nonexisting(&self.vars, name, "variable", self.gpa);
                 const typ = try self.maybe_colon_type();
 
                 const val = try self.ir.variable(typ orelse int_ctx, null);
@@ -631,10 +632,10 @@ fn do_parse(self: *Self) !bool {
     return did_ret;
 }
 
-pub fn parse_func(mod: *CFOModule, ir: *FLIR, t: *Tokenizer, allocator: Allocator) !void {
+pub fn parse_func(mod: *CFOModule, ir: *FLIR, t: *Tokenizer, gpa: Allocator) !void {
     const curnode = try ir.addNode();
-    var self: Self = .{ .mod = mod, .ir = ir, .t = t.*, .curnode = curnode, .vars = .init(allocator) };
-    defer self.vars.deinit();
+    var self: Self = .{ .mod = mod, .ir = ir, .t = t.*, .curnode = curnode, .gpa = gpa, .vars = .empty };
+    defer self.vars.deinit(gpa);
     defer t.* = self.t;
     // TODO: use did_ret for something?
     _ = try self.do_parse();
@@ -654,10 +655,10 @@ pub fn parse_func(mod: *CFOModule, ir: *FLIR, t: *Tokenizer, allocator: Allocato
     }
 }
 
-pub fn parse_mod(mod: *CFOModule, allocator: Allocator, str: []const u8, dbg: bool, one: bool) !void {
+pub fn parse_mod(mod: *CFOModule, gpa: Allocator, str: []const u8, dbg: bool, one: bool) !void {
 
     // small init size on purpose: must allow reallocations in place
-    var ir = try FLIR.init(4, allocator);
+    var ir = try FLIR.init(4, gpa);
     defer ir.deinit();
 
     var t = Tokenizer{ .str = str };
@@ -670,7 +671,7 @@ pub fn parse_mod(mod: *CFOModule, allocator: Allocator, str: []const u8, dbg: bo
 
             const obj_slot = try nonexisting_obj(mod, name);
 
-            try parse_func(mod, &ir, &t, allocator);
+            try parse_func(mod, &ir, &t, gpa);
             if (one) return;
 
             if (options.dbg_raw_ir or dbg) ir.debug_print();
@@ -684,7 +685,7 @@ pub fn parse_mod(mod: *CFOModule, allocator: Allocator, str: []const u8, dbg: bo
         } else if (mem.eql(u8, kw, "bpf_func")) {
             const name = try require(t.keyword(), "name");
             const obj_slot = try nonexisting_obj(mod, name);
-            try parse_func(mod, &ir, &t, allocator);
+            try parse_func(mod, &ir, &t, gpa);
 
             try ir.test_analysis(FLIR.BPF_ABI, true);
             if (dbg) ir.debug_print();
