@@ -334,7 +334,7 @@ pub fn compile_block(mod: *Module, func: *Function, blk_idx: u32) !LightningTrac
                 } else {
                     const src = self.pop();
                     try switch (src) {
-                        .imm => |_| @panic("unbranch this"),
+                        .imm => @panic("unbranch this"),
                         .reg => |reg| cfo.aritri(.cmp, false, reg, 0),
                         .local => |idx| cfo.aritmi(.cmp, false, local_slot(idx), 0),
                         .on_stack => cfo.aritmi(.cmp, false, stack_slot(self.val_stack_level), 0),

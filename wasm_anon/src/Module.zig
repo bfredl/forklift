@@ -53,7 +53,7 @@ istat: [256]u32 = @splat(0),
 
 // TODO: tricky. traces might wanna depend on per-instance state (like some
 // imported functions being JIT-able, etc)
-traces: std.ArrayListUnmanaged(LightningTrace) = .{},
+traces: std.ArrayListUnmanaged(LightningTrace) = .empty,
 
 const Function = @import("./Function.zig");
 const Interpreter = @import("./Interpreter.zig");

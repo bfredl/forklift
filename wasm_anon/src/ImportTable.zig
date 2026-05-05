@@ -27,7 +27,7 @@ pub fn init(allocator: std.mem.Allocator) ImportTable {
         .allocator = allocator,
         .globals = .{},
         .funcs = .{},
-        .func_table_funcs = .{},
+        .func_table_funcs = .empty,
     };
 }
 

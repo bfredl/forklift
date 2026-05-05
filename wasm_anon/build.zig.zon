@@ -20,8 +20,8 @@
             .lazy = true,
         },
         .clap = .{
-            .url = "git+https://github.com/Hejsil/zig-clap#a05e82841740fbc3a79474aa88b107d86392f948",
-            .hash = "clap-0.10.0-oBajB_TnAQB0l5UdW9WYhhJDEswbedvwFOzzZwGknYeR",
+            .url = "git+https://github.com/Hejsil/zig-clap#8d97efa1ee1e575443c7888d5c38e1c3fc145cf5",
+            .hash = "clap-0.12.0-oBajB7foAQDqlSwaSG5g0yq7xGbQARUsBk5T64gAOqP5",
         },
     },
     .paths = .{

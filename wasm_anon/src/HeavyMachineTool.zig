@@ -664,7 +664,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                     try value_stack.append(gpa, val);
                 }
             },
-            .select => |_| {
+            .select => {
                 const pred = value_stack.pop().?;
                 const val1 = value_stack.pop().?;
                 const val2 = value_stack.pop().?;

@@ -31,23 +31,22 @@ fn blkspec(spec: []const u8) !struct { u32, u32 } {
     return .{ func, blk };
 }
 
-pub fn main() !u8 {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !u8 {
+    const allocator = init.gpa;
 
     var diag = clap.Diagnostic{};
-    var p = clap.parse(clap.Help, &params, clap.parsers.default, .{
+    var p = clap.parse(clap.Help, &params, clap.parsers.default, init.minimal.args, .{
         .diagnostic = &diag,
-        .allocator = gpa.allocator(),
+        .allocator = allocator,
     }) catch |err| {
         // Report useful error and exit.
-        try diag.reportToFile(.stderr(), err);
+        try diag.reportToFile(init.io, .stderr(), err);
         return err;
     };
     defer p.deinit();
 
     const filearg = p.positionals[0] orelse @panic("usage");
-    const buf = try util.readall(allocator, filearg);
+    const buf = try util.readall(init.io, allocator, filearg);
     defer allocator.free(buf);
 
     var mod = try wasm_shelf.Module.parse(buf, allocator);
@@ -101,6 +100,10 @@ pub fn main() !u8 {
         if (n_res != 1) dbg("TODO: n_res\n", .{});
         dbg("{s}({}) == {}\n", .{ callname, num, res[0].i32 });
     } else {
+        if (p.args.stdin) |path| {
+            const fil = try std.Io.Dir.cwd().openFile(init.io, path, .{});
+            try std.posix.system.dup2(fil.handle, 0);
+        }
         const status = try wasi_run(engine, &mod, allocator, @ptrCast(p.args.stdin), p.args.dbg_func);
         return @intCast(@min(status, 255));
     }
@@ -113,12 +116,7 @@ const WASIState = struct {
 };
 
 // NB: engine is a tagged pointer
-fn wasi_run(engine: wasm_shelf.Engine, mod: *wasm_shelf.Module, allocator: std.mem.Allocator, stdin: ?[:0]const u8, filter: ?[]const u8) !u32 {
-    if (stdin) |path| {
-        const fd = try std.posix.openZ(path, .{ .ACCMODE = .RDONLY }, 0);
-        try std.posix.dup2(fd, 0);
-    }
-
+fn wasi_run(engine: wasm_shelf.Engine, mod: *wasm_shelf.Module, allocator: std.mem.Allocator, filter: ?[]const u8) !u32 {
     var imports: wasm_shelf.ImportTable = .init(allocator);
     defer imports.deinit();
 

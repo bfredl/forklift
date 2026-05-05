@@ -7,9 +7,12 @@ buffer: []const u8,
 pos: u32,
 
 pub fn readLeb(r: *Reader, comptime T: type) !T {
+    // HAKU: taken from zig 0.15.0 stdlib.
+    // TODO: we probably want use std.IO.Reader with a ded VTable
+    const leb = @import("leb128.zig");
     return switch (@typeInfo(T).int.signedness) {
-        .signed => std.leb.readIleb128(T, r),
-        .unsigned => std.leb.readUleb128(T, r),
+        .signed => leb.readIleb128(T, r),
+        .unsigned => leb.readUleb128(T, r),
     };
 }
 

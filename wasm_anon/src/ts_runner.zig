@@ -17,15 +17,14 @@ fn trap(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
     return error.WASMTrap;
 }
 
-pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.gpa;
 
-    const argv = std.os.argv;
+    const argv = init.minimal.args.vector;
     if (argv.len < 3) return dbg("ts_runner mod.wasm language\n", .{});
     const filearg = std.mem.span(argv[1]);
     const langarg = std.mem.span(argv[2]);
-    const buf = try util.readall(allocator, filearg);
+    const buf = try util.readall(init.io, allocator, filearg);
     defer allocator.free(buf);
 
     var mod = try wasm_shelf.Module.parse(buf, allocator);
@@ -73,16 +72,16 @@ pub fn main() !void {
     // TODO: check how the order is really defined, this is just guesswork on the major scale
     const initializers = &[_][]const u8{ "__wasm_call_ctors", "__wasm_apply_data_relocs", "_initialize" };
 
-    for (initializers) |init| {
-        if (try mod.lookup_export(init)) |sym| {
-            dbg("INIT: {s}\n", .{init});
+    for (initializers) |i| {
+        if (try mod.lookup_export(i)) |sym| {
+            dbg("init: {s}\n", .{i});
             if (sym.kind != .func) @panic("nej");
             _ = try interpreter.execute(&in, sym.idx, &.{}, &.{}, true);
         }
     }
 
     var lang_func_name: std.ArrayList(u8) = .empty;
-    try std.fmt.format(lang_func_name.writer(allocator), "tree_sitter_{s}", .{langarg});
+    try lang_func_name.print(allocator, "tree_sitter_{s}", .{langarg});
     const sym = try mod.lookup_export(lang_func_name.items) orelse @panic("no such lang");
     if (sym.kind != .func) @panic("nej");
     var res: [1]StackValue = undefined;

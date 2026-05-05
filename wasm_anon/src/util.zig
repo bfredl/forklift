@@ -1,10 +1,10 @@
 const std = @import("std");
-pub fn readall(allocator: std.mem.Allocator, filename: []const u8) ![]u8 {
-    const fil = try std.fs.cwd().openFile(filename, .{});
-    const stat = try std.posix.fstat(fil.handle);
+pub fn readall(io: std.Io, gpa: std.mem.Allocator, filename: []const u8) ![]u8 {
+    const fil = try std.Io.Dir.cwd().openFile(io, filename, .{});
+    const stat = try fil.stat(io);
     const size = std.math.cast(usize, stat.size) orelse return error.FileTooBig;
-    const buf = try allocator.alloc(u8, size);
-    if (try fil.readAll(buf) < size) {
+    const buf = try gpa.alloc(u8, size);
+    if (try fil.readStreaming(io, &.{buf}) < size) {
         return error.IOError;
     }
     return buf;

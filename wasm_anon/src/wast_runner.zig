@@ -19,22 +19,21 @@ const params_def = clap.parseParamsComptime(
     \\
 );
 const ConstKind = enum { @"i32.const", @"i64.const", @"f32.const", @"f64.const", @"ref.null", @"ref.extern" };
-pub fn main() !u8 {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
+pub fn main(init: std.process.Init) !u8 {
+    const allocator = init.gpa;
 
     var diag = clap.Diagnostic{};
-    const p = clap.parse(clap.Help, &params_def, clap.parsers.default, .{
+    const p = clap.parse(clap.Help, &params_def, clap.parsers.default, init.minimal.args, .{
         .diagnostic = &diag,
-        .allocator = gpa.allocator(),
+        .allocator = allocator,
     }) catch |err| {
         // Report useful error and exit.
-        try diag.reportToFile(.stderr(), err);
+        try diag.reportToFile(init.io, .stderr(), err);
         return err;
     };
 
     const filearg = p.positionals[0] orelse @panic("usage");
-    const buf = try util.readall(allocator, filearg);
+    const buf = try util.readall(init.io, allocator, filearg);
     defer allocator.free(buf);
 
     var maxerr: u32 = 0;
@@ -109,7 +108,7 @@ pub fn main() !u8 {
                 continue; // "module definition", don't instantiate
             }
             const mod_source = buf[start_pos..t.pos];
-            const mod_code = try wat2wasm(mod_source, allocator);
+            const mod_code = try wat2wasm(init.io, mod_source, allocator);
 
             mod = try .parse(mod_code, allocator);
             in = try .init(&mod, &imports);
@@ -560,23 +559,24 @@ const Tokenizer = struct {
     }
 };
 
-fn wat2wasm(source: []const u8, allocator: std.mem.Allocator) ![]u8 {
-    const argv = &[_][]const u8{ "wat2wasm", "--enable-extended-const", "--enable-gc", "-", "--output=-" };
+fn wat2wasm(io: std.Io, source: []const u8, gpa: std.mem.Allocator) ![]u8 {
+    var child = try std.process.spawn(io, .{
+        .argv = &[_][]const u8{ "wat2wasm", "--enable-extended-const", "--enable-gc", "-", "--output=-" },
+        .stdin = .pipe,
+        .stdout = .pipe,
+        .stderr = .inherit,
+    });
 
-    const Child = std.process.Child;
-    var child: Child = .init(argv, allocator);
+    try child.stdin.?.writeStreamingAll(io, source);
+    child.stdin.?.close(io);
+    child.stdin = null; // nej dumma
 
-    child.stdout_behavior = Child.StdIo.Pipe;
-    child.stdin_behavior = Child.StdIo.Pipe;
-    child.stderr_behavior = Child.StdIo.Inherit;
-    try child.spawn();
-    try child.stdin.?.writeAll(source);
-    child.stdin.?.close();
-    child.stdin = null; // dumma
-    const out = child.stdout.?.readToEndAlloc(allocator, 10 * 1024 * 1024);
-    switch (try child.wait()) {
-        .Exited => |res| {
-            if (res == 0) return out;
+    var r = child.stdout.?.readerStreaming(io, &.{});
+    var out: std.ArrayList(u8) = .empty;
+    try r.interface.appendRemaining(gpa, &out, .limited(10 * 1024 * 1024));
+    switch (try child.wait(io)) {
+        .exited => |res| {
+            if (res == 0) return out.toOwnedSlice(gpa);
         },
         else => {},
     }
