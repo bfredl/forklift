@@ -43,17 +43,26 @@ pub fn reinit(self: *HeavyMachineTool, allocator: std.mem.Allocator) !void {
     self.mod = try .init(allocator);
 }
 
-fn simple_symbol(allocator: std.mem.Allocator, address: usize) ![]u8 {
+fn simple_symbol_leaking(allocator: std.mem.Allocator, address: usize) ![]u8 {
+    // we have unsafePerformIO at home
+    var unsafePerformIO: std.Io.Threaded = .init_single_threaded;
+    unsafePerformIO.allocator = allocator;
+    const io = unsafePerformIO.io();
+    var symbols: std.ArrayList(std.debug.Symbol) = .empty;
+
     const debug_info = try std.debug.getSelfDebugInfo();
-    const module = try debug_info.getModuleForAddress(address);
-    const s = try module.getSymbolAtAddress(debug_info.allocator, address);
+    try debug_info.getSymbols(io, allocator, allocator, address, true, &symbols);
+
+    if (symbols.items.len == 0) return error.notFound;
+
+    const s = symbols.items[0];
     if (false) return std.fmt.allocPrint(allocator, "{}", .{s});
 
     if (s.source_location) |l| {
         const name = if (std.mem.lastIndexOfScalar(u8, l.file_name, '/')) |i| l.file_name[i + 1 ..] else l.file_name;
-        return std.fmt.allocPrint(allocator, "{s}:{s}:{}", .{ name, s.name, l.line });
+        return std.fmt.allocPrint(allocator, "{s}:{s}:{}", .{ name, s.name orelse "??", l.line });
     } else {
-        return std.fmt.allocPrint(allocator, "?? {s} {s}", .{ s.compile_unit_name, s.name });
+        return std.fmt.allocPrint(allocator, "?? {s} {s}", .{ s.compile_unit_name orelse "??", s.name orelse "??" });
     }
 }
 
@@ -83,7 +92,7 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance, filter: ?[]const 
                         const n_frames = @min(trace.index, trace.instruction_addresses.len);
                         if (n_frames > 0) {
                             const address = trace.instruction_addresses[0];
-                            f.hmt_error = simple_symbol(mod.allocator, address) catch "fuuuuuuuu";
+                            f.hmt_error = simple_symbol_leaking(mod.allocator, address) catch "fuuuuuuuu";
                         }
                     }
                 }
@@ -99,7 +108,8 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance, filter: ?[]const 
     try self.mod.code.finalize();
     longjmp_f = try self.mod.get_func_ptr_id(self.longjmp_func, @TypeOf(longjmp_f));
 
-    globalExceptionHandler();
+    // TODO
+    // globalExceptionHandler();
 }
 
 pub var jmp_buf: JmpBuf = undefined;
@@ -199,16 +209,16 @@ fn try_inspect(self: *HeavyMachineTool, addr: usize) void {
     }
 }
 
-fn sigHandler(sig: i32, info: *const std.posix.siginfo_t, ctx_ptr: ?*const anyopaque) callconv(.c) void {
+fn sigHandler(sig: std.posix.SIG, info: *const std.posix.siginfo_t, ctx_ptr: ?*const anyopaque) callconv(.c) void {
     _ = info;
 
     if (debug_as_self) |self| {
-        const ctx: *align(1) const std.posix.ucontext_t = @ptrCast(ctx_ptr);
-        var new_ctx: std.posix.ucontext_t = ctx.*;
-        std.debug.relocateContext(&new_ctx);
+        const ctx: *align(1) const forklift.OSHA.ucontext = @ptrCast(ctx_ptr);
+        var new_ctx: forklift.OSHA.ucontext = ctx.*;
+        // std.debug.relocateContext(&new_ctx);
         severe("hej!\n", .{});
 
-        var ip = new_ctx.mcontext.gregs[std.posix.REG.RIP];
+        var ip = new_ctx.mcontext.gregs[forklift.OSHA.REG.RIP];
         if (sig == std.posix.SIG.TRAP) {
             // if we trapped, ip will refer to the next instruction after the trap
             ip -= 1;

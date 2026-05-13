@@ -1,5 +1,6 @@
 pub const CodeBuffer = @import("./CodeBuffer.zig");
 pub const X86Asm = @import("./X86Asm.zig");
+pub const OSHA = @import("./OSHA.zig");
 pub const FLIR = @import("./FLIR.zig");
 
 pub const BPFCode = CFOModule.BPFCode;

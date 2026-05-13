@@ -102,29 +102,30 @@ pub fn main(init: std.process.Init) !u8 {
     } else {
         if (p.args.stdin) |path| {
             const fil = try std.Io.Dir.cwd().openFile(init.io, path, .{});
-            try std.posix.system.dup2(fil.handle, 0);
+            _ = std.posix.system.dup2(fil.handle, 0);
         }
-        const status = try wasi_run(engine, &mod, allocator, @ptrCast(p.args.stdin), p.args.dbg_func);
+        const status = try wasi_run(init.io, engine, &mod, allocator, p.args.dbg_func);
         return @intCast(@min(status, 255));
     }
     return 0;
 }
 
 const WASIState = struct {
-    klocka: std.time.Timer,
+    io: std.Io,
+    start_time: std.Io.Timestamp,
     exit_status: ?u32 = null,
 };
 
 // NB: engine is a tagged pointer
-fn wasi_run(engine: wasm_shelf.Engine, mod: *wasm_shelf.Module, allocator: std.mem.Allocator, filter: ?[]const u8) !u32 {
+fn wasi_run(io: std.Io, engine: wasm_shelf.Engine, mod: *wasm_shelf.Module, allocator: std.mem.Allocator, filter: ?[]const u8) !u32 {
     var imports: wasm_shelf.ImportTable = .init(allocator);
     defer imports.deinit();
 
-    var state: WASIState = .{ .klocka = try std.time.Timer.start() };
+    var state: WASIState = .{ .io = io, .start_time = klocka.now(io) };
 
     try imports.add_func("proc_exit", .{ .cb = &wasi_proc_exit, .cb_direct = &wasi_proc_exit_direct, .n_args = 1, .n_res = 0, .data = @ptrCast(&state) });
-    try imports.add_func("fd_read", .{ .cb = &wasi_fd_read, .n_args = 4, .n_res = 1 });
-    try imports.add_func("fd_write", .{ .cb = &wasi_fd_write, .n_args = 4, .n_res = 1 });
+    try imports.add_func("fd_read", .{ .cb = &wasi_fd_read, .n_args = 4, .n_res = 1, .data = @ptrCast(&state) });
+    try imports.add_func("fd_write", .{ .cb = &wasi_fd_write, .n_args = 4, .n_res = 1, .data = @ptrCast(&state) });
     try imports.add_func("clock_time_get", .{ .cb = &wasi_clock_time_get, .n_args = 3, .n_res = 1, .data = @ptrCast(&state) });
 
     var in = try wasm_shelf.Instance.init(mod, &imports);
@@ -169,7 +170,7 @@ fn wasi_proc_exit(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void
     const arg = args_ret[0].u32();
     dbg("wasi exit: {}\n", .{arg});
 
-    std.posix.exit(0); // for benchmarking which expect 0 ret..
+    std.posix.system.exit(0); // for benchmarking which expect 0 ret..
     state.exit_status = arg;
     return error.WASMTrap;
 }
@@ -203,7 +204,7 @@ fn wasi_fd_read(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
 }
 
 fn wasi_fd_write(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void {
-    _ = data;
+    const state: *WASIState = @ptrCast(@alignCast(data));
     const fd = args_ret[0].i32;
     const iovs: u32 = @intCast(args_ret[1].i32);
     const iovs_len: u32 = @intCast(args_ret[2].i32);
@@ -224,7 +225,7 @@ fn wasi_fd_write(args_ret: []StackValue, in: *Instance, data: *anyopaque) !void 
         // TODO: actually use ioKVÄCK of the underlying platform
         const aout = try in.mem_get_bytes(iptr, ilen);
         if (fd == 1) {
-            _ = std.fs.File.stdout().write(aout) catch return error.WASMTrap;
+            _ = std.Io.File.stdout().writeStreamingAll(state.io, aout) catch return error.WASMTrap;
         } else {
             std.debug.print("{s}", .{aout});
         }
@@ -242,10 +243,13 @@ fn wasi_clock_time_get(args_ret: []StackValue, in: *Instance, data: *anyopaque) 
     const res_timestamp = try in.mem_get_bytes(args_ret[2].u32(), 8);
 
     if (id == 1) {
-        const time = state.klocka.read(); // PRESENT DAY, PRESENT TIME
-        std.mem.writeInt(u64, res_timestamp[0..8], time, .little);
+        const time = klocka.now(state.io); // PRESENT DAY, PRESENT TIME
+        const interval = state.start_time.durationTo(time);
+        std.mem.writeInt(u64, res_timestamp[0..8], @intCast(interval.nanoseconds), .little);
     } else {
         dbg("hey guys check this out: {}\n", .{id});
         return error.WASMTrap;
     }
 }
+
+const klocka = std.Io.Clock.real;

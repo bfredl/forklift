@@ -28,7 +28,7 @@ pub const context_order: [16]u8 = .{
 
 const greg_t = usize;
 const gregset_t = [23]greg_t;
-const ucontext = extern struct {
+pub const ucontext = extern struct {
     _flags: usize,
     _link: ?*ucontext,
     _stack: std.os.linux.stack_t,

@@ -234,7 +234,8 @@ pub fn main(init: std.process.Init) !u8 {
                         std.debug.print("NYI: {s}\n", .{msg});
                     } else {
                         dbg("NYI\n", .{});
-                        if (@errorReturnTrace()) |trace| std.debug.dumpStackTrace(trace.*);
+                        // TODO
+                        // if (@errorReturnTrace()) |trace| std.debug.dumpStackTrace(trace);
                     }
                     failures += 1;
                     continue;
