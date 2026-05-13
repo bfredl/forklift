@@ -25,7 +25,7 @@ n_funcs_import: u32 = 0,
 funcs_imported_types: []u32 = &.{},
 // TODO: {.ptr = undefined, .size = 0} would be a useful idiom..
 funcs_internal: []Function = &.{},
-types: []u32 = undefined,
+types: []u32 = &.{},
 
 export_off: u32 = 0,
 data_off: u32 = 0,
@@ -120,8 +120,12 @@ pub fn deinit(self: *Module) void {
     // ?[]Thingie is annoying when you could use .{.data = static, .len = 0}
     // this shalt be a common pattern somehow. Perhaps a wrapping allocator unless Allocator wrapper is smart already.
     if (self.funcs_internal.len > 0) {
+        for (self.funcs_internal) |*f| {
+            f.deinit(self);
+        }
         self.allocator.free(self.funcs_internal);
     }
+    self.allocator.free(self.types); // TODO: is this welldefined if self.types == &.{} ???
 }
 
 pub fn skip_type(self: *Module, r: *Reader) !void {
@@ -139,6 +143,7 @@ pub fn skip_type(self: *Module, r: *Reader) !void {
 pub fn type_section(self: *Module, r: *Reader) !void {
     const len = try r.readu();
     dbg("TYPES: {}\n", .{len});
+    if (len == 0) return; // WEAK
     self.types = try self.allocator.alloc(u32, len);
     for (0..len) |i| {
         self.types[i] = r.pos;

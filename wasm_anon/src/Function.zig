@@ -79,12 +79,21 @@ pub fn parse(self: *Function, mod: *Module, r: *Reader) !void {
     try self.parse_body(mod, r, n_locals);
 }
 
+pub fn deinit(self: *Function, mod: *const Module) void {
+    if (self.control) |_| {
+        mod.allocator.free(self.res_types);
+        mod.allocator.free(self.local_types);
+    }
+}
+
 pub fn parse_body(self: *Function, mod: *Module, r: *Reader, n_locals: u32) !void {
     var level: u32 = 1;
 
     var clist: std.ArrayList(ControlItem) = .empty;
+    defer clist.deinit(mod.allocator);
     // these point to the entry point of each level. for if-else-end we put in else_ when we have seen it
     var cstack: std.ArrayList(struct { start: u16 }) = .empty;
+    defer cstack.deinit(mod.allocator);
     // TODO: this is a sentinel, might be eliminated (use jmp_t = 0xFFFF instead for "INVALID")
     // although having 0 as a "name" for the implicit entire-function block is useful..
     try clist.append(mod.allocator, .{ .off = r.pos, .jmp_t = 0 });

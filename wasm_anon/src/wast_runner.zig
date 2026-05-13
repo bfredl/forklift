@@ -80,6 +80,7 @@ pub fn main(init: std.process.Init) !u8 {
     var unapplicable: u32 = 0;
 
     var params: std.ArrayList(StackValue) = .empty;
+    defer params.deinit(allocator);
 
     const Toplevel = enum { module, invoke, assert_return, assert_trap, assert_invalid, assert_malformed, assert_exhaustion };
 

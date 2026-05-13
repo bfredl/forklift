@@ -43,6 +43,11 @@ pub fn reinit(self: *HeavyMachineTool, allocator: std.mem.Allocator) !void {
     self.mod = try .init(allocator);
 }
 
+pub fn deinit(self: *HeavyMachineTool) !void {
+    self.mod.deinit_mem();
+    self.flir.deinit();
+}
+
 fn simple_symbol_leaking(allocator: std.mem.Allocator, address: usize) ![]u8 {
     // we have unsafePerformIO at home
     var unsafePerformIO: std.Io.Threaded = .init_single_threaded;
