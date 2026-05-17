@@ -126,6 +126,11 @@ pub fn deinit(self: *Module) void {
         self.allocator.free(self.funcs_internal);
     }
     self.allocator.free(self.types); // TODO: is this welldefined if self.types == &.{} ???
+    self.traces.deinit(self.allocator);
+    self.allocator.free(self.global_types);
+    if (self.imports_off > 0) { // HaIIII
+        self.allocator.free(self.funcs_imported_types);
+    }
 }
 
 pub fn skip_type(self: *Module, r: *Reader) !void {

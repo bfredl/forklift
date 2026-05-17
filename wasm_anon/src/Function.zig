@@ -80,9 +80,10 @@ pub fn parse(self: *Function, mod: *Module, r: *Reader) !void {
 }
 
 pub fn deinit(self: *Function, mod: *const Module) void {
-    if (self.control) |_| {
+    if (self.control) |control| {
         mod.allocator.free(self.res_types);
         mod.allocator.free(self.local_types);
+        mod.allocator.free(control);
     }
 }
 

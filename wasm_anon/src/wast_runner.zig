@@ -45,6 +45,7 @@ pub fn main(init: std.process.Init) !u8 {
     defer interpreter.deinit();
 
     var tool: wasm_shelf.HeavyMachineTool = try .init(allocator);
+    defer tool.deinit();
 
     const engine: wasm_shelf.Engine = if (machine_tool) .{ .heavy = &tool } else .{ .interpreter = &interpreter };
 
@@ -59,6 +60,7 @@ pub fn main(init: std.process.Init) !u8 {
     // mod is "almost always" available
     var mod: wasm_shelf.Module = undefined;
     var in: wasm_shelf.Instance = undefined;
+    var mod_code: []u8 = undefined;
 
     var imports: wasm_shelf.ImportTable = .init(allocator);
     defer imports.deinit();
@@ -73,6 +75,7 @@ pub fn main(init: std.process.Init) !u8 {
     defer if (did_mod) {
         in.deinit();
         mod.deinit();
+        allocator.free(mod_code);
     };
 
     var cases: u32 = 0;
@@ -97,6 +100,7 @@ pub fn main(init: std.process.Init) !u8 {
             if (did_mod) {
                 in.deinit();
                 mod.deinit();
+                allocator.free(mod_code);
                 did_mod = false;
             }
 
@@ -109,7 +113,7 @@ pub fn main(init: std.process.Init) !u8 {
                 continue; // "module definition", don't instantiate
             }
             const mod_source = buf[start_pos..t.pos];
-            const mod_code = try wat2wasm(init.io, mod_source, allocator);
+            mod_code = try wat2wasm(init.io, mod_source, allocator);
 
             mod = try .parse(mod_code, allocator);
             in = try .init(&mod, &imports);
@@ -228,6 +232,7 @@ pub fn main(init: std.process.Init) !u8 {
         var res: [max_res]StackValue = undefined;
         try interpreter.assert_clean();
         var err_ret: ?[]const u8 = null;
+        defer if (err_ret) |msg| mod.allocator.free(msg); // TODO: mod-scoped arena?
         const maybe_n_res = in.execute_either(engine, sym.idx, params.items, &res, false, &err_ret) catch |err| fail: {
             switch (err) {
                 error.NotImplemented => {

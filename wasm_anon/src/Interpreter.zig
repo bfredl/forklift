@@ -664,6 +664,7 @@ pub fn eval_constant_expr(r: *Reader, typ: defs.ValType, preglobals: []const Sta
     _ = typ;
 
     var stack: std.ArrayList(StackValue) = .empty;
+    defer stack.deinit(gpa);
 
     while (true) {
         const eval = try r.readByte();

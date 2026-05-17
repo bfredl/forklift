@@ -41,9 +41,11 @@ pub fn reinit(self: *HeavyMachineTool, allocator: std.mem.Allocator) !void {
     // TODO: besser
     self.mod.deinit_mem();
     self.mod = try .init(allocator);
+    self.debug_list.items.len = 0;
 }
 
-pub fn deinit(self: *HeavyMachineTool) !void {
+pub fn deinit(self: *HeavyMachineTool) void {
+    self.debug_list.deinit(self.mod.gpa);
     self.mod.deinit_mem();
     self.flir.deinit();
 }
@@ -293,6 +295,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     const c = try f.ensure_parsed(in.mod);
     ir.reinit();
     var locals = try gpa.alloc(u16, f.local_types.len);
+    defer gpa.free(locals);
     var node = try ir.addNode();
     // I think FLIR can require all args to be first..
     const mem_base = try ir.arg(.{ .intptr = .quadword });
