@@ -194,7 +194,7 @@ pub const Block = struct {
     node: u16,
     succ: u16 = NoRef,
     pred: u16 = NoRef,
-    i: [BLK_SIZE]u16 = .{NoRef} ** BLK_SIZE,
+    i: [BLK_SIZE]u16 = @splat(NoRef),
 
     pub fn next(self: @This()) ?u16 {
         return if (self.succ != NoRef) self.succ else null;
@@ -1120,7 +1120,7 @@ pub fn calc_live(self: *Self) !void {
             // print("LIVEUT {}: {x} (dvs {})\n", .{ ni, live_vregs, @popCount(live_vregs) });
 
             var neg_counter: u16 = 0;
-            var last_clobber: [n_ipreg]u16 = .{0} ** n_ipreg;
+            var last_clobber: [n_ipreg]u16 = @splat(0);
 
             var node_has_clobber: bool = false;
 
@@ -1404,8 +1404,8 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
     for (0.., self.n.items) |nir, *n| {
         const ni = uv(nir);
         // registers currently free.
-        var free_regs_ip: [n_ipreg]bool = .{true} ** n_ipreg;
-        var free_regs_avx: [16]bool = .{true} ** 16;
+        var free_regs_ip: [n_ipreg]bool = @splat(true);
+        var free_regs_avx: [16]bool = @splat(true);
 
         // NOTE: registers not in ABI.reg_order will never be used, make this more explicit?
 

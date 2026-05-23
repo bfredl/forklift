@@ -139,7 +139,7 @@ test "write" {
 }
 
 pub fn prog_load_test(prog_type: BPF.ProgType, c: []BPF.Insn, license: []const u8, flags: u32) !fd_t {
-    var log_buf = [1]u8{0} ** 1024;
+    var log_buf : [1024]u8 = @splat(0);
     var log = BPF.Log{ .level = 4, .buf = &log_buf };
     return BPF.prog_load(prog_type, c, &log, license, 0, flags) catch |err| {
         std.debug.print("failed load: {s}\n", .{mem.sliceTo(&log_buf, 0)});

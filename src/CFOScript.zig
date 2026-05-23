@@ -36,7 +36,7 @@ fn f_ctx(type_ctx: SpecType) ?FMode {
 mod: *CFOModule,
 ir: *FLIR,
 // tmp: [10]?u16 = .{null} ** 10,
-tmp: [10]?u16 = ([1]?u16{null}) ** 10,
+tmp: [10]?u16 = @splat(null),
 curnode: u16,
 cur_loop: ?*const Loop = null,
 
@@ -288,7 +288,7 @@ pub fn call_expr(self: *Self, type_ctx: SpecType, kind: []const u8) !u16 {
 
     try self.t.expect_char('(');
 
-    var args = [_]u16{0} ** 6;
+    var args : [6]u16 = @splat(0);
     var n_arg: u8 = 0;
     while (true) {
         const arg = (try self.expr_3(int_ctx)) orelse break;

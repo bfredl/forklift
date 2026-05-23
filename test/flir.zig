@@ -615,10 +615,11 @@ test "syscall" {
     if (pid < 0) {
         @panic("kcAjaj");
     } else if (pid > 0) {
-        var status: u32 = undefined;
+        const typ = if (@hasDecl(posix.system, "syscall_arg_t")) i32 else u32;
+        var status: typ = undefined;
         const errno = posix.system.waitpid(@intCast(pid), &status, 0);
         if (posix.errno(errno) != .SUCCESS) @panic("SYSTEM FAILURE");
-        try expect(usize, 11 * 256, status);
+        try expect(typ, 11 * 256, status);
     } else {
         _ = fun(11);
         @panic("exit syscall failed");
