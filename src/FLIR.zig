@@ -291,11 +291,11 @@ pub fn reinit(self: *Self) void {
 
     // 1. reset fields with initializers to their initial value (most int members)
     // 2. set ArrayList members to empty (but keep existing allocations)
-    inline for (info.fields) |field| {
-        if (@typeInfo(field.type) == .@"struct" and @hasField(field.type, "items")) {
-            @field(self, field.name).items.len = 0;
-        } else if (field.defaultValue()) |default_value| {
-            @field(self, field.name) = default_value;
+    inline for (info.field_names, info.field_types, info.field_attrs) |name, typ, attr| {
+        if (@typeInfo(typ) == .@"struct" and @hasField(typ, "items")) {
+            @field(self, name).items.len = 0;
+        } else if (attr.defaultValue(typ)) |default_value| {
+            @field(self, name) = default_value;
         }
     }
 

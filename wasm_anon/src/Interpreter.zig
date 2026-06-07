@@ -112,7 +112,7 @@ pub fn showstack(self: *Interpreter) void {
 
 pub fn pop_and_jump_labels(self: *Interpreter, levels: u32) !u32 {
     self.labels.items.len -= levels;
-    const last = self.labels.getLastOrNull() orelse return error.RuntimeError;
+    const last = self.labels.last() orelse return error.RuntimeError;
     const c_ip = last.c_ip;
     const new_level = last.stack_level + last.n_vals;
     if (self.values.items.len < new_level) @panic("DISASSOCIATING FEAR");

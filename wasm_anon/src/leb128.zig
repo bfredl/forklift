@@ -35,7 +35,7 @@ pub fn readUleb128(comptime T: type, reader: anytype) !T {
 /// or error.Overflow if the value cannot fit.
 pub fn readIleb128(comptime T: type, reader: anytype) !T {
     const S = if (@typeInfo(T).int.bits < 8) i8 else T;
-    const U = std.meta.Int(.unsigned, @typeInfo(S).int.bits);
+    const U = @Int(.unsigned, @typeInfo(S).int.bits);
     const ShiftU = std.math.Log2Int(U);
 
     const max_group = (@typeInfo(U).int.bits + 6) / 7;

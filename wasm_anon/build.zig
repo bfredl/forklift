@@ -37,9 +37,7 @@ pub fn build(b: *std.Build) void {
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(&inst.step);
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
+    run_cmd.addPassthruArgs();
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
@@ -59,9 +57,7 @@ pub fn build(b: *std.Build) void {
 
     const run_cmd_ts = b.addRunArtifact(ts_exe);
     run_cmd_ts.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_cmd_ts.addArgs(args);
-    }
+    run_cmd_ts.addPassthruArgs();
     const run_step_ts = b.step("ts", "tree-sitter thing");
     run_step_ts.dependOn(&run_cmd_ts.step);
 
@@ -81,9 +77,8 @@ pub fn build(b: *std.Build) void {
 
     const wast_run_cmd = b.addRunArtifact(wast_exe);
     wast_run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        wast_run_cmd.addArgs(args);
-    }
+    wast_run_cmd.addPassthruArgs();
+
     const wast_run_step = b.step("wast", "Run the app");
     wast_run_step.dependOn(&wast_run_cmd.step);
 
