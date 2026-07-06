@@ -20,12 +20,12 @@ const params_def = clap.parseParamsComptime(
 );
 const ConstKind = enum { @"i32.const", @"i64.const", @"f32.const", @"f64.const", @"ref.null", @"ref.extern" };
 pub fn main(init: std.process.Init) !u8 {
-    const allocator = init.gpa;
+    const gpa = init.gpa;
 
     var diag = clap.Diagnostic{};
     const p = clap.parse(clap.Help, &params_def, clap.parsers.default, init.minimal.args, .{
         .diagnostic = &diag,
-        .allocator = allocator,
+        .allocator = gpa,
     }) catch |err| {
         // Report useful error and exit.
         try diag.reportToFile(init.io, .stderr(), err);
@@ -33,18 +33,18 @@ pub fn main(init: std.process.Init) !u8 {
     };
 
     const filearg = p.positionals[0] orelse @panic("usage");
-    const buf = try util.readall(init.io, allocator, filearg);
-    defer allocator.free(buf);
+    const buf = try util.readall(init.io, gpa, filearg);
+    defer gpa.free(buf);
 
     var maxerr: u32 = 0;
     const specname = p.args.specname;
 
     const machine_tool: bool = p.args.heavy > 0;
 
-    var interpreter: wasm_shelf.Interpreter = .init(allocator);
+    var interpreter: wasm_shelf.Interpreter = .init(gpa);
     defer interpreter.deinit();
 
-    var tool: wasm_shelf.HeavyMachineTool = try .init(allocator);
+    var tool: wasm_shelf.HeavyMachineTool = try .init(gpa, init.arena.allocator());
     defer tool.deinit();
 
     const engine: wasm_shelf.Engine = if (machine_tool) .{ .heavy = &tool } else .{ .interpreter = &interpreter };
@@ -62,7 +62,7 @@ pub fn main(init: std.process.Init) !u8 {
     var in: wasm_shelf.Instance = undefined;
     var mod_code: []u8 = undefined;
 
-    var imports: wasm_shelf.ImportTable = .init(allocator);
+    var imports: wasm_shelf.ImportTable = .init(gpa);
     defer imports.deinit();
 
     var i32val: StackValue = .{ .i32 = 666 };
@@ -75,7 +75,7 @@ pub fn main(init: std.process.Init) !u8 {
     defer if (did_mod) {
         in.deinit();
         mod.deinit();
-        allocator.free(mod_code);
+        gpa.free(mod_code);
     };
 
     var cases: u32 = 0;
@@ -83,7 +83,7 @@ pub fn main(init: std.process.Init) !u8 {
     var unapplicable: u32 = 0;
 
     var params: std.ArrayList(StackValue) = .empty;
-    defer params.deinit(allocator);
+    defer params.deinit(gpa);
 
     const Toplevel = enum { module, invoke, assert_return, assert_trap, assert_invalid, assert_malformed, assert_exhaustion };
 
@@ -100,7 +100,7 @@ pub fn main(init: std.process.Init) !u8 {
             if (did_mod) {
                 in.deinit();
                 mod.deinit();
-                allocator.free(mod_code);
+                gpa.free(mod_code);
                 did_mod = false;
             }
 
@@ -113,13 +113,13 @@ pub fn main(init: std.process.Init) !u8 {
                 continue; // "module definition", don't instantiate
             }
             const mod_source = buf[start_pos..t.pos];
-            mod_code = try wat2wasm(init.io, mod_source, allocator);
+            mod_code = try wat2wasm(init.io, mod_source, gpa);
 
-            mod = try .parse(mod_code, allocator);
+            mod = try .parse(mod_code, gpa);
             in = try .init(&mod, &imports);
 
             if (machine_tool) {
-                if (past_mod) try tool.reinit(allocator);
+                if (past_mod) try tool.reinit(gpa);
                 if (mod.funcs_internal.len > 0) {
                     try tool.compileInstance(&in, p.args.filter);
                 }
@@ -157,7 +157,7 @@ pub fn main(init: std.process.Init) !u8 {
                 break :parm undefined;
             };
             _ = try t.expect(.RightParen);
-            try params.append(allocator, value);
+            try params.append(gpa, value);
         }
         _ = try t.expect(.RightParen);
 

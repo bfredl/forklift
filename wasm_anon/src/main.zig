@@ -72,7 +72,7 @@ pub fn main(init: std.process.Init) !u8 {
 
     var interpreter: wasm_shelf.Interpreter = .init(allocator);
     defer interpreter.deinit();
-    var tool: wasm_shelf.HeavyMachineTool = try .init(allocator);
+    var tool: wasm_shelf.HeavyMachineTool = try .init(allocator, init.arena.allocator());
     tool.trap_verbose = true;
 
     const engine: wasm_shelf.Engine = if (p.args.heavy > 0) .{ .heavy = &tool } else .{ .interpreter = &interpreter };

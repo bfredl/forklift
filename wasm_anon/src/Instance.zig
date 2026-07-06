@@ -56,6 +56,9 @@ pub fn deinit(self: *Instance) void {
     self.mem.deinit(self.mod.allocator);
     self.mod.allocator.free(self.globals_maybe_indir);
     self.mod.allocator.free(self.funcs_imported);
+    if (self.funcref_table.len > 0) {
+        self.mod.allocator.free(self.funcref_table);
+    }
 }
 
 pub fn preglobals(self: *Instance) []const defs.StackValue {

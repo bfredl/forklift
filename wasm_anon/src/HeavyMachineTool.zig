@@ -24,16 +24,18 @@ trap_verbose: bool = false,
 
 debug_list: std.ArrayList(DebugItem) = .empty,
 debug_in: ?*Instance = null, // ??????????
+debug_arena: std.mem.Allocator,
 
 const DebugItem = struct {
     start_off: u32,
     func_idx: u32,
 };
 
-pub fn init(allocator: std.mem.Allocator) !HeavyMachineTool {
+pub fn init(allocator: std.mem.Allocator, debug_arena: std.mem.Allocator) !HeavyMachineTool {
     return .{
         .mod = try .init(allocator),
         .flir = try .init(4, allocator),
+        .debug_arena = debug_arena,
     };
 }
 
@@ -99,7 +101,7 @@ pub fn compileInstance(self: *HeavyMachineTool, in: *Instance, filter: ?[]const 
                         const n_frames = @min(trace.index, trace.instruction_addresses.len);
                         if (n_frames > 0) {
                             const address = trace.instruction_addresses[0];
-                            f.hmt_error = simple_symbol_leaking(mod.allocator, address) catch "fuuuuuuuu";
+                            f.hmt_error = simple_symbol_leaking(self.debug_arena, address) catch "fuuuuuuuu";
                         }
                     }
                 }
@@ -323,7 +325,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
     const max_args = 5;
     const max_res = 2;
     if (f.n_params > max_args or f.n_res > max_res) {
-        f.hmt_error = try std.fmt.allocPrint(gpa, "VERKLIGEN VILL DU: {} => {}", .{ f.n_params, f.n_res });
+        f.hmt_error = try std.fmt.allocPrint(self.debug_arena, "VERKLIGEN VILL DU: {} => {}", .{ f.n_params, f.n_res });
         return error.NotImplemented;
     }
 
@@ -735,7 +737,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 const max_params = 5;
 
                 if (n_params > max_params or n_res > 1) {
-                    f.hmt_error = try std.fmt.allocPrint(gpa, "THERE WERE NO CALLS TODAY: {} => {}", .{ n_params, n_res });
+                    f.hmt_error = try std.fmt.allocPrint(self.debug_arena, "THERE WERE NO CALLS TODAY: {} => {}", .{ n_params, n_res });
                     return error.NotImplemented;
                 }
 
@@ -768,7 +770,7 @@ pub fn compileFunc(self: *HeavyMachineTool, in: *Instance, id: usize, f: *Functi
                 try value_stack.append(gpa, calc);
             },
             .other__fixme => |tag| {
-                f.hmt_error = try std.fmt.allocPrint(gpa, "inst {s} TBD", .{@tagName(tag)});
+                f.hmt_error = try std.fmt.allocPrint(self.debug_arena, "inst {s} TBD", .{@tagName(tag)});
                 return error.NotImplemented;
             },
         }
