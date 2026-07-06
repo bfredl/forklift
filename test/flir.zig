@@ -11,7 +11,7 @@ const posix = std.posix;
 const test_allocator = std.testing.allocator;
 
 pub fn parse_test(ir: []const u8) !CodeBuffer {
-    var res = try parse_multi(ir);
+    var res = try parse_multi(ir, .{});
     if (res.objs.items.len != 1) {
         return error.ExpectedOneFunction;
     }
@@ -21,18 +21,10 @@ pub fn parse_test(ir: []const u8) !CodeBuffer {
     return res.code;
 }
 
-pub fn parse_multi(ir: []const u8) !CFOModule {
-    return parse_multi_impl(ir, false);
-}
-
-pub fn parse_multi_dbg(ir: []const u8) !CFOModule {
-    return parse_multi_impl(ir, true);
-}
-
-pub fn parse_multi_impl(ir: []const u8, dbg: bool) !CFOModule {
+pub fn parse_multi(ir: []const u8, opts: forklift.ParseModOptions) !CFOModule {
     var mod = try CFOModule.init(test_allocator);
     errdefer mod.deinit_mem();
-    try parse_mod(&mod, test_allocator, ir, dbg, false);
+    try parse_mod(&mod, test_allocator, ir, opts);
     try mod.code.finalize();
     return mod;
 }
@@ -381,7 +373,7 @@ test "multi function" {
         \\func multiplier(x, y) {
         \\  return x*y;
         \\}
-    );
+    , .{});
     defer res.deinit_mem();
 
     const fun1 = try res.get_func_ptr("adder", BFunc);
@@ -402,7 +394,7 @@ test "call near" {
         \\  let yy = $near kuben(y);
         \\  return xx+yy;
         \\}
-    );
+    , .{});
     defer res.deinit_mem();
 
     const fun1 = try res.get_func_ptr("kuben", AFunc);
@@ -424,7 +416,7 @@ test "swap simple" {
         \\  let res = $near diff(y, x);
         \\  return res;
         \\}
-    );
+    , .{});
     defer res.deinit_mem();
 
     const fun1 = try res.get_func_ptr("antidiff", BFunc);

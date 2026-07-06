@@ -4,4 +4,5 @@ test {
     std.testing.refAllDecls(@import("./flir.zig"));
     std.testing.refAllDecls(@import("./aoc.zig"));
     std.testing.refAllDecls(@import("./call_ret.zig"));
+    std.testing.refAllDecls(@import("./reg_pressure.zig"));
 }

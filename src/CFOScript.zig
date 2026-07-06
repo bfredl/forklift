@@ -288,7 +288,7 @@ pub fn call_expr(self: *Self, type_ctx: SpecType, kind: []const u8) !u16 {
 
     try self.t.expect_char('(');
 
-    var args : [6]u16 = @splat(0);
+    var args: [6]u16 = @splat(0);
     var n_arg: u8 = 0;
     while (true) {
         const arg = (try self.expr_3(int_ctx)) orelse break;
@@ -655,11 +655,20 @@ pub fn parse_func(mod: *CFOModule, ir: *FLIR, t: *Tokenizer, gpa: Allocator) !vo
     }
 }
 
-pub fn parse_mod(mod: *CFOModule, gpa: Allocator, str: []const u8, dbg: bool, one: bool) !void {
+pub const ParseModOptions = struct {
+    dbg: bool = false,
+    one: bool = false,
+    max_ipreg_use: ?u16 = null,
+};
+pub fn parse_mod(mod: *CFOModule, gpa: Allocator, str: []const u8, opts: ParseModOptions) !void {
 
     // small init size on purpose: must allow reallocations in place
     var ir = try FLIR.init(4, gpa);
     defer ir.deinit();
+
+    if (opts.max_ipreg_use) |use| {
+        ir.max_ipreg_use = use;
+    }
 
     var t = Tokenizer{ .str = str };
     errdefer t.fail_pos();
@@ -672,9 +681,9 @@ pub fn parse_mod(mod: *CFOModule, gpa: Allocator, str: []const u8, dbg: bool, on
             const obj_slot = try nonexisting_obj(mod, name);
 
             try parse_func(mod, &ir, &t, gpa);
-            if (one) return;
+            if (opts.one) return;
 
-            if (options.dbg_raw_ir or dbg) ir.debug_print();
+            if (options.dbg_raw_ir or opts.dbg) ir.debug_print();
             try ir.test_analysis(FLIR.X86ABI, true);
             if (options.dbg_analysed_ir) ir.debug_print();
             if (options.dbg_vregs) ir.print_intervals();
@@ -688,7 +697,7 @@ pub fn parse_mod(mod: *CFOModule, gpa: Allocator, str: []const u8, dbg: bool, on
             try parse_func(mod, &ir, &t, gpa);
 
             try ir.test_analysis(FLIR.BPF_ABI, true);
-            if (dbg) ir.debug_print();
+            if (opts.dbg) ir.debug_print();
             const offset = try codegen_bpf(&ir, mod);
             const len = mod.bpf_code.items.len - offset;
 
@@ -712,7 +721,7 @@ pub fn parse_mod(mod: *CFOModule, gpa: Allocator, str: []const u8, dbg: bool, on
             return error.ParseError;
         }
     }
-    if (one) {
+    if (opts.one) {
         return error.ParseError;
     }
 }

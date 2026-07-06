@@ -48,7 +48,7 @@ fn parse_load(ir_text: []const u8) !CFOModule {
 pub fn parse_multi(dbg: bool, ir: []const u8) !CFOModule {
     var mod = try CFOModule.init(test_allocator);
     errdefer mod.deinit_mem();
-    try parse_mod(&mod, test_allocator, ir, dbg, false);
+    try parse_mod(&mod, test_allocator, ir, .{ .dbg = dbg });
     try mod.load();
     return mod;
 }

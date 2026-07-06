@@ -82,6 +82,9 @@ construction_peep: bool = true,
 
 last_added_arg: u16 = NoRef,
 
+// artificial constraint for testing register pressure..
+max_ipreg_use: u16 = 0xFFFF,
+
 // filler value for unintialized refs. not a sentinel for
 // actually invalid refs!
 pub const DEAD: u16 = 0xFEFF;
@@ -1632,6 +1635,9 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, node: u16, iid: u16, free_reg
             }
         } else {
             for (ABI.reg_order, 0..) |reg_try, reg_i| {
+                if (reg_i >= self.max_ipreg_use) {
+                    break; // artificial pressure to test spilling
+                }
                 if (usable_regs[reg_try.id()]) {
                     chosen_reg = reg_try.id();
                     if (reg_i > highest_used.*) {

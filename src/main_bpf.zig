@@ -13,5 +13,5 @@ pub fn main() !void {
     var mod = try CFOModule.init(gpa);
     defer mod.deinit_mem();
 
-    try parse_mod(&mod, gpa, ir, true, false);
+    try parse_mod(&mod, gpa, ir, .{ .dbg = true });
 }

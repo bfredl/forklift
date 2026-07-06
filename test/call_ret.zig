@@ -2,7 +2,6 @@ const forklift = @import("forklift");
 const FLIR = forklift.FLIR;
 const CodeBuffer = forklift.CodeBuffer;
 const CFOModule = forklift.CFOModule;
-const parse_mod = forklift.parse_mod;
 const print = std.debug.print;
 const codegen = forklift.codegen_x86_64;
 const std = @import("std");
