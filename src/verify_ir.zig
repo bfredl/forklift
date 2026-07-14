@@ -11,7 +11,6 @@ const ArrayList = std.ArrayList;
 const print = std.debug.print;
 
 const defs = @import("./defs.zig");
-const options = defs.debug_options;
 
 fn check_phi(self: *FLIR, worklist: *ArrayList(u16), pred: u16, succ: u16) !void {
     const pn = self.n.items[pred];
@@ -250,7 +249,7 @@ pub fn print_inst(self: *FLIR, ref: u16, i: *FLIR.Inst) void {
     if (i.tag == .putphi) {
         const targ = if (self.iref(i.op2)) |iref| iref.* else empty_inst;
         const src = if (self.iref(i.op1)) |iref| iref.* else empty_inst;
-        if (options.dbg_exclude_trivial_put) {
+        if (false) { //if (opts.dbg_exclude_trivial_put) {
             if (src.tag == .phi and src.op1 == targ.op1 and targ.op1 != NoRef and src.mckind == targ.mckind and src.mcidx == targ.mcidx) {
                 return;
             }

@@ -21,7 +21,7 @@ pub fn parse_test(ir: []const u8) !CodeBuffer {
     return res.code;
 }
 
-pub fn parse_multi(ir: []const u8, opts: forklift.ParseModOptions) !CFOModule {
+pub fn parse_multi(ir: []const u8, opts: forklift.CFOOptions) !CFOModule {
     var mod = try CFOModule.init(test_allocator);
     errdefer mod.deinit_mem();
     try parse_mod(&mod, test_allocator, ir, opts);
@@ -74,7 +74,7 @@ test "diamond cfg" {
     try self.ret(end);
     try self.retval(end, FLIR.intspec(.quadword), v);
 
-    try self.test_analysis(FLIR.X86ABI, true);
+    try self.test_analysis(FLIR.X86ABI, true, .{});
 }
 
 test "maybe_split" {

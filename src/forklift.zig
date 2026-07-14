@@ -8,11 +8,9 @@ pub const codegen_bpf = @import("./codegen_bpf.zig").codegen;
 
 pub const codegen_x86_64 = @import("./codegen.zig").codegen;
 pub const parse_mod = @import("./CFOScript.zig").parse_mod;
-pub const ParseModOptions = @import("./CFOScript.zig").ParseModOptions;
 pub const bpf = @import("./bpf.zig");
 pub const dump_bpf = bpf.dump_bpf;
 pub const CFOModule = @import("./CFOModule.zig");
 
 pub const defs = @import("./defs.zig");
-pub const debug_options = defs.debug_options;
-pub const DebugOptions = defs.DebugOptions;
+pub const CFOOptions = defs.CFOOptions;

@@ -16,8 +16,6 @@ const IPMCVal = defs.IPMCVal;
 const CFOModule = @import("./CFOModule.zig");
 const BPFCode = CFOModule.BPFCode;
 
-const options = defs.debug_options;
-
 const defs = @import("./defs.zig");
 fn r(reg: IPReg) Reg {
     return @enumFromInt(reg.id());
@@ -67,10 +65,10 @@ pub fn set_target(code: *BPFCode, pos: u32) void {
 }
 
 pub fn put(code: *CFOModule, insn: Insn) !void {
-    if (options.dbg_disasm_ir) {
-        print("    ", .{});
-        // bpf.dump_ins(writer, insn, code.items.len);
-    }
+    //if (options.dbg_disasm_ir) {
+    //    print("    ", .{});
+    //    bpf.dump_ins(writer, insn, code.items.len);
+    //}
     try code.bpf_code.append(code.gpa, insn);
 }
 
@@ -262,10 +260,10 @@ pub fn codegen(self: *FLIR, mod: *CFOModule) !u32 {
         while (it.next()) |item| {
             const i = item.i;
 
-            if (options.dbg_disasm_ir) {
-                // FLIR.print_insn(FLIR.toref(blk, uv(ii)), i.*, color_map, &last_color);
-                print("guuuh\n", .{});
-            }
+            // if (opts.dbg_disasm_ir) {
+            //     FLIR.print_insn(FLIR.toref(blk, uv(ii)), i.*, color_map, &last_color);
+            //     print("guuuh\n", .{});
+            // }
 
             switch (i.tag) {
                 // empty doesn't flush fused value

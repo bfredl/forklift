@@ -1,6 +1,6 @@
 // declarations common to all archs
 
-pub const DebugOptions = struct {
+pub const CFOOptions = struct {
     dbg_raw_ir: bool = false,
     dbg_raw_reorder_ir: bool = false,
     dbg_ssa_ir: bool = false,
@@ -13,9 +13,11 @@ pub const DebugOptions = struct {
     dbg_regmap: bool = false,
     dbg_osha: bool = false,
     dbg_trap_join_nodes: bool = false, // trap every loop header and join
+    dbg_block: bool = false,
+    max_ipreg_use: ?u16 = null,
+
+    one: bool = false,
 };
-// TODO: set these for tests, somehow..
-pub const debug_options = if (!builtin.is_test) &@import("root").options else &DebugOptions{};
 
 // size for integer operations
 pub const ISize = enum(u2) {

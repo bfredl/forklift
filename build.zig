@@ -13,7 +13,10 @@ pub fn build(b: *std.Build) void {
         }),
     });
     b.installArtifact(exe_ir);
-    ir.dependOn(&exe_ir.step);
+
+    const run_cmd = b.addRunArtifact(exe_ir);
+    run_cmd.addPassthruArgs();
+    ir.dependOn(&run_cmd.step);
 
     const forklift = b.addModule("forklift", .{
         .root_source_file = b.path("src/forklift.zig"),

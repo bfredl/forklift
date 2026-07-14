@@ -26,8 +26,6 @@ pub fn readall(io: std.Io, gpa: mem.Allocator, filename: []const u8) ![]u8 {
     return buf;
 }
 
-pub var options: defs.DebugOptions = .{};
-
 pub fn main(init: std.process.Init) !void {
     const argv = init.minimal.args.vector;
     const io = init.io;
@@ -36,22 +34,24 @@ pub fn main(init: std.process.Init) !void {
     const firstarg = mem.span(argv[nextarg]);
     var inline_arg1 = false;
 
+    var opts: defs.CFOOptions = .{};
+
     if (firstarg[0] == '-') {
         if (argv.len < 3) return usage();
         nextarg += 1;
         for (firstarg[1..]) |a| {
             switch (a) {
-                'i' => options.dbg_raw_ir = true,
-                'I' => options.dbg_raw_reorder_ir = true,
-                's' => options.dbg_ssa_ir = true,
-                'a' => options.dbg_analysed_ir = true,
-                'p' => options.dbg_exclude_trivial_put = true,
-                'v' => options.dbg_vregs = true,
-                'd' => options.dbg_disasm = true,
-                't' => options.dbg_trap = true,
-                'T' => options.dbg_trap_join_nodes = true,
-                'm' => options.dbg_regmap = true,
-                'o' => options.dbg_osha = true,
+                'i' => opts.dbg_raw_ir = true,
+                'I' => opts.dbg_raw_reorder_ir = true,
+                's' => opts.dbg_ssa_ir = true,
+                'a' => opts.dbg_analysed_ir = true,
+                'p' => opts.dbg_exclude_trivial_put = @panic("putt"),
+                'v' => opts.dbg_vregs = true,
+                'd' => opts.dbg_disasm = true,
+                't' => opts.dbg_trap = true,
+                'T' => opts.dbg_trap_join_nodes = true,
+                'm' => opts.dbg_regmap = true,
+                'o' => opts.dbg_osha = true,
                 'q' => inline_arg1 = true,
                 else => return usage(),
             }
@@ -78,13 +78,14 @@ pub fn main(init: std.process.Init) !void {
     defer if (inbuf2) |b| gpa.free(b);
 
     var module: @import("./CFOModule.zig") = try .init(gpa);
+    defer module.deinit_mem();
 
     // try parser.fd_objs.put("count", map_count);
-    try parse_mod(&module, gpa, buf, false, false);
+    try parse_mod(&module, gpa, buf, opts);
 
     if (arg1) |b| {
         try module.code.finalize();
-        if (options.dbg_osha) {
+        if (opts.dbg_osha) {
             try OSHA.install(&module.code);
         }
         const SFunc = *const fn (arg1: [*]u8, arg2: usize, arg3: ?[*]u8, arg4: usize) callconv(.c) usize;

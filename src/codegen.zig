@@ -15,7 +15,6 @@ const AOp = X86Asm.AOp;
 const CFOModule = @import("./CFOModule.zig");
 
 const defs = @import("./defs.zig");
-const options = defs.debug_options;
 fn r(reg: IPReg) X86Asm.IPReg {
     return @enumFromInt(reg.id());
 }
@@ -201,7 +200,7 @@ pub fn set_pred(self: *FLIR, cfo: *X86Asm, targets: [][2]u32, ni: u16) !void {
 // TODO: a lot of codegen.zig should be shared between plattforms
 const ABI = FLIR.X86ABI;
 
-pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u32 {
+pub fn codegen(self: *FLIR, mod: *CFOModule, owner_obj_idx: ?u32, opts: defs.CFOOptions) !u32 {
     const labels = try self.gpa.alloc(u32, self.n.items.len);
     const targets = try self.gpa.alloc([2]u32, self.n.items.len);
     defer self.gpa.free(labels);
@@ -217,7 +216,7 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
     const entry = code.get_target();
 
     // TODO: bull, this should be an instruction
-    if (options.dbg_trap) {
+    if (opts.dbg_trap) {
         try cfo.trap();
     }
 
@@ -243,16 +242,16 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
         }
         const n_target = code.get_target();
         labels[ni] = n_target;
-        if (dbg) print("block {}: {x}\n", .{ ni, n_target });
+        if (opts.dbg_block) print("block {}: {x}\n", .{ ni, n_target });
 
         // set jump targets of past blocks which jump forward here
         try set_pred(self, &cfo, targets, uv(ni));
 
         if (n.npred > 1) {
-            if (options.dbg_regmap) {
+            if (opts.dbg_regmap) {
                 self.print_debug_map(uv(ni), n_target);
             }
-            if (options.dbg_trap_join_nodes) {
+            if (opts.dbg_trap_join_nodes) {
                 try cfo.trap();
             }
         }
@@ -269,7 +268,7 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
                 .phi => {
                     // work is done by putphi, this is just optional debug info
                     // TODO: broken due to list??
-                    if (options.dbg_trap_join_nodes) {
+                    if (opts.dbg_trap_join_nodes) {
                         if (i.ipreg()) |reg| {
                             if (self.dbg_get_varname(item.ref)) |nam| {
                                 try code.value_map.append(self.gpa, .{ .pos = n_target, .reg = reg, .name = nam });
@@ -772,6 +771,6 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, dbg: bool, owner_obj_idx: ?u32) !u3
         }
         code.func_constants.items.len = 0; // private to function
     }
-    if (options.dbg_disasm) try cfo.dbg_nasm(self.gpa);
+    if (opts.dbg_disasm) try cfo.dbg_nasm(self.gpa);
     return entry;
 }

@@ -9,7 +9,6 @@ const X86Asm = @import("./X86Asm.zig");
 const builtin = @import("builtin");
 const BPF = std.os.linux.BPF;
 
-const options = if (!builtin.is_test) &@import("root").options else null;
 // remove verifying printing code regardless
 pub const minimal = false;
 
@@ -1399,7 +1398,7 @@ pub fn alloc(self: *Self, node: u16, size: u8) !u16 {
 //   2. deactivated at a kill flag in the same block (must exist if-and-only-if born flag was set)
 // fixed intervalls: ABI and instruction constraints mandating specific register
 //   -- TODO: not implemented in first iteration
-pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
+pub fn scan_alloc(self: *Self, comptime ABI: type, opts: defs.CFOOptions) !void {
     // as allocation is greedy (currently) we will only use the latter when the 8 first are all filled
     const reg_first_save = 9;
     var highest_used: u8 = 0;
@@ -1526,7 +1525,7 @@ pub fn scan_alloc(self: *Self, comptime ABI: type) !void {
         }
     }
 
-    if (@TypeOf(options) != @TypeOf(null) and options.dbg_vregs) {
+    if (opts.dbg_vregs) {
         print("used {} general purpose regs\n", .{highest_used + 1});
     }
 
@@ -2218,7 +2217,7 @@ pub fn delete_itersafe(self: *Self, item: InsIterator.IYtem) void {
 }
 
 // TODO: not yet sure if ABI should be comptime or runtime struct. this works for now
-pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !void {
+pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool, opts: defs.CFOOptions) !void {
     if (check) {
         self.check_ir_valid() catch |err| {
             self.debug_print();
@@ -2236,7 +2235,7 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
     try self.resolve_ssa();
 
     if (check) try self.check_ir_valid();
-    if (@TypeOf(options) != @TypeOf(null) and options.dbg_ssa_ir) {
+    if (opts.dbg_ssa_ir) {
         self.debug_print();
     }
 
@@ -2252,7 +2251,7 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
     try self.reorder_nodes();
 
     if (check) try self.check_ir_valid();
-    if (@TypeOf(options) != @TypeOf(null) and options.dbg_raw_reorder_ir) {
+    if (opts.dbg_raw_reorder_ir) {
         self.debug_print();
     }
 
@@ -2264,7 +2263,7 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool) !voi
     if (check) try self.check_ir_valid();
     if (check) try self.check_vregs();
 
-    try self.scan_alloc(ABI);
+    try self.scan_alloc(ABI, opts);
     try self.resolve_moves(); // GLYTTIT
     if (check) try self.check_ir_valid();
 

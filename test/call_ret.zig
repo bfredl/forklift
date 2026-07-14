@@ -50,9 +50,9 @@ fn fluffer(narg: usize, spec: []const ArgSpec) !void {
     }
 
     try self.ret(start);
-    try self.test_analysis(FLIR.X86ABI, true);
+    try self.test_analysis(FLIR.X86ABI, true, .{});
 
-    const target = try codegen(&self, &mod, false, null);
+    const target = try codegen(&self, &mod, null, .{});
     try mod.code.finalize();
 
     const fun = mod.code.get_ptr(target, EightBallFn);

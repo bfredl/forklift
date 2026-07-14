@@ -14,7 +14,6 @@ const X86Asm = @import("./X86Asm.zig");
 const FMode = X86Asm.FMode;
 const BPF = std.os.linux.BPF;
 const meta = std.meta;
-const options = defs.debug_options;
 const defs = @import("./defs.zig");
 const codegen = @import("./codegen.zig");
 const codegen_bpf = @import("./codegen_bpf.zig").codegen;
@@ -655,12 +654,7 @@ pub fn parse_func(mod: *CFOModule, ir: *FLIR, t: *Tokenizer, gpa: Allocator) !vo
     }
 }
 
-pub const ParseModOptions = struct {
-    dbg: bool = false,
-    one: bool = false,
-    max_ipreg_use: ?u16 = null,
-};
-pub fn parse_mod(mod: *CFOModule, gpa: Allocator, str: []const u8, opts: ParseModOptions) !void {
+pub fn parse_mod(mod: *CFOModule, gpa: Allocator, str: []const u8, opts: defs.CFOOptions) !void {
 
     // small init size on purpose: must allow reallocations in place
     var ir = try FLIR.init(4, gpa);
@@ -683,12 +677,12 @@ pub fn parse_mod(mod: *CFOModule, gpa: Allocator, str: []const u8, opts: ParseMo
             try parse_func(mod, &ir, &t, gpa);
             if (opts.one) return;
 
-            if (options.dbg_raw_ir or opts.dbg) ir.debug_print();
-            try ir.test_analysis(FLIR.X86ABI, true);
-            if (options.dbg_analysed_ir) ir.debug_print();
-            if (options.dbg_vregs) ir.print_intervals();
+            if (opts.dbg_raw_ir) ir.debug_print();
+            try ir.test_analysis(FLIR.X86ABI, true, opts);
+            if (opts.dbg_analysed_ir) ir.debug_print();
+            if (opts.dbg_vregs) ir.print_intervals();
 
-            const target = try codegen.codegen(&ir, mod, false, null);
+            const target = try codegen.codegen(&ir, mod, null, opts);
             obj_slot.* = .{ .func = .{ .code_start = target } };
             ir.reinit();
         } else if (mem.eql(u8, kw, "bpf_func")) {
@@ -696,8 +690,8 @@ pub fn parse_mod(mod: *CFOModule, gpa: Allocator, str: []const u8, opts: ParseMo
             const obj_slot = try nonexisting_obj(mod, name);
             try parse_func(mod, &ir, &t, gpa);
 
-            try ir.test_analysis(FLIR.BPF_ABI, true);
-            if (opts.dbg) ir.debug_print();
+            try ir.test_analysis(FLIR.BPF_ABI, true, opts);
+            if (opts.dbg_analysed_ir) ir.debug_print();
             const offset = try codegen_bpf(&ir, mod);
             const len = mod.bpf_code.items.len - offset;
 
