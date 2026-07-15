@@ -73,7 +73,10 @@ test "register pressure (aoc 2023 1a)" {
         \\  let item = 10*first+current;
         \\  return item;
         \\}
-    , .{ .max_ipreg_use = 12 });
+    , .{
+        .max_ipreg_use = 12,
+        .dbg_regalloc = true,
+    });
     defer res.deinit_mem();
     const func = try res.get_func_ptr("main", TFunc);
     try expect(usize, 30, t_call(func, "three0", table));

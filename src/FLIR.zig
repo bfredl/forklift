@@ -18,6 +18,7 @@ pub const check_vregs = verify_ir.check_vregs;
 pub const debug_print = verify_ir.debug_print;
 pub const print_debug_map = verify_ir.print_debug_map;
 pub const print_intervals = verify_ir.print_intervals;
+pub const print_xdot = verify_ir.print_xdot;
 
 const SSA_GVN = @import("./SSA_GVN.zig");
 pub const resolve_ssa = SSA_GVN.resolve_ssa;
@@ -1411,12 +1412,20 @@ pub fn scan_alloc(self: *Self, comptime ABI: type, opts: defs.CFOOptions) !void 
 
         // NOTE: registers not in ABI.reg_order will never be used, make this more explicit?
 
+        if (opts.dbg_regalloc) {
+            print("welcome to: {}\n", .{nir});
+        }
+
         // any vreg which is "live in" should already be allocated. mark these as non-free
         for (self.vregs.items, 0..) |vref, vi| {
             const vr = self.iref(vref.ref).?;
             const flag = vreg_flag(@intCast(vi));
             if ((flag & n.live_in) != 0) {
                 if (vr.mckind == .ipreg) free_regs_ip[vr.mcidx] = false;
+                if (opts.dbg_regalloc and vr.mckind == .ipreg) {
+                    const reg: X86Asm.IPReg = @enumFromInt(vr.mcidx);
+                    print("oops! %{} live as vr {} and allocated {}\n", .{ vref.ref, vi, reg });
+                }
                 if (vr.mckind == .vfreg) free_regs_avx[vr.mcidx] = false;
             }
         }
@@ -2262,6 +2271,12 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool, opts
     try self.calc_live();
     if (check) try self.check_ir_valid();
     if (check) try self.check_vregs();
+
+    if (opts.dbg_regalloc) {
+        self.debug_print();
+        self.print_intervals();
+        try self.print_xdot("/tmp/xdotter.dot");
+    }
 
     try self.scan_alloc(ABI, opts);
     try self.resolve_moves(); // GLYTTIT

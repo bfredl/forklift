@@ -490,6 +490,7 @@ pub fn print_loop(self: *FLIR, head: u16) void {
         if (ni == head) {
             enda = n.loop_end;
         }
+        // ALERTA: need phis and/or putphis!
         while (it.next()) |_| {
             if (ni == head) {
                 print("H", .{});
@@ -547,4 +548,32 @@ pub fn print_debug_map(self: *FLIR, ni: u16, target: u32) void {
         }
     }
     print("\n", .{});
+}
+
+pub fn print_xdot(self: *FLIR, path: []const u8) !void {
+    if (comptime FLIR.minimal) {
+        return;
+    }
+
+    const io = std.Options.debug_io; // unsafePerformIO
+    const file = try std.Io.Dir.cwd().createFile(io, path, .{});
+    defer file.close(io);
+    var finbuffer: [1024]u8 = undefined;
+    var writer = file.writer(io, &finbuffer);
+    const w = &writer.interface;
+    try w.print("digraph D {{\n\n", .{});
+    for (self.n.items, 0..) |*n, i| {
+        try w.print(" n{}[label=\"{}\"];\n", .{ i, i });
+        for (n.s) |s| {
+            if (s != 0) {
+                try w.print("n{} -> n{}", .{ i, s });
+                if (s < i) {
+                    try w.print("[color = red]", .{});
+                }
+                try w.print(";", .{});
+            }
+        }
+    }
+    try w.print("\n}}\n", .{});
+    try w.flush();
 }
