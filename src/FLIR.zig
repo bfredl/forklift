@@ -1404,6 +1404,8 @@ pub fn scan_alloc(self: *Self, comptime ABI: type, opts: defs.CFOOptions) !void 
     const reg_first_save = 9;
     var highest_used: u8 = 0;
 
+    print("refett \n", .{});
+
     for (0.., self.n.items) |nir, *n| {
         const ni = uv(nir);
         // registers currently free.
@@ -1567,12 +1569,23 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, node: u16, iid: u16, free_reg
         const v = self.vregs.items[vreg];
         const imask = v.live_in;
         conflicts |= v.conflicts; // fixed reg conflicts
+        // This O(n_intervals^2) check exists in Wimmer, Mössenböck (2005)
+        // but is DELETED in Wimmer, Franz (2010) which is what we are doing
+        // Now, This ONLY happens for vreg and ivreg being two args, although
+        // multiple register returns could also trigger it??
+        // reformulate this accordingly!!! like these fixed intervals are already "live"
+        // but we are still considering them because we might split them eagerly?? or no??
         for (0.., self.vregs.items) |ivreg, vref| {
             if (vreg == ivreg) continue;
             const vr = self.iref(vref.ref).?;
             if (vr.mckind != reg_kind) continue;
             if ((imask & vref.live_in) != 0) {
                 // mckind checked above
+                if (usable_regs[vr.mcidx]) {
+                    if (reg_kind == .ipreg) {
+                        print("=== ACHTENG in {}? {} {}: {s}\n", .{ node, vref.ref, iid, @tagName(@as(X86Asm.IPReg, @enumFromInt(vr.mcidx))) });
+                    }
+                }
                 usable_regs[vr.mcidx] = false;
                 break;
             }
