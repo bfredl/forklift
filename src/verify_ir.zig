@@ -440,65 +440,137 @@ fn uses(i: *FLIR.Inst, r: u16) bool {
     return false;
 }
 
-fn print_interval(self: *FLIR, ref: u16) void {
+pub fn print_intervals(self: *FLIR) !void {
     if (comptime FLIR.minimal) {
         return;
     }
-    const i = self.iref(ref).?;
+    for (self.n.items, 0..) |n, ni| {
+        if (n.is_header) {
+            print("           ", .{});
+            try print_loop(self, uv(ni));
+        }
+        var phi = n.phi_list;
+        while (phi != NoRef) {
+            const i = self.iref(phi) orelse return error.FLIRError;
+            try print_interval(self, phi, i);
+            phi = i.next;
+        }
+        var it = self.ins_iterator(n.firstblk);
+        while (it.next()) |item| {
+            try print_interval(self, item.ref, item.i);
+        }
+        // nothing in n.putphi_list can start an interval :D
+    }
+}
+
+fn print_interval(self: *FLIR, ref: u16, i: *FLIR.Inst) !void {
+    const is_vreg: bool = i.vreg() != null;
+    const is_phi = i.tag == .phi;
+    const show_temp = i.f.killed and true;
+    if (!(is_vreg or show_temp)) {
+        return;
+    }
+    if (!is_vreg and !is_phi) print("\x1b[38;5;244m", .{});
+    print("{s}: %{:3} ", .{ if (is_vreg) "VREG" else "TEMP", fake_ref(self, ref) });
+
     const vreg_flag = if (i.vreg()) |vreg| @as(u64, 1) << @as(u6, @intCast(vreg)) else null;
     print("\x1b[4m", .{});
     for (self.n.items, 0..) |n, ni| {
         var live: bool = if (vreg_flag) |f| (f & n.live_in) != 0 else false;
-        if (i.tag == .phi and (self.defNode(i) catch @panic("glüffer")) == ni) {
+        if (i.tag == .phi and try self.defNode(i) == ni) {
             live = true;
+        }
+        var phi = n.phi_list;
+        while (phi != NoRef) {
+            const iu = self.iref(phi) orelse return error.FLIRError;
+            if (phi == ref) {
+                if (iu.tag == .phi) {
+                    print("ϕ", .{});
+                } else if (iu.tag == .arg) {
+                    print("A", .{});
+                } else {
+                    return error.FLIRError;
+                }
+            } else if (live) {
+                print("-", .{});
+            } else {
+                print(" ", .{});
+            }
+            phi = iu.next;
         }
         var it = self.ins_iterator(n.firstblk);
         while (it.next()) |item| {
             const iu = item.i;
             if (item.ref == ref) {
-                if (iu.tag == .phi) {
-                    print("ϕ", .{});
-                } else {
-                    print("S", .{});
-                }
+                print("S", .{});
                 live = true;
             } else if ((iu.f.kill_op1 and iu.op1 == ref) or (iu.f.kill_op2 and iu.op2 == ref)) {
                 live = false;
                 print("K", .{});
             } else if (uses(iu, ref)) {
                 print("U", .{});
-            } else if (iu.tag == .putphi and iu.op2 == ref) {
-                print("p", .{});
-                // TODO: really live at the first putphi in the block but anyway
-                live = true;
             } else if (live) {
                 print("-", .{});
             } else {
                 print(" ", .{});
             }
         }
+        var put_iter = n.putphi_list;
+        while (put_iter != NoRef) {
+            const iu = &self.i.items[put_iter];
+            if (iu.tag == .putphi and iu.op2 == ref) {
+                if (iu.op1 == ref) {
+                    print("P", .{}); // self-referential can happen?
+                } else {
+                    print("p", .{});
+                }
+                // TODO: really live at the first putphi in the block but anyway
+            } else if (uses(iu, ref)) {
+                // kills are tricky, like it is strictly live the entire put block..
+                print("U", .{});
+            } else if (live) {
+                print("-", .{});
+            } else {
+                print(" ", .{});
+            }
+
+            put_iter = iu.next;
+        }
         print("│", .{});
     }
     print("\x1b[0m\n", .{});
 }
 
-pub fn print_loop(self: *FLIR, head: u16) void {
+pub fn print_loop(self: *FLIR, head: u16) !void {
     var enda: u16 = 0;
     print("\x1b[4m", .{});
     for (self.n.items, 0..) |n, ni| {
-        var it = self.ins_iterator(n.firstblk);
         if (ni == head) {
             enda = n.loop_end;
         }
         // ALERTA: need phis and/or putphis!
+        const the_char = if (ni == head)
+            "H"
+        else if (ni < enda)
+            "-"
+        else
+            " ";
+        var phi = n.phi_list;
+        while (phi != NoRef) {
+            const i = self.iref(phi) orelse return error.FLIRError;
+            print("{s}", .{the_char});
+            phi = i.next;
+        }
+        var it = self.ins_iterator(n.firstblk);
         while (it.next()) |_| {
-            if (ni == head) {
-                print("H", .{});
-            } else if (ni < enda) {
-                print("-", .{});
-            } else {
-                print(" ", .{});
-            }
+            // ALERTA: CALLS TODAY??
+            print("{s}", .{the_char});
+        }
+        var put_iter = n.putphi_list;
+        while (put_iter != NoRef) {
+            const i = &self.i.items[put_iter];
+            print("{s}", .{the_char});
+            put_iter = i.next;
         }
         if (ni + 1 < enda) {
             print("-", .{}); // ┼
@@ -507,27 +579,6 @@ pub fn print_loop(self: *FLIR, head: u16) void {
         }
     }
     print("\x1b[0m\n", .{});
-}
-
-pub fn print_intervals(self: *FLIR) void {
-    for (self.n.items, 0..) |n, ni| {
-        if (n.is_header) {
-            print("           ", .{});
-            print_loop(self, uv(ni));
-        }
-        var it = self.ins_iterator(n.firstblk);
-        while (it.next()) |item| {
-            const i = item.i;
-            const vreg: bool = i.vreg() != null;
-            const is_phi = i.tag == .phi;
-            const show_temp = i.f.killed and true;
-            if (vreg or show_temp) {
-                if (!vreg and !is_phi) print("\x1b[38;5;244m", .{});
-                print("{s}: %{:3} ", .{ if (vreg) "VREG" else "TEMP", fake_ref(self, item.ref) });
-                print_interval(self, item.ref);
-            }
-        }
-    }
 }
 
 pub fn print_debug_map(self: *FLIR, ni: u16, target: u32) void {

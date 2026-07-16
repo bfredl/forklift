@@ -1423,8 +1423,8 @@ pub fn scan_alloc(self: *Self, comptime ABI: type, opts: defs.CFOOptions) !void 
             if ((flag & n.live_in) != 0) {
                 if (vr.mckind == .ipreg) free_regs_ip[vr.mcidx] = false;
                 if (opts.dbg_regalloc and vr.mckind == .ipreg) {
-                    const reg: X86Asm.IPReg = @enumFromInt(vr.mcidx);
-                    print("oops! %{} live as vr {} and allocated {}\n", .{ vref.ref, vi, reg });
+                    // const reg: X86Asm.IPReg = @enumFromInt(vr.mcidx);
+                    // print("oops! %{} live as vr {} and allocated {}\n", .{ vref.ref, vi, reg });
                 }
                 if (vr.mckind == .vfreg) free_regs_avx[vr.mcidx] = false;
             }
@@ -1655,6 +1655,10 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, node: u16, iid: u16, free_reg
                 }
             }
         }
+    }
+
+    if (true and chosen_reg == null) {
+        print("I am %{}\n", .{iid});
     }
 
     const chosen = chosen_reg orelse return error.NotImplemented; // "implement interval splitting"
@@ -2274,7 +2278,7 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool, opts
 
     if (opts.dbg_regalloc) {
         self.debug_print();
-        self.print_intervals();
+        try self.print_intervals();
         try self.print_xdot("/tmp/xdotter.dot");
     }
 

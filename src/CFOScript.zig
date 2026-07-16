@@ -680,7 +680,7 @@ pub fn parse_mod(mod: *CFOModule, gpa: Allocator, str: []const u8, opts: defs.CF
             if (opts.dbg_raw_ir) ir.debug_print();
             try ir.test_analysis(FLIR.X86ABI, true, opts);
             if (opts.dbg_analysed_ir) ir.debug_print();
-            if (opts.dbg_vregs) ir.print_intervals();
+            if (opts.dbg_vregs) try ir.print_intervals();
 
             const target = try codegen.codegen(&ir, mod, null, opts);
             obj_slot.* = .{ .func = .{ .code_start = target } };
