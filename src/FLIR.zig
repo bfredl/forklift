@@ -65,7 +65,7 @@ unsealed: bool = true,
 // variables 2.0: virtual registero
 // vregs is any result which is live outside of its defining node, that's it.
 nvreg: u16 = 0,
-vregs: ArrayList(struct { ref: u16, def_node: u16, live_in: NodeFlag = 0, conflicts: u16 = 0 }) = .empty,
+vregs: ArrayList(struct { ref: u16, def_node: u16, live_in: NodeFlag = 0, used: NodeFlag = 0, conflicts: u16 = 0 }) = .empty,
 
 // 8-byte slots in stack frame
 nslots: u8 = 0,
@@ -1115,6 +1115,7 @@ pub fn calc_live(self: *Self) !void {
         while (true) : (ni -= 1) {
             const n = &self.n.items[ni];
             var live_vregs: VRegFlag = 0;
+            var used_vregs: VRegFlag = 0;
             for (n.s) |s| {
                 if (s != 0) {
                     live_vregs |= self.n.items[s].live_in;
@@ -1132,7 +1133,7 @@ pub fn calc_live(self: *Self) !void {
                 while (listit != NoRef) {
                     // putphi:s arent ordered, so they all have neg_counter == 0
                     const i = self.iref(listit) orelse return error.FLIRError;
-                    self.mark_ops_as_used(i, &live_vregs, neg_counter);
+                    self.mark_ops_as_used(i, &live_vregs, &used_vregs, neg_counter);
                     // TODO: flogger
                     if (i.tag == .retval) {
                         if (self.abi_tag == .X86) {
@@ -1168,11 +1169,12 @@ pub fn calc_live(self: *Self) !void {
                 // TODO: currently this forbids clobbers as inputs, which is wrong when killing the op.
                 // just need to check for mismatches
                 // consider x86 IDIV: as op1 is fixed to be EAX, op2 conflicts with EAX even when killed!
-                self.mark_ops_as_used(i, &live_vregs, neg_counter);
+                // TODO: could just pass used_vergs and then live_in = (live_out | used) & ~killed in the end
+                self.mark_ops_as_used(i, &live_vregs, &used_vregs, neg_counter);
                 var opnext = i.next_as_op();
                 while (opnext != NoRef) {
                     const ii = self.iref(opnext) orelse return error.FLIRError;
-                    self.mark_ops_as_used(ii, &live_vregs, neg_counter);
+                    self.mark_ops_as_used(ii, &live_vregs, &used_vregs, neg_counter);
                     opnext = ii.next;
                 }
 
@@ -1206,6 +1208,7 @@ pub fn calc_live(self: *Self) !void {
             }
 
             n.live_in = live_vregs;
+            n.used_vregs = used_vregs;
             // print("LIVEIN {}: {x} (dvs {})\n", .{ ni, n.live_in, @popCount(n.live_in) });
 
             if (n.is_header) {
@@ -1220,6 +1223,7 @@ pub fn calc_live(self: *Self) !void {
                         if (ch_n.is_header) {
                             loop_set |= ch_loop;
                         }
+                        // NB: used_vregs remains fully local. maybe header should have "loop used" if we need it
                         ch_n.live_in |= n.live_in;
                     } else {
                         break; // assuming the contigous property by now
@@ -1236,6 +1240,9 @@ pub fn calc_live(self: *Self) !void {
         for (self.vregs.items, 0..) |*v, vi| {
             if ((n.live_in & vreg_flag(@intCast(vi))) != 0) {
                 v.live_in |= node_flag(@intCast(ni));
+            }
+            if ((n.used_vregs & vreg_flag(@intCast(vi))) != 0) {
+                v.used |= node_flag(@intCast(ni));
             }
         }
 
@@ -1294,11 +1301,12 @@ fn check_live_or_conflicts(self: *Self, i: *Inst, live_vregs: *VRegFlag, node_ha
     }
 }
 
-fn mark_ops_as_used(self: *Self, i: *Inst, live: *VRegFlag, neg_counter: u16) void {
+fn mark_ops_as_used(self: *Self, i: *Inst, live: *VRegFlag, used: *VRegFlag, neg_counter: u16) void {
     for (i.ops(false)) |op| {
         if (self.iref(op)) |ref| {
             if (ref.vreg()) |vreg| {
                 live.* |= vreg_flag(@intCast(vreg));
+                used.* |= vreg_flag(@intCast(vreg)); // a little silly but see TODO at callsite
             } else {
                 if (ref.vreg_scratch == NoRef) {
                     ref.vreg_scratch = neg_counter;
@@ -1670,7 +1678,10 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, node: u16, iid: u16, free_reg
         }
     }
 
-    if (true and chosen_reg == null) {
+    if (chosen_reg == null) {
+        // AllocateBlockedReg
+        // var next_use_pos: [16]u16 = undefined;
+
         print("I am %{}\n", .{iid});
     }
 

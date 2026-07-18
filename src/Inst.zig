@@ -64,6 +64,8 @@ f: packed struct {
     // be alive in an other branch processed later
     // in phi node: "kill_op1" is overloaded as resolved (it doesn't use any op:s in the normal sense)
     // NOTE: putphis doesn't set kill_op1 because they don't need to (what is dead may never die)
+    // NOT DONE YET BUT MAYBE: last use in a node of a vreg maybe should be "true", like it is
+    // not hard to check s[0] and s[1] if it is live-in
     kill_op1: bool = false,
     kill_op2: bool = false,
     kill_op3: bool = false, // vaaaaaaal
