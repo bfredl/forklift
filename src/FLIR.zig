@@ -121,6 +121,7 @@ pub const Node = struct {
     firstblk: u16,
     lastblk: u16,
     live_in: VRegFlag = 0, // TODO: globally allocate a [n_nodes*nvreg] multibitset
+    used_vregs: VRegFlag = 0, // TODO: globally allocate a [n_nodes*nvreg] multibitset
 
     loop: u16 = 0,
     rpolink: u8 = 0,

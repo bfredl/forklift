@@ -477,6 +477,7 @@ fn print_interval(self: *FLIR, ref: u16, i: *FLIR.Inst) !void {
     print("\x1b[4m", .{});
     for (self.n.items, 0..) |n, ni| {
         var live: bool = if (vreg_flag) |f| (f & n.live_in) != 0 else false;
+        var use: ?bool = if (vreg_flag) |f| (f & n.used_vregs) != 0 else null;
         if (i.tag == .phi and try self.defNode(i) == ni) {
             live = true;
         }
@@ -484,6 +485,7 @@ fn print_interval(self: *FLIR, ref: u16, i: *FLIR.Inst) !void {
         while (phi != NoRef) {
             const iu = self.iref(phi) orelse return error.FLIRError;
             if (phi == ref) {
+                if (use == null) use = true;
                 if (iu.tag == .phi) {
                     print("ϕ", .{});
                 } else if (iu.tag == .arg) {
@@ -498,17 +500,21 @@ fn print_interval(self: *FLIR, ref: u16, i: *FLIR.Inst) !void {
             }
             phi = iu.next;
         }
+        var used = false;
         var it = self.ins_iterator(n.firstblk);
         while (it.next()) |item| {
             const iu = item.i;
             if (item.ref == ref) {
                 print("S", .{});
                 live = true;
+                if (use == null) use = true;
             } else if ((iu.f.kill_op1 and iu.op1 == ref) or (iu.f.kill_op2 and iu.op2 == ref)) {
                 live = false;
                 print("K", .{});
+                used = true;
             } else if (uses(iu, ref)) {
                 print("U", .{});
+                used = true;
             } else if (live) {
                 print("-", .{});
             } else {
@@ -520,12 +526,14 @@ fn print_interval(self: *FLIR, ref: u16, i: *FLIR.Inst) !void {
             const iu = &self.i.items[put_iter];
             if (iu.tag == .putphi and iu.op2 == ref) {
                 if (iu.op1 == ref) {
+                    used = true;
                     print("P", .{}); // self-referential can happen?
                 } else {
                     print("p", .{});
                 }
                 // TODO: really live at the first putphi in the block but anyway
             } else if (uses(iu, ref)) {
+                used = true;
                 // kills are tricky, like it is strictly live the entire put block..
                 print("U", .{});
             } else if (live) {
@@ -536,7 +544,10 @@ fn print_interval(self: *FLIR, ref: u16, i: *FLIR.Inst) !void {
 
             put_iter = iu.next;
         }
+        // TODO: this should be in a verify function even if we do not print
+        if ((use orelse false) != used) print("\x1b[31m", .{}); //   ACHTUNG
         print("│", .{});
+        if ((use orelse false) != used) print("\x1b[0m", .{});
     }
     print("\x1b[0m\n", .{});
 }
