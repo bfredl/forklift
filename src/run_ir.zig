@@ -62,7 +62,7 @@ pub fn main(init: std.process.Init) !void {
     nextarg += 1;
 
     const mode = @import("builtin").mode;
-    var gpa = if (mode == .Debug) init.gpa else init.arena.allocator();
+    var gpa = if (mode == .debug) init.gpa else init.arena.allocator();
 
     const buf = try readall(io, gpa, filearg);
     defer gpa.free(buf);
