@@ -38,7 +38,7 @@ pub const ValType = enum(u4) {
     avxval,
 
     pub fn spec(self: @This()) u4 {
-        return @intFromEnum(self);
+        return @backingInt(self);
     }
 };
 
@@ -50,19 +50,19 @@ pub const SpecType = union(ValType) {
     avxval: X86Asm.FMode,
     const INT_SPEC_OFF: u4 = 8;
     pub fn val_type(self: @This()) ValType {
-        return if (@intFromEnum(self) >= INT_SPEC_OFF) .intptr else .avxval;
+        return if (@backingInt(self) >= INT_SPEC_OFF) .intptr else .avxval;
     }
     pub fn from(val: u8) SpecType {
         if (val >= INT_SPEC_OFF) {
-            return .{ .intptr = @enumFromInt(val - INT_SPEC_OFF) };
+            return .{ .intptr = @fromBackingInt(@intCast(val - INT_SPEC_OFF)) };
         } else {
-            return .{ .avxval = @enumFromInt(val) };
+            return .{ .avxval = @fromBackingInt(@intCast(val)) };
         }
     }
     pub fn into(self: SpecType) u5 {
         return switch (self) {
-            .intptr => |i| INT_SPEC_OFF + @intFromEnum(i),
-            .avxval => |a| @intFromEnum(a),
+            .intptr => |i| INT_SPEC_OFF + @backingInt(i),
+            .avxval => |a| @backingInt(a),
         };
     }
 };
@@ -70,7 +70,7 @@ pub const SpecType = union(ValType) {
 pub const IPReg = enum(u4) {
     _,
     pub fn id(self: IPReg) u4 {
-        return @intFromEnum(self);
+        return @backingInt(self);
     }
 };
 
@@ -83,7 +83,7 @@ pub const IntUnOp = enum(u5) {
     sign_extend32,
 
     pub fn is_bitop(self: IntUnOp) bool {
-        return @intFromEnum(self) < 3;
+        return @backingInt(self) < 3;
     }
 
     pub fn is_sign_extend(self: IntUnOp) ?ISize {
@@ -202,7 +202,7 @@ pub const IntCond = enum(u4) {
     }
 
     pub fn off(self: IntCond) u4 {
-        return @intFromEnum(self);
+        return @backingInt(self);
     }
 
     pub fn invert(self: IntCond) IntCond {
@@ -335,6 +335,22 @@ pub const MCKind = enum(u8) {
         };
     }
 };
+
+pub const NodeFlag = u128;
+pub const VRegFlag = u128;
+
+pub fn ipreg_flag(reg: u4) u16 {
+    return @as(u16, 1) << reg;
+}
+
+pub fn vreg_flag(reg: u7) VRegFlag {
+    return @as(VRegFlag, 1) << reg;
+}
+
+// TODO: dynamisk
+pub fn node_flag(node: u7) NodeFlag {
+    return @as(NodeFlag, 1) << node;
+}
 
 const builtin = @import("builtin");
 const std = @import("std");

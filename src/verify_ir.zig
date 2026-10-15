@@ -157,7 +157,7 @@ pub fn check_vregs(self: *FLIR) !void {
     if (self.n.items[0].live_in != 0) return error.HOPPSANSA;
     var err = false;
     for (self.n.items, 0..) |*n, ni| {
-        var live_out: FLIR.VRegFlag = 0;
+        var live_out: defs.VRegFlag = 0;
         // hack: if n.s[i] == 0 then no bits will be added anyway
         live_out |= self.n.items[n.s[0]].live_in;
         live_out |= self.n.items[n.s[1]].live_in;
@@ -218,7 +218,7 @@ pub fn debug_print(self: *FLIR) void {
 
         // only print liveout if we have more than one sucessor, otherwise it is BOOORING
         if (n.s[1] != 0) {
-            var live_out: FLIR.VRegFlag = 0;
+            var live_out: defs.VRegFlag = 0;
             live_out |= self.n.items[n.s[0]].live_in;
             live_out |= self.n.items[n.s[1]].live_in;
             if (live_out != 0) {
@@ -419,7 +419,7 @@ fn print_mcval(i: *FLIR.Inst) void {
     switch (i.mckind) {
         .frameslot => print(" [slot {}]", .{i.mcidx}),
         .memarg => print(" [rbp+8*{}]", .{i.mcidx}),
-        .ipreg => print(" ${s}", .{@tagName(@as(X86Asm.IPReg, @enumFromInt(i.mcidx)))}),
+        .ipreg => print(" ${s}", .{@tagName(@as(X86Asm.IPReg, @fromBackingInt(@intCast(i.mcidx))))}),
         .vfreg => print(" $ymm{}", .{i.mcidx}),
         .call_memarg => print(" eightbyte {}", .{i.mcidx}),
         .unallocated_raw => {
@@ -473,7 +473,7 @@ fn print_interval(self: *FLIR, ref: u16, i: *FLIR.Inst) !void {
     if (!is_vreg and !is_phi) print("\x1b[38;5;244m", .{});
     print("{s}: %{:3} ", .{ if (is_vreg) "VREG" else "TEMP", fake_ref(self, ref) });
 
-    const vreg_flag = if (i.vreg()) |vreg| @as(u64, 1) << @as(u6, @intCast(vreg)) else null;
+    const vreg_flag = if (i.vreg()) |vreg| defs.vreg_flag(@intCast(vreg)) else null;
     print("\x1b[4m", .{});
     for (self.n.items, 0..) |n, ni| {
         var live: bool = if (vreg_flag) |f| (f & n.live_in) != 0 else false;

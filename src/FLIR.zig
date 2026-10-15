@@ -2,7 +2,7 @@ const std = @import("std");
 const math = std.math;
 const mem = std.mem;
 const Allocator = mem.Allocator;
-const Self = @This();
+const FLIR = @This();
 const print = std.debug.print;
 const defs = @import("./defs.zig");
 const X86Asm = @import("./X86Asm.zig");
@@ -23,6 +23,9 @@ pub const print_xdot = verify_ir.print_xdot;
 const SSA_GVN = @import("./SSA_GVN.zig");
 pub const resolve_ssa = SSA_GVN.resolve_ssa;
 pub const read_ref = SSA_GVN.read_ref;
+
+const liveness = @import("./liveness.zig");
+pub const calc_live = liveness.calc_live;
 
 const ArrayList = std.ArrayList;
 const assert = std.debug.assert;
@@ -97,8 +100,8 @@ pub const ConstOff: u16 = 0xFE00;
 // ASSERT, DUE TO INITIALIZATION, first constant is always zero
 pub const IZero = ConstOff;
 
-pub const NodeFlag = u128;
-pub const VRegFlag = u128;
+const NodeFlag = defs.NodeFlag;
+const VRegFlag = defs.VRegFlag;
 
 pub fn uv(s: usize) u16 {
     return @intCast(s);
@@ -220,18 +223,7 @@ test "sizey" {
     assert(@sizeOf(Block) <= 64);
 }
 
-fn ipreg_flag(reg: u4) u16 {
-    return @as(u16, 1) << reg;
-}
-
-fn vreg_flag(reg: u7) VRegFlag {
-    return @as(VRegFlag, 1) << reg;
-}
-
-// TODO: dynamisk
-fn node_flag(node: u7) NodeFlag {
-    return @as(NodeFlag, 1) << node;
-}
+const ipreg_flag = defs.ipreg_flag;
 
 pub fn constidx(ref: u16) ?u16 {
     if (ref == NoRef) return null;
@@ -241,13 +233,13 @@ pub fn constidx(ref: u16) ?u16 {
     return null;
 }
 
-pub fn constval(self: *Self, ref: u16) ?u64 {
+pub fn constval(self: *FLIR, ref: u16) ?u64 {
     const idx = constidx(ref) orelse return null;
     return self.constvals.items[idx];
 }
 
 // if null: still could be a value, just not an ipval
-pub fn ipval(self: *Self, ref: u16) ?defs.IPMCVal {
+pub fn ipval(self: *FLIR, ref: u16) ?defs.IPMCVal {
     if (constidx(ref)) |idx| {
         const val: u64 = self.constvals.items[idx];
         const vali32: i32 = @bitCast(@as(u32, @truncate(val)));
@@ -265,21 +257,21 @@ pub fn ipval(self: *Self, ref: u16) ?defs.IPMCVal {
     }
 }
 
-pub fn ipreg(self: *Self, ref: u16) ?defs.IPReg {
+pub fn ipreg(self: *FLIR, ref: u16) ?defs.IPReg {
     return (self.iref(ref) orelse return null).ipreg();
 }
 
-pub fn avxreg(self: *Self, ref: u16) ?u4 {
+pub fn avxreg(self: *FLIR, ref: u16) ?u4 {
     return (self.iref(ref) orelse return null).avxreg();
 }
 
-fn initConsts(self: *Self) void {
+fn initConsts(self: *FLIR) void {
     self.constvals.appendAssumeCapacity(0);
     self.constvals.appendAssumeCapacity(1);
 }
 
-pub fn init(n: u16, allocator: Allocator) !Self {
-    var self = Self{
+pub fn init(n: u16, allocator: Allocator) !FLIR {
+    var self = FLIR{
         .gpa = allocator,
         .n = try .initCapacity(allocator, n),
         .b = try .initCapacity(allocator, n),
@@ -290,8 +282,8 @@ pub fn init(n: u16, allocator: Allocator) !Self {
     return self;
 }
 
-pub fn reinit(self: *Self) void {
-    const info = @typeInfo(Self).@"struct";
+pub fn reinit(self: *FLIR) void {
+    const info = @typeInfo(FLIR).@"struct";
 
     // 1. reset fields with initializers to their initial value (most int members)
     // 2. set ArrayList members to empty (but keep existing allocations)
@@ -306,7 +298,7 @@ pub fn reinit(self: *Self) void {
     self.initConsts();
 }
 
-pub fn deinit(self: *Self) void {
+pub fn deinit(self: *FLIR) void {
     self.n.deinit(self.gpa);
     self.b.deinit(self.gpa);
     self.i.deinit(self.gpa);
@@ -321,7 +313,7 @@ pub fn toref() u16 {
     @compileError("REF USED");
 }
 
-pub fn iref(self: *Self, ref: u16) ?*Inst {
+pub fn iref(self: *FLIR, ref: u16) ?*Inst {
     if (ref >= ConstOff) {
         return null;
     }
@@ -329,7 +321,7 @@ pub fn iref(self: *Self, ref: u16) ?*Inst {
     return &self.i.items[ref];
 }
 
-pub fn addNode(self: *Self) !u16 {
+pub fn addNode(self: *FLIR) !u16 {
     const n = try self.n.addOne(self.gpa);
     const b = try self.b.addOne(self.gpa);
     const nodeid = uv(self.n.items.len - 1);
@@ -340,13 +332,13 @@ pub fn addNode(self: *Self) !u16 {
 }
 
 // not-taken/unconditional branch of `n` set to the new node
-pub fn addNodeAfter(self: *Self, node: u16, sealed: bool) !u16 {
+pub fn addNodeAfter(self: *FLIR, node: u16, sealed: bool) !u16 {
     const new_node = try self.addNode();
     try self.addLink(node, 0, new_node, sealed);
     return new_node;
 }
 
-pub fn addLink(self: *Self, node_from: u16, branch: u1, node_to: u16, to_sealed: bool) !void {
+pub fn addLink(self: *FLIR, node_from: u16, branch: u1, node_to: u16, to_sealed: bool) !void {
     const succ = &self.n.items[node_from].s[branch];
     if (succ.* != 0) return error.FLIRError;
     succ.* = node_to;
@@ -359,7 +351,7 @@ pub fn addLink(self: *Self, node_from: u16, branch: u1, node_to: u16, to_sealed:
     try self.setPredNext(node_from, branch, node_to);
 }
 
-fn setPredNext(self: *Self, node_from: u16, branch: u1, node_to: u16) !void {
+fn setPredNext(self: *FLIR, node_from: u16, branch: u1, node_to: u16) !void {
     const s_pred_next = &self.n.items[node_from].s_pred_next[branch];
     if (s_pred_next.* != NoRef) return error.FLIRError;
 
@@ -369,7 +361,7 @@ fn setPredNext(self: *Self, node_from: u16, branch: u1, node_to: u16) !void {
     to.npred += 1;
 }
 
-pub fn addRawInst(self: *Self, inst: Inst) !u16 {
+pub fn addRawInst(self: *FLIR, inst: Inst) !u16 {
     if (self.i_free != NoRef) {
         const ref = self.i_free;
         self.i_free = self.i.items[ref].op1;
@@ -383,7 +375,7 @@ pub fn addRawInst(self: *Self, inst: Inst) !u16 {
     }
 }
 
-fn readVars(self: *Self, node: u16, i: *Inst) !void {
+fn readVars(self: *FLIR, node: u16, i: *Inst) !void {
     if (self.unsealed) {
         for (i.ops(false)) |*op| {
             op.* = try self.read_ref(node, op.*);
@@ -391,7 +383,7 @@ fn readVars(self: *Self, node: u16, i: *Inst) !void {
     }
 }
 
-pub fn addInst(self: *Self, node: u16, inst: Inst) !u16 {
+pub fn addInst(self: *FLIR, node: u16, inst: Inst) !u16 {
     var i = inst;
     try self.readVars(node, &i);
     const ref = try self.addRawInst(i);
@@ -399,7 +391,7 @@ pub fn addInst(self: *Self, node: u16, inst: Inst) !u16 {
     return ref;
 }
 
-pub fn addRawInstButRead(self: *Self, inst: Inst, node: u16) !u16 {
+pub fn addRawInstButRead(self: *FLIR, inst: Inst, node: u16) !u16 {
     var i = inst;
     try self.readVars(node, &i);
     const ref = try self.addRawInst(i);
@@ -407,7 +399,7 @@ pub fn addRawInstButRead(self: *Self, inst: Inst, node: u16) !u16 {
 }
 
 // add inst to the end of block
-pub fn addInstRef(self: *Self, node: u16, inst: u16) !void {
+pub fn addInstRef(self: *FLIR, node: u16, inst: u16) !void {
     if (inst >= ConstOff) @panic("NOT LIKE THIS");
     const n = &self.n.items[node];
     // must exist:
@@ -441,7 +433,7 @@ pub fn addInstRef(self: *Self, node: u16, inst: u16) !void {
     self.b.items[blkid].i[lastfree] = inst;
 }
 
-pub fn new_blk(self: *Self) !u16 {
+pub fn new_blk(self: *FLIR) !u16 {
     if (self.b_free != NoRef) {
         const blkid = self.b_free;
         self.b_free = self.b.items[blkid].pred;
@@ -453,7 +445,7 @@ pub fn new_blk(self: *Self) !u16 {
     return blkid;
 }
 
-pub fn const_uint(self: *Self, val: u64) !u16 {
+pub fn const_uint(self: *FLIR, val: u64) !u16 {
     for (self.constvals.items, 0..) |v, i| {
         if (v == val) return uv(ConstOff + i);
     }
@@ -463,26 +455,26 @@ pub fn const_uint(self: *Self, val: u64) !u16 {
     return uv(ref);
 }
 
-pub fn const_int(self: *Self, val: i32) !u16 {
+pub fn const_int(self: *FLIR, val: i32) !u16 {
     return const_uint(self, @as(u32, @bitCast(val)));
 }
 
 const sphigh = Inst.sphigh;
 // TODO: special case zero, one, mayhaps?
 // TODO: tricky with vectors, we might both simple broadcast and vector constants.
-pub fn const_f64(self: *Self, node: u16, val: f64) !u16 {
+pub fn const_f64(self: *FLIR, node: u16, val: f64) !u16 {
     const constref = try self.const_uint(@bitCast(val));
     return self.addInst(node, .{ .tag = .fconst, .op1 = constref, .op2 = NoRef, .spec = sphigh(@backingInt(FMode.sd), 0) });
 }
-pub fn const_f32(self: *Self, node: u16, val: f32) !u16 {
+pub fn const_f32(self: *FLIR, node: u16, val: f32) !u16 {
     const constref = try self.const_uint(@as(u32, @bitCast(val)));
     return self.addInst(node, .{ .tag = .fconst, .op1 = constref, .op2 = NoRef, .spec = sphigh(@backingInt(FMode.ss), 0) });
 }
 
-pub fn load(self: *Self, node: u16, wide: bool, signext: bool, kind: defs.SpecType, base: u16, idx: u16, scale: u2) !u16 {
+pub fn load(self: *FLIR, node: u16, wide: bool, signext: bool, kind: defs.SpecType, base: u16, idx: u16, scale: u2) !u16 {
     return self.addInst(node, .{ .tag = if (signext) .load_signext else .load, .op1 = base, .op2 = idx, .spec = sphigh(scale, kind.into()), .f = .{ .wide = wide } });
 }
-pub fn store(self: *Self, node: u16, kind: defs.SpecType, base: u16, idx: u16, scale: u2, val: u16) !u16 {
+pub fn store(self: *FLIR, node: u16, kind: defs.SpecType, base: u16, idx: u16, scale: u2, val: u16) !u16 {
     // TODO: paniked hack just to support globals
     var bigaddr = false;
     if (self.constval(base)) |cval| {
@@ -509,7 +501,7 @@ pub fn store(self: *Self, node: u16, kind: defs.SpecType, base: u16, idx: u16, s
     return self.addInst(node, .{ .tag = .store, .op1 = addr, .op2 = wval, .spec = sphigh(0, kind.into()) });
 }
 
-pub fn bpf_load_map(self: *Self, node: u16, map_idx: u32, is_value: bool) !u16 {
+pub fn bpf_load_map(self: *FLIR, node: u16, map_idx: u32, is_value: bool) !u16 {
     assert(map_idx < 0x10000);
     const low_idx: u16 = @truncate(map_idx);
     return self.addInst(node, .{ .tag = .bpf_load_map, .op1 = low_idx, .op2 = 0, .spec = if (is_value) 1 else 0 });
@@ -517,41 +509,41 @@ pub fn bpf_load_map(self: *Self, node: u16, map_idx: u32, is_value: bool) !u16 {
 
 const FMode = X86Asm.FMode;
 const vspec = Inst.vspec;
-pub fn vmath(self: *Self, node: u16, vop: X86Asm.VMathOp, fmode: FMode, op1: u16, op2: u16) !u16 {
+pub fn vmath(self: *FLIR, node: u16, vop: X86Asm.VMathOp, fmode: FMode, op1: u16, op2: u16) !u16 {
     // TODO: somewhere, typecheck that FMode matches fmode of args..
     return self.addInst(node, .{ .tag = .vmath, .spec = vspec(@intCast(vop.off()), fmode), .op1 = op1, .op2 = op2 });
 }
 
-pub fn vcmpf(self: *Self, node: u16, vop: X86Asm.VCmpOp, fmode: FMode, op1: u16, op2: u16) !u16 {
+pub fn vcmpf(self: *FLIR, node: u16, vop: X86Asm.VCmpOp, fmode: FMode, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .vcmpf, .spec = vspec(vop.val(), fmode), .op1 = op1, .op2 = op2 });
 }
 
-pub fn vblendf(self: *Self, node: u16, fmode: FMode, op1: u16, op2: u16, op3: u16) !u16 {
+pub fn vblendf(self: *FLIR, node: u16, fmode: FMode, op1: u16, op2: u16, op3: u16) !u16 {
     return self.addInst(node, .{ .tag = .vblendf, .spec = vspec(0, fmode), .op1 = op1, .op2 = op2, .next = op3 });
 }
 
 // maybe this should allow select(int, avx1, avx2). could lower to convert+vblend if that is good
-pub fn select(self: *Self, node: u16, wide: bool, op1: u16, op2: u16, op3: u16) !u16 {
+pub fn select(self: *FLIR, node: u16, wide: bool, op1: u16, op2: u16, op3: u16) !u16 {
     return self.addInst(node, .{ .tag = .select, .spec = 0, .op1 = op1, .op2 = op2, .next = op3, .f = .{ .wide = wide } });
 }
 
-pub fn vunop(self: *Self, node: u16, vop: defs.VUnOp, fmode: FMode, op1: u16) !u16 {
+pub fn vunop(self: *FLIR, node: u16, vop: defs.VUnOp, fmode: FMode, op1: u16) !u16 {
     return self.addInst(node, .{ .tag = .vunop, .spec = vspec(@backingInt(vop), fmode), .op1 = op1, .op2 = 0 });
 }
 
 // TODO: a bit contradictory naming with IntCond
-pub fn fcmp(self: *Self, node: u16, cond: IntCond, fmode: FMode, op1: u16, op2: u16) !u16 {
+pub fn fcmp(self: *FLIR, node: u16, cond: IntCond, fmode: FMode, op1: u16, op2: u16) !u16 {
     if (!fmode.scalar()) return error.FLIRError;
     return self.addInst(node, .{ .tag = .fcmp, .spec = Inst.vspec(cond.off(), fmode), .op1 = op1, .op2 = op2 });
 }
 
-pub fn int2float(self: *Self, node: u16, op: defs.Int2VOp, fmode: FMode, op1: u16) !u16 {
+pub fn int2float(self: *FLIR, node: u16, op: defs.Int2VOp, fmode: FMode, op1: u16) !u16 {
     // TODO: maybe a packed should implicitly convert and then broadcast?
     if (!fmode.scalar()) return error.FLIRError;
     return self.addInst(node, .{ .tag = .int2vf, .spec = Inst.vspec(@backingInt(op), fmode), .op1 = op1, .op2 = NoRef });
 }
 
-pub fn float2int(self: *Self, node: u16, op: defs.Int2VOp, fmode: FMode, op1: u16) !u16 {
+pub fn float2int(self: *FLIR, node: u16, op: defs.Int2VOp, fmode: FMode, op1: u16) !u16 {
     if (!fmode.scalar()) return error.FLIRError;
     return self.addInst(node, .{ .tag = .vf2int, .spec = Inst.vspec(@backingInt(op), fmode), .op1 = op1, .op2 = NoRef });
 }
@@ -565,7 +557,7 @@ fn wsize(size: defs.ISize) !bool {
 }
 
 // TODO: 32bit vs 64bit (also for int in i2f and f2i, and so on)
-pub fn iunop(self: *Self, node: u16, size: defs.ISize, op: IntUnOp, op1: u16) !u16 {
+pub fn iunop(self: *FLIR, node: u16, size: defs.ISize, op: IntUnOp, op1: u16) !u16 {
     if (self.construction_peep) {
         if (try self.peep_iunop(op, size, op1)) |res| {
             return res;
@@ -575,15 +567,15 @@ pub fn iunop(self: *Self, node: u16, size: defs.ISize, op: IntUnOp, op1: u16) !u
 }
 
 // TODO: 32bit vs 64bit (also for int in i2f and f2i, and so on)
-pub fn ibinop(self: *Self, node: u16, size: defs.ISize, op: IntBinOp, op1: u16, op2: u16) !u16 {
+pub fn ibinop(self: *FLIR, node: u16, size: defs.ISize, op: IntBinOp, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .ibinop, .spec = @backingInt(op), .op1 = op1, .op2 = op2, .f = .{ .wide = try wsize(size) } });
 }
 
-pub fn icmp(self: *Self, node: u16, size: defs.ISize, cond: IntCond, op1: u16, op2: u16) !u16 {
+pub fn icmp(self: *FLIR, node: u16, size: defs.ISize, cond: IntCond, op1: u16, op2: u16) !u16 {
     return self.addInst(node, .{ .tag = .icmp, .spec = cond.off(), .op1 = op1, .op2 = op2, .f = .{ .wide = try wsize(size) } });
 }
 
-pub fn icmpset(self: *Self, node: u16, size: defs.ISize, cond: IntCond, op1: u16, op2: u16) !u16 {
+pub fn icmpset(self: *FLIR, node: u16, size: defs.ISize, cond: IntCond, op1: u16, op2: u16) !u16 {
     if (self.construction_peep) {
         if (self.peep_icmp_const(cond, try wsize(size), op1, op2)) |res| {
             return self.const_uint(if (res) 1 else 0);
@@ -592,7 +584,7 @@ pub fn icmpset(self: *Self, node: u16, size: defs.ISize, cond: IntCond, op1: u16
     return self.addInst(node, .{ .tag = .icmpset, .spec = cond.off(), .op1 = op1, .op2 = op2, .f = .{ .wide = try wsize(size) } });
 }
 
-pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
+pub fn putvar(self: *FLIR, node: u16, vref: u16, value: u16) !void {
     // value could be another varref
     const refval = try self.read_ref(node, value);
     const v = self.iref(vref) orelse return error.FLIRError;
@@ -614,11 +606,11 @@ pub fn putvar(self: *Self, node: u16, vref: u16, value: u16) !void {
     n.putphi_list = try self.addRawInst(.{ .tag = .putvar, .op1 = refval, .op2 = vref, .next = n.putphi_list, .node_delete_this = node });
 }
 
-pub fn ret(self: *Self, node: u16) !void {
+pub fn ret(self: *FLIR, node: u16) !void {
     self.n.items[node].is_return = true;
 }
 
-pub fn retval(self: *Self, node: u16, kind: defs.SpecType, val: u16) !void {
+pub fn retval(self: *FLIR, node: u16, kind: defs.SpecType, val: u16) !void {
     const rval = try self.addRawInstButRead(.{ .tag = .retval, .spec = kind.into(), .op1 = val, .op2 = NoRef, .next = NoRef }, node);
     const n = &self.n.items[node];
     // SILLY: self.put_at_end_of_any_list() ?
@@ -633,7 +625,7 @@ pub fn retval(self: *Self, node: u16, kind: defs.SpecType, val: u16) !void {
     }
 }
 
-pub fn call(self: *Self, node: u16, kind: defs.CallKind, num: u16) !u16 {
+pub fn call(self: *FLIR, node: u16, kind: defs.CallKind, num: u16) !u16 {
     return try self.addInst(node, .{
         .tag = .call,
         .spec = @backingInt(kind),
@@ -643,7 +635,7 @@ pub fn call(self: *Self, node: u16, kind: defs.CallKind, num: u16) !u16 {
     });
 }
 
-pub fn callarg(self: *Self, node: u16, toinst: u16, ref: u16, typ: defs.SpecType) !u16 {
+pub fn callarg(self: *FLIR, node: u16, toinst: u16, ref: u16, typ: defs.SpecType) !u16 {
     var inst = self.iref(toinst) orelse return error.FLIRError;
     const tocall = switch (inst.tag) {
         .call => toinst,
@@ -664,7 +656,7 @@ pub fn callarg(self: *Self, node: u16, toinst: u16, ref: u16, typ: defs.SpecType
     return nextarg;
 }
 
-pub fn callret(self: *Self, the_call: u16, typ: defs.SpecType) !u16 {
+pub fn callret(self: *FLIR, the_call: u16, typ: defs.SpecType) !u16 {
     const theret = try self.addRawInst(.{ .tag = .callret, .spec = typ.into(), .op1 = the_call, .op2 = NoRef });
     const ic = self.iref(the_call) orelse return error.FLIRError;
     if (ic.tag != .call) return error.FLIRError;
@@ -683,21 +675,21 @@ pub fn callret(self: *Self, the_call: u16, typ: defs.SpecType) !u16 {
     return theret;
 }
 
-pub fn trap(self: *Self, node: u16, recoverable: bool) !u16 {
+pub fn trap(self: *FLIR, node: u16, recoverable: bool) !u16 {
     // if false, optimization should treat it as a non-local return
     // if true, make no assumptions (like a syscall or whatever)
     _ = recoverable;
     return self.addInst(node, .{ .tag = .trap, .spec = 0, .op1 = NoRef, .op2 = NoRef });
 }
 
-pub fn addPhi(self: *Self, node: u16, vref: u16, valspec: u8) !u16 {
+pub fn addPhi(self: *FLIR, node: u16, vref: u16, valspec: u8) !u16 {
     const n = &self.n.items[node];
     const ref = try self.addRawInst(.{ .tag = .phi, .op1 = vref, .op2 = NoRef, .spec = valspec, .f = .{ .kill_op1 = true }, .next = n.phi_list, .node_delete_this = node });
     n.phi_list = ref;
     return ref;
 }
 
-pub fn arg(self: *Self, typ: defs.SpecType) !u16 {
+pub fn arg(self: *FLIR, typ: defs.SpecType) !u16 {
     if (self.n.items.len == 0) return error.FLIRError;
     // const counter: u1 = if (typ == .avxval) 1 else 0; // COUNTER FOR SMALL CYLINDRICAL OBJECTS
     const inst = try self.addRawInst(.{ .tag = .arg, .op1 = 0, .op2 = 0, .spec = typ.into(), .node_delete_this = 0 });
@@ -711,17 +703,17 @@ pub fn arg(self: *Self, typ: defs.SpecType) !u16 {
     return inst;
 }
 
-pub fn variable(self: *Self, typ: defs.SpecType, init_val: ?u16) !u16 {
+pub fn variable(self: *FLIR, typ: defs.SpecType, init_val: ?u16) !u16 {
     const inst = try self.addRawInst(.{ .tag = .variable, .op1 = self.nvar, .op2 = init_val orelse NoRef, .spec = typ.into(), .next = self.var_list });
     self.var_list = inst;
     self.nvar += 1;
     return inst;
 }
 
-pub fn predIter(self: *Self, n: u16) struct {
+pub fn predIter(self: *FLIR, n: u16) struct {
     node: u16,
     si: u1,
-    s: *Self,
+    s: *FLIR,
     pub fn next(iter: *@This()) ?u16 {
         if (iter.node == NoRef) return null;
         const current = iter.node;
@@ -749,7 +741,7 @@ pub fn predIter(self: *Self, n: u16) struct {
     return .{};
 }
 
-fn check_link(self: *Self, i: u16, si: u1) !void {
+fn check_link(self: *FLIR, i: u16, si: u1) !void {
     var n = self.n.items;
     const s = n[i].s[si];
     if (s == 0) return;
@@ -787,7 +779,7 @@ fn check_link(self: *Self, i: u16, si: u1) !void {
     }
 }
 
-pub fn check_critical_edges(self: *Self) !void {
+pub fn check_critical_edges(self: *FLIR) !void {
     // TODO: policy for rebuilding refs from scratch?
     for (0..self.n.items.len) |i| {
         // by value. check_link might reallocate self.n in place!
@@ -807,7 +799,7 @@ pub fn check_critical_edges(self: *Self) !void {
     }
 }
 
-pub fn calc_loop(self: *Self) !void {
+pub fn calc_loop(self: *FLIR) !void {
     _ = try self.rpo_visit(0);
     const big_n = self.preorder.items.len;
     try self.blkorder.append(self.gpa, 0); // ROOT
@@ -817,7 +809,7 @@ pub fn calc_loop(self: *Self) !void {
 }
 
 // h=preorder[ph] is either 0 (the entire graph) or a loop header
-pub fn loop_order(self: *Self, ph: u16) !void {
+pub fn loop_order(self: *FLIR, ph: u16) !void {
     var i = ph;
     const h = self.preorder.items[ph];
     var last_item = self.blkorder.items.len;
@@ -838,7 +830,7 @@ pub fn loop_order(self: *Self, ph: u16) !void {
     self.n.items[h].loop_end = uv(last_item);
 }
 
-pub fn rpo_visit(self: *Self, node: u16) !?u16 {
+pub fn rpo_visit(self: *FLIR, node: u16) !?u16 {
     const n = &self.n.items[node];
     if (n.rpolink != 0) {
         if (n.rpolink == 1) {
@@ -885,7 +877,7 @@ pub fn rpo_visit(self: *Self, node: u16) !?u16 {
     }
 }
 
-pub fn reorder_nodes(self: *Self) !void {
+pub fn reorder_nodes(self: *FLIR) !void {
     const newlink = try self.gpa.alloc(u16, self.n.items.len);
     defer self.gpa.free(newlink);
     @memset(newlink, NoRef);
@@ -958,7 +950,7 @@ pub fn reorder_nodes(self: *Self) !void {
 }
 
 // not a complete optimization pass yet, just the thing needed for legalization
-pub fn const_fold_legalize(self: *Self) !void {
+pub fn const_fold_legalize(self: *FLIR) !void {
     for (self.n.items, 0..) |*n, ni| {
         var it = self.ins_iterator(n.firstblk);
         while (it.next()) |item| {
@@ -999,14 +991,14 @@ pub fn const_fold_legalize(self: *Self) !void {
 }
 
 // assumes double const already folded!
-fn peep_icmp_swap(self: *Self, i: *Inst) void {
+fn peep_icmp_swap(self: *FLIR, i: *Inst) void {
     if (self.constval(i.op1)) |_| {
         std.mem.swap(u16, &i.op1, &i.op2);
         i.spec = i.intcond().argswap().off();
     }
 }
 
-pub fn peep_icmp_const(self: *Self, cond: IntCond, wide: bool, op1: u16, op2: u16) ?bool {
+pub fn peep_icmp_const(self: *FLIR, cond: IntCond, wide: bool, op1: u16, op2: u16) ?bool {
     if (self.constval(op1)) |lhs| {
         if (self.constval(op2)) |rhs| {
             // TODO: haha, 64-bit signed comp??
@@ -1031,7 +1023,7 @@ pub fn peep_icmp_const(self: *Self, cond: IntCond, wide: bool, op1: u16, op2: u1
 }
 
 // on success, return constval
-pub fn peep_iunop(self: *Self, op: IntUnOp, size: defs.ISize, input: u16) !?u16 {
+pub fn peep_iunop(self: *FLIR, op: IntUnOp, size: defs.ISize, input: u16) !?u16 {
     if (self.constval(input)) |lhs| {
         _ = size; // TODi: truncate lhs to "size" bitwidth
         switch (op) {
@@ -1042,311 +1034,14 @@ pub fn peep_iunop(self: *Self, op: IntUnOp, size: defs.ISize, input: u16) !?u16 
     return null;
 }
 
-pub fn defNode(self: *Self, i: *Inst) !u16 {
+pub fn defNode(self: *FLIR, i: *Inst) !u16 {
     return switch (i.tag) {
         .callret => (self.iref(i.op1) orelse return error.FLIRError).node_delete_this,
         else => i.node_delete_this,
     };
 }
 
-// ni = node id of user
-pub fn adduse(self: *Self, ni: u16, user: u16, used: u16) !void {
-    _ = user;
-    const i = self.iref(used) orelse return;
-
-    const def_node = try self.defNode(i);
-
-    //ref.i.n_use += 1;
-    // it leaks to another block: give it a virtual register number
-    if (def_node != ni) {
-        if (!i.f.is_vreg) {
-            i.f.is_vreg = true;
-            i.vreg_scratch = self.nvreg;
-            self.nvreg += 1;
-            try self.vregs.append(self.gpa, .{ .ref = used, .def_node = def_node });
-        }
-    }
-}
-
-// TODO: this is really LIVENESS for the sake of regalloc.
-// want simpler use-def/def-use for optimizations, especially if we
-// go sea-of-nodeish with unscheduled opts
-//
-// not idempotent! does not reset n_use=0 first.
-pub fn calc_live(self: *Self) !void {
-    // TODO: NOT LIKE THIS
-    try self.vregs.ensureTotalCapacity(self.gpa, @typeInfo(VRegFlag).int.bits);
-
-    // step1: allocate vregs for results that leak from the block
-    for (self.n.items, 0..) |*n, ni| {
-        var it = self.ins_iterator(n.firstblk);
-        while (it.next()) |item| {
-            const i = item.i;
-            for (i.ops(false)) |*op| {
-                try self.adduse(uv(ni), item.ref, op.*);
-            }
-            var opnext = i.next_as_op();
-            while (opnext != NoRef) {
-                const ii = self.iref(opnext) orelse return error.FLIRError;
-                try self.adduse(uv(ni), opnext, ii.op1);
-                opnext = ii.next;
-            }
-        }
-
-        var item = n.putphi_list;
-        while (item != NoRef) {
-            const i = self.iref(item) orelse return error.FLIRError;
-            try self.adduse(uv(ni), item, i.op1);
-            item = i.next;
-        }
-    }
-
-    // step 2: process the dominator tree backwards (flattened works fine) to
-    // progagate uses to predecessors
-    {
-        var ni: u16 = uv(self.n.items.len - 1);
-        // TODO: at this point the number of vregs is known. so a bitset for
-        // node X vreg can be allocated here.
-
-        if (self.nvreg > @typeInfo(VRegFlag).int.bits or self.n.items.len > @typeInfo(NodeFlag).int.bits) {
-            std.debug.print("HAHAHAHA {}, you really thought HAHAHHAHAHA {}:\n", .{ self.nvreg, self.n.items.len });
-            return error.NotImplemented;
-        }
-
-        while (true) : (ni -= 1) {
-            const n = &self.n.items[ni];
-            var live_vregs: VRegFlag = 0;
-            var used_vregs: VRegFlag = 0;
-            for (n.s) |s| {
-                if (s != 0) {
-                    live_vregs |= self.n.items[s].live_in;
-                }
-            }
-            // print("LIVEUT {}: {x} (dvs {})\n", .{ ni, live_vregs, @popCount(live_vregs) });
-
-            var neg_counter: u16 = 0;
-            var last_clobber: [n_ipreg]u16 = @splat(0);
-
-            var node_has_clobber: bool = false;
-
-            {
-                var listit = n.putphi_list;
-                while (listit != NoRef) {
-                    // putphi:s arent ordered, so they all have neg_counter == 0
-                    const i = self.iref(listit) orelse return error.FLIRError;
-                    self.mark_ops_as_used(i, &live_vregs, &used_vregs, neg_counter);
-                    // TODO: flogger
-                    if (i.tag == .retval) {
-                        if (self.abi_tag == .X86) {
-                            if (self.iref(i.op1)) |ref| {
-                                if (ref.mckind == .unallocated_raw and i.res_type() == .intptr) {
-                                    ref.mckind = .unallocated_ipreghint;
-                                    ref.mcidx = X86Asm.IPReg.rax.id();
-                                }
-                            }
-                        }
-                    }
-                    listit = i.next;
-                }
-            }
-
-            var it = self.ins_iterator_rev(n.lastblk);
-            while (it.next_rev()) |item| {
-                neg_counter += 1;
-                const i = item.i;
-
-                if (i.tag == .call) {
-                    // currently the only inst with projections
-                    var r = i.op2;
-                    while (r != NoRef) {
-                        const rret = self.iref(r) orelse return error.FLIRError;
-                        self.check_live_or_conflicts(rret, &live_vregs, node_has_clobber, &last_clobber);
-                        r = rret.next;
-                    }
-                } else {
-                    self.check_live_or_conflicts(i, &live_vregs, node_has_clobber, &last_clobber);
-                }
-
-                // TODO: currently this forbids clobbers as inputs, which is wrong when killing the op.
-                // just need to check for mismatches
-                // consider x86 IDIV: as op1 is fixed to be EAX, op2 conflicts with EAX even when killed!
-                // TODO: could just pass used_vergs and then live_in = (live_out | used) & ~killed in the end
-                self.mark_ops_as_used(i, &live_vregs, &used_vregs, neg_counter);
-                var opnext = i.next_as_op();
-                while (opnext != NoRef) {
-                    const ii = self.iref(opnext) orelse return error.FLIRError;
-                    self.mark_ops_as_used(ii, &live_vregs, &used_vregs, neg_counter);
-                    opnext = ii.next;
-                }
-
-                // registers clobbered by this instruction
-                // TOOO: or having it as a fixed input, which is not ALWAYS a clobber
-                // (like two shr intructions in a row sharing the same ecx input)
-                const clobber_mask: u16 = try self.get_clobbers(i);
-
-                if (clobber_mask != 0) {
-                    node_has_clobber = true; // quick skipahead
-                    for (self.vregs.items, 0..) |*v, vi| {
-                        if (live_vregs & vreg_flag(@intCast(vi)) != 0) {
-                            v.conflicts |= clobber_mask;
-                        }
-                    }
-                    for (0..n_ipreg) |r| {
-                        if ((clobber_mask & ipreg_flag(@intCast(r))) != 0) {
-                            last_clobber[r] = neg_counter;
-                        }
-                    }
-                }
-            }
-
-            {
-                var phi = n.phi_list;
-                while (phi != NoRef) {
-                    const i = self.iref(phi) orelse return error.FLIRError;
-                    self.check_live_or_conflicts(i, &live_vregs, node_has_clobber, &last_clobber);
-                    phi = i.next;
-                }
-            }
-
-            n.live_in = live_vregs;
-            n.used_vregs = used_vregs;
-            // print("LIVEIN {}: {x} (dvs {})\n", .{ ni, n.live_in, @popCount(n.live_in) });
-
-            if (n.is_header) {
-                // TODO: make me a loop membership bitset globally
-                // TODO: if there was a call anywhere in the loop
-                // propagate call clobbers onto the loop invariant vregs
-                var loop_set: u128 = node_flag(@intCast(ni));
-                for (ni + 1..self.n.items.len) |ch_i| {
-                    const ch_n = &self.n.items[ch_i];
-                    const ch_loop = node_flag(@intCast(ch_i));
-                    if ((node_flag(@intCast(ch_n.loop)) & loop_set) != 0) {
-                        if (ch_n.is_header) {
-                            loop_set |= ch_loop;
-                        }
-                        // NB: used_vregs remains fully local. maybe header should have "loop used" if we need it
-                        ch_n.live_in |= n.live_in;
-                    } else {
-                        break; // assuming the contigous property by now
-                    }
-                }
-            }
-            if (ni == 0) break;
-        }
-    }
-
-    // step 3: mark the instructions which kill a live range, which will be used by regalloc
-    for (self.n.items, 0..) |*n, ni| {
-        // transpose the node.live_in[vreg] bitfield into vreg.live_in[node] bitfield
-        for (self.vregs.items, 0..) |*v, vi| {
-            if ((n.live_in & vreg_flag(@intCast(vi))) != 0) {
-                v.live_in |= node_flag(@intCast(ni));
-            }
-            if ((n.used_vregs & vreg_flag(@intCast(vi))) != 0) {
-                v.used |= node_flag(@intCast(ni));
-            }
-        }
-
-        var live_out: VRegFlag = 0;
-        for (n.s) |s| {
-            live_out |= self.n.items[s].live_in;
-        }
-        var killed: VRegFlag = n.live_in & ~live_out;
-
-        {
-            var listit = n.putphi_list;
-            while (listit != NoRef) {
-                const i = self.iref(listit) orelse return error.FLIRError;
-                self.mark_ops_who_kill(i, &killed);
-                listit = i.next;
-            }
-        }
-
-        var it = self.ins_iterator_rev(n.lastblk);
-        while (it.next_rev()) |item| {
-            self.mark_ops_who_kill(item.i, &killed);
-            var opnext = item.i.next_as_op();
-            while (opnext != NoRef) {
-                const ii = self.iref(opnext) orelse return error.FLIRError;
-                self.mark_ops_who_kill(ii, &killed);
-                opnext = ii.next;
-            }
-        }
-    }
-}
-
-fn check_live_or_conflicts(self: *Self, i: *Inst, live_vregs: *VRegFlag, node_has_clobber: bool, last_clobber: *const [n_ipreg]u16) void {
-    _ = self;
-
-    // TODO: need to consider phi:s even when they are unscheduled
-    if (i.vreg()) |vreg| {
-        live_vregs.* &= ~vreg_flag(@intCast(vreg));
-    } else {
-        if (i.vreg_scratch != NoRef) {
-            if (node_has_clobber) { // quick skipahead when no clobbers
-                var conflicts: u16 = 0;
-                for (0..n_ipreg) |r| {
-                    // negative counter: is the last_clobber _before_ the kill position
-                    if (i.vreg_scratch < last_clobber[r]) {
-                        conflicts |= ipreg_flag(@intCast(r));
-                    }
-                }
-                if (conflicts != 0) {
-                    i.f.conflicts = true;
-                }
-                i.vreg_scratch = conflicts;
-            } else {
-                i.vreg_scratch = 0;
-            }
-        }
-    }
-}
-
-fn mark_ops_as_used(self: *Self, i: *Inst, live: *VRegFlag, used: *VRegFlag, neg_counter: u16) void {
-    for (i.ops(false)) |op| {
-        if (self.iref(op)) |ref| {
-            if (ref.vreg()) |vreg| {
-                live.* |= vreg_flag(@intCast(vreg));
-                used.* |= vreg_flag(@intCast(vreg)); // a little silly but see TODO at callsite
-            } else {
-                if (ref.vreg_scratch == NoRef) {
-                    ref.vreg_scratch = neg_counter;
-                }
-            }
-        }
-    }
-}
-
-fn mark_ops_who_kill(self: *Self, i: *Inst, killed: *VRegFlag) void {
-    for (i.ops(false), 0..) |op, i_op| {
-        var kill: bool = false;
-        if (self.iref(op)) |ref| {
-            if (ref.vreg()) |vreg| {
-                const bit = vreg_flag(@intCast(vreg));
-                if ((killed.* & bit) != 0) {
-                    killed.* &= ~bit;
-                    kill = true;
-                }
-            } else {
-                if (!ref.f.killed) {
-                    ref.f.killed = true;
-                    kill = true;
-                }
-            }
-        }
-        if (kill) {
-            if (i_op == 2) {
-                i.f.kill_op3 = true;
-            } else if (i_op == 1) {
-                i.f.kill_op2 = true;
-            } else {
-                i.f.kill_op1 = true;
-            }
-        }
-    }
-}
-
-pub fn get_clobbers(self: *Self, i: *Inst) !u16 {
+pub fn get_clobbers(self: *FLIR, i: *Inst) !u16 {
     // other platforms: why can't you just be normal. x86:
     const is_x86 = self.abi_tag == .X86;
 
@@ -1388,7 +1083,7 @@ pub fn get_clobbers(self: *Self, i: *Inst) !u16 {
     return self.call_clobber_mask;
 }
 
-pub fn alloc(self: *Self, node: u16, size: u8) !u16 {
+pub fn alloc(self: *FLIR, node: u16, size: u8) !u16 {
     if (self.nslots == 255) {
         return error.OutOfMemory; // TODO: yes, but actually no
     }
@@ -1398,7 +1093,7 @@ pub fn alloc(self: *Self, node: u16, size: u8) !u16 {
     return self.addInst(node, .{ .tag = .alloc, .op1 = slot, .op2 = 0, .spec = intspec(.dword).into(), .mckind = .fused });
 }
 
-pub fn nextuse_expensive(self: *Self) !void {
+pub fn nextuse_expensive(self: *FLIR) !void {
     // as is from Braun, Hack 2010. Probably too expensive to us (and not even measuring
     // the right thing? like "see through" putphis which are expceted to be free renames)
     // but let's do A Thing to get started
@@ -1440,7 +1135,7 @@ pub fn nextuse_expensive(self: *Self) !void {
 //   2. deactivated at a kill flag in the same block (must exist if-and-only-if born flag was set)
 // fixed intervalls: ABI and instruction constraints mandating specific register
 //   -- TODO: not implemented in first iteration
-pub fn scan_alloc(self: *Self, comptime ABI: type, opts: defs.CFOOptions) !void {
+pub fn scan_alloc(self: *FLIR, comptime ABI: type, opts: defs.CFOOptions) !void {
     // as allocation is greedy (currently) we will only use the latter when the 8 first are all filled
     const reg_first_save = 9;
     var highest_used: u8 = 0;
@@ -1462,7 +1157,7 @@ pub fn scan_alloc(self: *Self, comptime ABI: type, opts: defs.CFOOptions) !void 
         // any vreg which is "live in" should already be allocated. mark these as non-free
         for (self.vregs.items, 0..) |vref, vi| {
             const vr = self.iref(vref.ref).?;
-            const flag = vreg_flag(@intCast(vi));
+            const flag = defs.vreg_flag(@intCast(vi));
             if ((flag & n.live_in) != 0) {
                 if (vr.mckind == .ipreg) free_regs_ip[vr.mcidx] = false;
                 if (opts.dbg_regalloc and vr.mckind == .ipreg) {
@@ -1586,7 +1281,7 @@ pub fn scan_alloc(self: *Self, comptime ABI: type, opts: defs.CFOOptions) !void 
     }
 }
 
-pub fn alloc_inst(self: *Self, comptime ABI: type, node: u16, iid: u16, free_regs_ip: *[n_ipreg]bool, free_regs_avx: *[16]bool, highest_used: *u8, iter_for_ins: ?*InsIterator) !?u16 {
+pub fn alloc_inst(self: *FLIR, comptime ABI: type, node: u16, iid: u16, free_regs_ip: *[n_ipreg]bool, free_regs_avx: *[16]bool, highest_used: *u8, iter_for_ins: ?*InsIterator) !?u16 {
     // also return value from functions, division result on intel machines, etc etc
     var i = self.iref(iid) orelse unreachable;
     const fixed = i.tag == .arg;
@@ -1751,7 +1446,7 @@ const ABICallInfo = struct {
     rets: []const defs.IPReg,
 };
 
-pub fn abi_call_info(self: *Self, comptime ABI: type, i: *Inst) !ABICallInfo {
+pub fn abi_call_info(self: *FLIR, comptime ABI: type, i: *Inst) !ABICallInfo {
     const kind: defs.CallKind = @fromBackingInt(i.spec);
     if (kind == .memory_intrinsic and ABI.tag == .X86) {
         print("PILUTTA\n", .{});
@@ -1769,7 +1464,7 @@ pub fn abi_call_info(self: *Self, comptime ABI: type, i: *Inst) !ABICallInfo {
     return .{ .args = &ABI.argregs, .rets = &ABI.ret_regs };
 }
 
-pub fn set_abi(self: *Self, comptime ABI: type) !void {
+pub fn set_abi(self: *FLIR, comptime ABI: type) !void {
     if (self.n.items.len == 0) return error.FLIRError;
     {
         // SO GOOFY: args are kinda the phi nodes for the first block
@@ -1921,7 +1616,7 @@ fn mcshow(inst: *Inst) struct { defs.MCKind, u16 } {
     return .{ inst.mckind, inst.mcidx };
 }
 
-pub fn put_for_movelist(self: *Self, node: u16, iter: ?*InsIterator, inst: u16) !void {
+pub fn put_for_movelist(self: *FLIR, node: u16, iter: ?*InsIterator, inst: u16) !void {
     // TODO: unify insertion code?
     if (iter) |it| {
         try it.insert_before(inst);
@@ -1934,7 +1629,7 @@ pub fn put_for_movelist(self: *Self, node: u16, iter: ?*InsIterator, inst: u16) 
 // Resolve a list of parallel moves. Currently supported:
 // callarg instruction: source in i.op1, destination i itself
 // putphi instruction: source in i.op1, destination in i.op2 (the phi instruction)
-pub fn resolve_movelist(self: *Self, node: u16, list: u16, iter: ?*InsIterator) !void {
+pub fn resolve_movelist(self: *FLIR, node: u16, list: u16, iter: ?*InsIterator) !void {
     // phase one, kill trivial puts, emit non-conflicting puts
     while (true) {
         var phi_1 = list;
@@ -2021,7 +1716,7 @@ pub fn resolve_movelist(self: *Self, node: u16, list: u16, iter: ?*InsIterator) 
     }
 }
 
-pub fn resolve_moves(self: *Self) !void {
+pub fn resolve_moves(self: *FLIR) !void {
     for (self.n.items, 0..) |*n, ni| {
         try self.resolve_movelist(uv(ni), n.putphi_list, null);
 
@@ -2038,7 +1733,7 @@ pub fn resolve_moves(self: *Self) !void {
     }
 }
 
-pub fn movins_dest(self: *Self, movins: *Inst) !*Inst {
+pub fn movins_dest(self: *FLIR, movins: *Inst) !*Inst {
     return switch (movins.tag) {
         .putphi => self.iref(movins.op2) orelse return error.FLIRError,
         .callarg, .retval, .callret, .copy => movins,
@@ -2057,7 +1752,7 @@ pub const MCReadRef = struct {
 
 // if reading a constant or undef, returns null
 // FUBBIGT: just compare EitherVal for equality?
-fn movins_read(self: *Self, movins: *Inst) !?MCReadRef {
+fn movins_read(self: *FLIR, movins: *Inst) !?MCReadRef {
     return switch (movins.tag) {
         // THIS is ugly as fuck. We probably want callret just to just be fixed mcvals, and then
         // let the splitter add a renumbering copy as needed. then MCReadRef can be lybill
@@ -2072,7 +1767,7 @@ const EitherVal = union(enum) {
     avxreg: u4,
 };
 // fubbigt: use IPMCVal even in the analysis stage
-pub fn movins_read_val(self: *Self, i: *Inst) !?EitherVal {
+pub fn movins_read_val(self: *FLIR, i: *Inst) !?EitherVal {
     return switch (i.tag) {
         .callret => if (i.mem_type() == .avxval) .{ .avxreg = @intCast(i.op2) } else .{ .ipval = .{ .ipreg = @fromBackingInt(@intCast(i.op2)) } },
         .putphi, .callarg, .retval, .copy => if (self.ipval(i.op1)) |ival| .{ .ipval = ival } else if (self.avxreg(i.op1)) |reg| .{ .avxreg = reg } else null,
@@ -2084,13 +1779,13 @@ fn mc_equal(rhs: anytype, lhs: anytype) bool {
     return (rhs.mckind == lhs.mckind and rhs.mcidx == lhs.mcidx);
 }
 
-pub fn trivial(self: *Self, movins: *Inst) !bool {
+pub fn trivial(self: *FLIR, movins: *Inst) !bool {
     const written = try self.movins_dest(movins);
     const read = try self.movins_read(movins) orelse return false; // in principle moving UNDEF anywhere is trivial, but it doesn't matter here
     return mc_equal(written, read);
 }
 
-pub fn conflict(self: *Self, before: *Inst, after: *Inst) !bool {
+pub fn conflict(self: *FLIR, before: *Inst, after: *Inst) !bool {
     // note if only "after", check for a read conflict before.
     if (before.mckind == .call_memarg) {
         if (before.tag != .callarg) return error.FLIRError;
@@ -2107,7 +1802,7 @@ pub fn conflict(self: *Self, before: *Inst, after: *Inst) !bool {
 }
 
 const InsIterator = struct {
-    self: *Self,
+    self: *FLIR,
     cur_blk: u16,
     idx: u16,
 
@@ -2152,7 +1847,7 @@ const InsIterator = struct {
         return it.get_rev(true);
     }
 
-    fn check_empty(self: *Self, blk: u16, pred: u16) void {
+    fn check_empty(self: *FLIR, blk: u16, pred: u16) void {
         const first = (pred == NoRef);
         const b = &self.b.items[blk];
         const succ = b.succ;
@@ -2266,28 +1961,28 @@ const InsIterator = struct {
     }
 };
 
-pub fn ins_iterator(self: *Self, first_blk: u16) InsIterator {
+pub fn ins_iterator(self: *FLIR, first_blk: u16) InsIterator {
     return .{ .self = self, .cur_blk = first_blk, .idx = 0 };
 }
 
-pub fn ins_iterator_rev(self: *Self, last_blk: u16) InsIterator {
+pub fn ins_iterator_rev(self: *FLIR, last_blk: u16) InsIterator {
     return .{ .self = self, .cur_blk = last_blk, .idx = BLK_SIZE };
 }
 
-pub fn delete_raw(self: *Self, ref: u16) void {
+pub fn delete_raw(self: *FLIR, ref: u16) void {
     self.i.items[ref].tag = .freelist;
     self.i.items[ref].op1 = self.i_free;
     self.i_free = ref;
 }
 
 // delet item from iterator, but keep iterating safely (both fwd and rev)
-pub fn delete_itersafe(self: *Self, item: InsIterator.IYtem) void {
+pub fn delete_itersafe(self: *FLIR, item: InsIterator.IYtem) void {
     self.delete_raw(item.ref);
     self.b.items[item.blk].i[item.idx_in_blk] = NoRef;
 }
 
 // TODO: not yet sure if ABI should be comptime or runtime struct. this works for now
-pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool, opts: defs.CFOOptions) !void {
+pub fn test_analysis(self: *FLIR, comptime ABI: type, comptime check: bool, opts: defs.CFOOptions) !void {
     if (check) {
         self.check_ir_valid() catch |err| {
             self.debug_print();
@@ -2347,7 +2042,7 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool, opts
     try self.mark_empty();
 }
 
-pub fn find_nonempty(self: *Self, ni_0: u16) u16 {
+pub fn find_nonempty(self: *FLIR, ni_0: u16) u16 {
     var ni = ni_0;
     while (true) {
         const node = self.n.items[ni];
@@ -2358,7 +2053,7 @@ pub fn find_nonempty(self: *Self, ni_0: u16) u16 {
     return ni;
 }
 
-pub fn mark_empty(self: *Self) !void {
+pub fn mark_empty(self: *FLIR) !void {
     for (self.n.items, 0..) |*n, ni| {
         if (self.empty(uv(ni), true) and !n.is_return) {
             n.is_empty = true;
@@ -2366,7 +2061,7 @@ pub fn mark_empty(self: *Self) !void {
     }
 }
 
-pub fn empty(self: *Self, ni: u16, allow_succ: bool) bool {
+pub fn empty(self: *FLIR, ni: u16, allow_succ: bool) bool {
     // entry point is implicitly non-empty (might contain prologue code)
     if (ni == 0) return false;
     const node = &self.n.items[ni];
@@ -2377,7 +2072,7 @@ pub fn empty(self: *Self, ni: u16, allow_succ: bool) bool {
     return true;
 }
 
-pub fn dbg_get_varname(self: *Self, ref: u16) ?[]const u8 {
+pub fn dbg_get_varname(self: *FLIR, ref: u16) ?[]const u8 {
     const i = self.iref(ref) orelse return null;
     const vidx = vidx: {
         if (i.tag == .phi) {
