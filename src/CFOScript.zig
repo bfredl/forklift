@@ -11,6 +11,7 @@ const mem = std.mem;
 const CFOModule = @import("./CFOModule.zig");
 const Tokenizer = @import("./Tokenizer.zig");
 const X86Asm = @import("./X86Asm.zig");
+const abi = @import("./abi.zig");
 const FMode = X86Asm.FMode;
 const BPF = std.os.linux.BPF;
 const meta = std.meta;
@@ -271,14 +272,14 @@ pub fn call_expr(self: *Self, type_ctx: SpecType, kind: []const u8) !u16 {
             const name = self.t.keyword() orelse return error.ParseError;
             // TODO: non-native for
             const syscall = try requireEnumKey(std.os.linux.SYS, name, "unknown syscall");
-            const sysnum = try self.ir.const_int(@intCast(@intFromEnum(syscall)));
+            const sysnum = try self.ir.const_int(@intCast(@backingInt(syscall)));
             break :target .{ .syscall, sysnum };
         } else if (mem.eql(u8, kind, "bpf")) {
             const name = self.t.keyword() orelse return error.ParseError;
             const helper = try requireEnumKey(BPF.Helper, name, "unknown BPF helper");
-            break :target .{ .bpf_helper, try self.ir.const_int(@intCast(@intFromEnum(helper))) };
+            break :target .{ .bpf_helper, try self.ir.const_int(@intCast(@backingInt(helper))) };
         } else if (mem.eql(u8, kind, "memset")) {
-            const idx = @intFromEnum(defs.MemoryIntrinsic.memset);
+            const idx = @backingInt(defs.MemoryIntrinsic.memset);
             break :target .{ .memory_intrinsic, try self.ir.const_int(@intCast(idx)) };
         } else {
             return error.ParseError;
@@ -678,7 +679,7 @@ pub fn parse_mod(mod: *CFOModule, gpa: Allocator, str: []const u8, opts: defs.CF
             if (opts.one) return;
 
             if (opts.dbg_raw_ir) ir.debug_print();
-            try ir.test_analysis(FLIR.X86ABI, true, opts);
+            try ir.test_analysis(abi.X86ABI, true, opts);
             if (opts.dbg_analysed_ir) ir.debug_print();
             if (opts.dbg_vregs) try ir.print_intervals();
 
@@ -690,7 +691,7 @@ pub fn parse_mod(mod: *CFOModule, gpa: Allocator, str: []const u8, opts: defs.CF
             const obj_slot = try nonexisting_obj(mod, name);
             try parse_func(mod, &ir, &t, gpa);
 
-            try ir.test_analysis(FLIR.BPF_ABI, true, opts);
+            try ir.test_analysis(abi.BPF_ABI, true, opts);
             if (opts.dbg_analysed_ir) ir.debug_print();
             const offset = try codegen_bpf(&ir, mod);
             const len = mod.bpf_code.items.len - offset;

@@ -74,7 +74,7 @@ test "diamond cfg" {
     try self.ret(end);
     try self.retval(end, FLIR.intspec(.quadword), v);
 
-    try self.test_analysis(FLIR.X86ABI, true, .{});
+    try self.test_analysis(forklift.X86ABI, true, .{});
 }
 
 test "maybe_split" {
@@ -94,7 +94,7 @@ test "maybe_split" {
     const pos = 1; // TODO: get("%c")
     const new_pos = try self.maybe_split(pos);
     try std.testing.expectEqual(self.iref(new_pos).?.tag, .empty);
-    try self.test_analysis(FLIR.X86ABI, true);
+    try self.test_analysis(forklift.X86ABI, true);
     var cfo = try CodeBuffer.init(test_allocator);
     defer cfo.deinit();
     _ = try forklift.codegen_x86_64(self, &cfo, false, null);

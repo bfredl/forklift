@@ -2,6 +2,7 @@ const std = @import("std");
 const defs = @import("./defs.zig");
 const FLIR = @import("./FLIR.zig");
 const Inst = @import("./Inst.zig");
+const abi = @import("./abi.zig");
 const X86Asm = @import("./X86Asm.zig");
 
 const VRegFlag = defs.VRegFlag;
@@ -127,7 +128,7 @@ pub fn calc_live(self: *FLIR) !void {
                 // registers clobbered by this instruction
                 // TOOO: or having it as a fixed input, which is not ALWAYS a clobber
                 // (like two shr intructions in a row sharing the same ecx input)
-                const clobber_mask: u16 = try self.get_clobbers(i);
+                const clobber_mask: u16 = try abi.get_clobbers(self, i);
 
                 if (clobber_mask != 0) {
                     node_has_clobber = true; // quick skipahead

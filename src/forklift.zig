@@ -14,3 +14,6 @@ pub const CFOModule = @import("./CFOModule.zig");
 
 pub const defs = @import("./defs.zig");
 pub const CFOOptions = defs.CFOOptions;
+
+pub const abi = @import("./abi.zig");
+pub const X86ABI = abi.X86ABI;
