@@ -150,7 +150,7 @@ pub const n_ipreg = 16;
 pub fn erase(xregs: anytype) [xregs.len]defs.IPReg {
     var r: [xregs.len]defs.IPReg = undefined;
     for (xregs, 0..) |x, i| {
-        r[i] = @enumFromInt(@intFromEnum(x));
+        r[i] = @fromBackingInt(@backingInt(x));
     }
     return r;
 }
@@ -472,11 +472,11 @@ const sphigh = Inst.sphigh;
 // TODO: tricky with vectors, we might both simple broadcast and vector constants.
 pub fn const_f64(self: *Self, node: u16, val: f64) !u16 {
     const constref = try self.const_uint(@bitCast(val));
-    return self.addInst(node, .{ .tag = .fconst, .op1 = constref, .op2 = NoRef, .spec = sphigh(@intFromEnum(FMode.sd), 0) });
+    return self.addInst(node, .{ .tag = .fconst, .op1 = constref, .op2 = NoRef, .spec = sphigh(@backingInt(FMode.sd), 0) });
 }
 pub fn const_f32(self: *Self, node: u16, val: f32) !u16 {
     const constref = try self.const_uint(@as(u32, @bitCast(val)));
-    return self.addInst(node, .{ .tag = .fconst, .op1 = constref, .op2 = NoRef, .spec = sphigh(@intFromEnum(FMode.ss), 0) });
+    return self.addInst(node, .{ .tag = .fconst, .op1 = constref, .op2 = NoRef, .spec = sphigh(@backingInt(FMode.ss), 0) });
 }
 
 pub fn load(self: *Self, node: u16, wide: bool, signext: bool, kind: defs.SpecType, base: u16, idx: u16, scale: u2) !u16 {
@@ -536,7 +536,7 @@ pub fn select(self: *Self, node: u16, wide: bool, op1: u16, op2: u16, op3: u16) 
 }
 
 pub fn vunop(self: *Self, node: u16, vop: defs.VUnOp, fmode: FMode, op1: u16) !u16 {
-    return self.addInst(node, .{ .tag = .vunop, .spec = vspec(@intFromEnum(vop), fmode), .op1 = op1, .op2 = 0 });
+    return self.addInst(node, .{ .tag = .vunop, .spec = vspec(@backingInt(vop), fmode), .op1 = op1, .op2 = 0 });
 }
 
 // TODO: a bit contradictory naming with IntCond
@@ -548,12 +548,12 @@ pub fn fcmp(self: *Self, node: u16, cond: IntCond, fmode: FMode, op1: u16, op2: 
 pub fn int2float(self: *Self, node: u16, op: defs.Int2VOp, fmode: FMode, op1: u16) !u16 {
     // TODO: maybe a packed should implicitly convert and then broadcast?
     if (!fmode.scalar()) return error.FLIRError;
-    return self.addInst(node, .{ .tag = .int2vf, .spec = Inst.vspec(@intFromEnum(op), fmode), .op1 = op1, .op2 = NoRef });
+    return self.addInst(node, .{ .tag = .int2vf, .spec = Inst.vspec(@backingInt(op), fmode), .op1 = op1, .op2 = NoRef });
 }
 
 pub fn float2int(self: *Self, node: u16, op: defs.Int2VOp, fmode: FMode, op1: u16) !u16 {
     if (!fmode.scalar()) return error.FLIRError;
-    return self.addInst(node, .{ .tag = .vf2int, .spec = Inst.vspec(@intFromEnum(op), fmode), .op1 = op1, .op2 = NoRef });
+    return self.addInst(node, .{ .tag = .vf2int, .spec = Inst.vspec(@backingInt(op), fmode), .op1 = op1, .op2 = NoRef });
 }
 
 fn wsize(size: defs.ISize) !bool {
@@ -571,12 +571,12 @@ pub fn iunop(self: *Self, node: u16, size: defs.ISize, op: IntUnOp, op1: u16) !u
             return res;
         }
     }
-    return self.addInst(node, .{ .tag = .iunop, .spec = @intFromEnum(op), .op1 = op1, .op2 = NoRef, .f = .{ .wide = try wsize(size) } });
+    return self.addInst(node, .{ .tag = .iunop, .spec = @backingInt(op), .op1 = op1, .op2 = NoRef, .f = .{ .wide = try wsize(size) } });
 }
 
 // TODO: 32bit vs 64bit (also for int in i2f and f2i, and so on)
 pub fn ibinop(self: *Self, node: u16, size: defs.ISize, op: IntBinOp, op1: u16, op2: u16) !u16 {
-    return self.addInst(node, .{ .tag = .ibinop, .spec = @intFromEnum(op), .op1 = op1, .op2 = op2, .f = .{ .wide = try wsize(size) } });
+    return self.addInst(node, .{ .tag = .ibinop, .spec = @backingInt(op), .op1 = op1, .op2 = op2, .f = .{ .wide = try wsize(size) } });
 }
 
 pub fn icmp(self: *Self, node: u16, size: defs.ISize, cond: IntCond, op1: u16, op2: u16) !u16 {
@@ -636,7 +636,7 @@ pub fn retval(self: *Self, node: u16, kind: defs.SpecType, val: u16) !void {
 pub fn call(self: *Self, node: u16, kind: defs.CallKind, num: u16) !u16 {
     return try self.addInst(node, .{
         .tag = .call,
-        .spec = @intFromEnum(kind),
+        .spec = @backingInt(kind),
         .op1 = num,
         .op2 = NoRef, // TEMPORARY: link to return values
         .next = NoRef, // POOTIS arguments here
@@ -1373,11 +1373,11 @@ pub fn get_clobbers(self: *Self, i: *Inst) !u16 {
 
     // call: result not considered live.
     // arguments are handled in callarg and are also not conflicting
-    const kind: defs.CallKind = @enumFromInt(i.spec);
+    const kind: defs.CallKind = @fromBackingInt(i.spec);
     if (kind == .memory_intrinsic and is_x86) {
         const Reg = X86Asm.IPReg;
         const idx = self.constval(i.op1) orelse return error.FLIRError;
-        const intrinsic: defs.MemoryIntrinsic = @enumFromInt(idx);
+        const intrinsic: defs.MemoryIntrinsic = @fromBackingInt(@intCast(idx));
         const base: u16 = ipreg_flag(Reg.rdi.id()) | ipreg_flag(Reg.rcx.id());
         if (intrinsic == .memset) {
             return base + ipreg_flag(Reg.rax.id());
@@ -1592,7 +1592,7 @@ pub fn alloc_inst(self: *Self, comptime ABI: type, node: u16, iid: u16, free_reg
                 // mckind checked above
                 if (usable_regs[vr.mcidx]) {
                     if (reg_kind == .ipreg) {
-                        print("=== ACHTENG in {}? {} {}: {s}\n", .{ node, vref.ref, iid, @tagName(@as(X86Asm.IPReg, @enumFromInt(vr.mcidx))) });
+                        print("=== ACHTENG in {}? {} {}: {s}\n", .{ node, vref.ref, iid, @tagName(@as(X86Asm.IPReg, @fromBackingInt(@intCast(vr.mcidx)))) });
                     }
                 }
                 usable_regs[vr.mcidx] = false;
@@ -1720,12 +1720,12 @@ const ABICallInfo = struct {
 };
 
 pub fn abi_call_info(self: *Self, comptime ABI: type, i: *Inst) !ABICallInfo {
-    const kind: defs.CallKind = @enumFromInt(i.spec);
+    const kind: defs.CallKind = @fromBackingInt(i.spec);
     if (kind == .memory_intrinsic and ABI.tag == .X86) {
         print("PILUTTA\n", .{});
         const Reg = X86Asm.IPReg;
         const idx = self.constval(i.op1) orelse return error.FLIRError;
-        const intrinsic: defs.MemoryIntrinsic = @enumFromInt(idx);
+        const intrinsic: defs.MemoryIntrinsic = @fromBackingInt(@intCast(idx));
         if (intrinsic == .memset) { // REP STOS
             const args = comptime erase([_]Reg{ .rdi, .rax, .rcx }); // (dest, val, len)
             // choice of ret is a bit arbitrary, but rdi is at least dest+len :P
@@ -1796,7 +1796,7 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
                                 .intptr => {
                                     if (iregnum < call_info.args.len) {
                                         iarg.mckind = .ipreg;
-                                        iarg.mcidx = @intFromEnum(call_info.args[iregnum]);
+                                        iarg.mcidx = @backingInt(call_info.args[iregnum]);
                                         iregnum += 1;
                                     } else {
                                         iarg.mckind = .call_memarg;
@@ -1823,11 +1823,11 @@ pub fn set_abi(self: *Self, comptime ABI: type) !void {
                             switch (rret.mem_type()) {
                                 .intptr => {
                                     if (inum >= call_info.rets.len) return error.NotImplemented;
-                                    rret.op2 = @intFromEnum(call_info.rets[inum]);
+                                    rret.op2 = @backingInt(call_info.rets[inum]);
                                     // if the spiller is good enough, this should just be a fixed
                                     // allocation, no op2 shenanigans, and emit extra copy instructions as needed
                                     rret.mckind = .unallocated_ipreghint;
-                                    rret.mcidx = @intFromEnum(call_info.rets[inum]);
+                                    rret.mcidx = @backingInt(call_info.rets[inum]);
                                     inum += 1;
                                 },
                                 .avxval => {
@@ -2042,7 +2042,7 @@ const EitherVal = union(enum) {
 // fubbigt: use IPMCVal even in the analysis stage
 pub fn movins_read_val(self: *Self, i: *Inst) !?EitherVal {
     return switch (i.tag) {
-        .callret => if (i.mem_type() == .avxval) .{ .avxreg = @intCast(i.op2) } else .{ .ipval = .{ .ipreg = @enumFromInt(i.op2) } },
+        .callret => if (i.mem_type() == .avxval) .{ .avxreg = @intCast(i.op2) } else .{ .ipval = .{ .ipreg = @fromBackingInt(@intCast(i.op2)) } },
         .putphi, .callarg, .retval, .copy => if (self.ipval(i.op1)) |ival| .{ .ipval = ival } else if (self.avxreg(i.op1)) |reg| .{ .avxreg = reg } else null,
         else => error.FLIRError,
     };
