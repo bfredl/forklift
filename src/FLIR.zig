@@ -1398,6 +1398,38 @@ pub fn alloc(self: *Self, node: u16, size: u8) !u16 {
     return self.addInst(node, .{ .tag = .alloc, .op1 = slot, .op2 = 0, .spec = intspec(.dword).into(), .mckind = .fused });
 }
 
+pub fn nextuse_expensive(self: *Self) !void {
+    // as is from Braun, Hack 2010. Probably too expensive to us (and not even measuring
+    // the right thing? like "see through" putphis which are expceted to be free renames)
+    // but let's do A Thing to get started
+    const nv = self.nvreg;
+    const nn = self.n.items.len;
+    const nextuse = try self.gpa.alloc(u32, nv * nn);
+    const INFINITY: u32 = 0xFFFFFFF;
+    @memset(nextuse, INFINITY);
+
+    var ni: u16 = uv(self.n.items.len - 1);
+    while (true) : (ni -= 1) {
+        const n = &self.n.items[ni];
+
+        const is_taken_loop_exit = n.npred == 1 and self.n.items[n.predlink].loop > n.loop;
+
+        const l_B: u32 = if (is_taken_loop_exit) 10000 else 0;
+        _ = l_B;
+        var pos_counter: u32 = 0; // POSITIVE COUNTER YEE
+
+        var it = self.ins_iterator(n.firstblk);
+        while (it.next()) |item| {
+            const i: *Inst = item.i;
+            _ = i;
+
+            pos_counter += 1;
+        }
+
+        if (ni == 0) break;
+    }
+}
+
 // we consider there to be 3 kinds of intervals:
 // vreg intervalls:
 //   1. born at definition point
@@ -2302,6 +2334,7 @@ pub fn test_analysis(self: *Self, comptime ABI: type, comptime check: bool, opts
     if (check) try self.check_vregs();
 
     if (opts.dbg_regalloc) {
+        try self.nextuse_expensive();
         self.debug_print();
         try self.print_intervals();
         try self.print_xdot("/tmp/xdotter.dot");
