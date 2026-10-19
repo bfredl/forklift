@@ -90,6 +90,8 @@ last_added_arg: u16 = NoRef,
 // artificial constraint for testing register pressure..
 max_ipreg_use: u16 = 0xFFFF,
 
+maybe_nextuse: ?[]NUInt = null,
+
 // filler value for unintialized refs. not a sentinel for
 // actually invalid refs!
 pub const DEAD: u16 = 0xFEFF;
@@ -144,6 +146,8 @@ pub const Node = struct {
     // NOT YET: put args in phi_list of the entry node
     phi_list: u16 = NoRef,
     putphi_list: u16 = NoRef, // also used for "putvar" entries in the construction phase
+
+    len_for_expensive: u32 = 0,
 };
 
 // amd64 ABI
@@ -1004,6 +1008,8 @@ pub fn alloc(self: *FLIR, node: u16, size: u8) !u16 {
     return self.addInst(node, .{ .tag = .alloc, .op1 = slot, .op2 = 0, .spec = intspec(.dword).into(), .mckind = .fused });
 }
 
+const NUInt = u32;
+pub const NU_INFINITY: NUInt = 0xFFFFFFF;
 pub fn nextuse_expensive(self: *FLIR) !void {
     // as is from Braun, Hack 2010. Probably too expensive to us (and not even measuring
     // the right thing? like "see through" putphis which are expceted to be free renames)
@@ -1011,28 +1017,88 @@ pub fn nextuse_expensive(self: *FLIR) !void {
     const nv = self.nvreg;
     const nn = self.n.items.len;
     const nextuse = try self.gpa.alloc(u32, nv * nn);
-    const INFINITY: u32 = 0xFFFFFFF;
-    @memset(nextuse, INFINITY);
+    self.maybe_nextuse = nextuse;
+    @memset(nextuse, NU_INFINITY);
 
-    var ni: u16 = uv(self.n.items.len - 1);
-    while (true) : (ni -= 1) {
-        const n = &self.n.items[ni];
+    // stupid: first time we do almost all work. the next turn just handles propagating
+    // loop header info back into the loop. this could probably be calulated "by fiat"
+    // instead. like anything which is used in the loop is expensive to spill,
+    // but less expensive than something used more in an inner loop. so something
+    // which just propagates along the loop tree should replace the secound round.
+    // but then again the entire nextuse_expensive() should be replaced with something
+    // not needing u32 ints.....
+    for (0..2) |turn| {
+        var ni: u16 = uv(self.n.items.len - 1);
+        while (true) : (ni -= 1) {
+            const n = &self.n.items[ni];
+            const nu = nextuse[nv * ni ..][0..nv];
 
-        const is_taken_loop_exit = n.npred == 1 and self.n.items[n.predlink].loop > n.loop;
+            if (turn == 0) {
+                var pos_counter: NUInt = 0; // POSITIVE COUNTER YEE
+                var it = self.ins_iterator(n.firstblk);
+                while (it.next()) |item| {
+                    const i: *Inst = item.i;
+                    check_ops_nextuse(self, ni, i, nu, pos_counter);
+                    var opnext = i.next_as_op();
+                    while (opnext != NoRef) {
+                        const ii = self.iref(opnext) orelse return error.FLIRError;
+                        check_ops_nextuse(self, ni, ii, nu, pos_counter);
+                        opnext = ii.next;
+                    }
 
-        const l_B: u32 = if (is_taken_loop_exit) 10000 else 0;
-        _ = l_B;
-        var pos_counter: u32 = 0; // POSITIVE COUNTER YEE
+                    pos_counter += 1;
+                }
 
-        var it = self.ins_iterator(n.firstblk);
-        while (it.next()) |item| {
-            const i: *Inst = item.i;
-            _ = i;
+                var listit = n.putphi_list;
+                while (listit != NoRef) {
+                    // putphi:s arent ordered, so they all have the same pos_counter
+                    const i = self.iref(listit) orelse return error.FLIRError;
+                    check_ops_nextuse(self, ni, i, nu, pos_counter);
 
-            pos_counter += 1;
+                    listit = i.next;
+                }
+
+                n.len_for_expensive = pos_counter + 1;
+            }
+
+            const len = n.len_for_expensive;
+
+            for (n.s) |s| {
+                if (s == 0) continue;
+                const is_taken_loop_exit = n.loop > self.n.items[s].loop;
+
+                const l_B: NUInt = if (is_taken_loop_exit) 10000 else 0;
+                const nus = nextuse[nv * s ..][0..nv];
+
+                for (nu, nus) |*nu_it, *nus_it| {
+                    nu_it.* = @min(nu_it.*, nus_it.* + l_B + len);
+                }
+            }
+
+            // this is mainly for printing, we are not going to consider the next_use
+            // of something which is not live..
+            for (0.., nu) |vreg, *nu_it| {
+                const v = self.vregs.items[vreg];
+                if (v.def_node == ni) {
+                    nu_it.* = NU_INFINITY;
+                }
+            }
+
+            if (ni == 0) break;
         }
+    }
+}
 
-        if (ni == 0) break;
+fn check_ops_nextuse(self: *FLIR, ni: u16, i: *Inst, nu: []NUInt, pos_counter: NUInt) void {
+    for (i.ops(false)) |op| {
+        if (self.iref(op)) |ref| {
+            if (ref.vreg()) |vreg| {
+                const v = self.vregs.items[vreg];
+                if (v.def_node != ni) {
+                    nu[vreg] = @min(nu[vreg], pos_counter);
+                }
+            }
+        }
     }
 }
 

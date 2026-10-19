@@ -473,14 +473,17 @@ fn print_interval(self: *FLIR, ref: u16, i: *FLIR.Inst) !void {
     if (!is_vreg and !is_phi) print("\x1b[38;5;244m", .{});
     print("{s}: %{:3} ", .{ if (is_vreg) "VREG" else "TEMP", fake_ref(self, ref) });
 
+    const pad = self.maybe_nextuse != null;
+
     const vreg_flag = if (i.vreg()) |vreg| defs.vreg_flag(@intCast(vreg)) else null;
     print("\x1b[4m", .{});
-    for (self.n.items, 0..) |n, ni| {
+    for (self.n.items, 0..) |*n, ni| {
         var live: bool = if (vreg_flag) |f| (f & n.live_in) != 0 else false;
         var use: ?bool = if (vreg_flag) |f| (f & n.used_vregs) != 0 else null;
         if (i.tag == .phi and try self.defNode(i) == ni) {
             live = true;
         }
+        var ncells: u32 = 0;
         var phi = n.phi_list;
         while (phi != NoRef) {
             const iu = self.iref(phi) orelse return error.FLIRError;
@@ -499,6 +502,7 @@ fn print_interval(self: *FLIR, ref: u16, i: *FLIR.Inst) !void {
                 print(" ", .{});
             }
             phi = iu.next;
+            ncells += 1;
         }
         var used = false;
         var it = self.ins_iterator(n.firstblk);
@@ -520,6 +524,7 @@ fn print_interval(self: *FLIR, ref: u16, i: *FLIR.Inst) !void {
             } else {
                 print(" ", .{});
             }
+            ncells += 1;
         }
         var put_iter = n.putphi_list;
         while (put_iter != NoRef) {
@@ -542,7 +547,16 @@ fn print_interval(self: *FLIR, ref: u16, i: *FLIR.Inst) !void {
                 print(" ", .{});
             }
 
+            ncells += 1;
             put_iter = iu.next;
+        }
+
+        if (pad) {
+            while (ncells < 5) {
+                print(" ", .{});
+                ncells += 1;
+            }
+            n.len_for_expensive = ncells; // HIAAA
         }
         // TODO: this should be in a verify function even if we do not print
         if ((use orelse false) != used) print("\x1b[31m", .{}); //   ACHTUNG
@@ -550,6 +564,28 @@ fn print_interval(self: *FLIR, ref: u16, i: *FLIR.Inst) !void {
         if ((use orelse false) != used) print("\x1b[0m", .{});
     }
     print("\x1b[0m\n", .{});
+
+    if (self.maybe_nextuse) |nu| {
+        if (i.vreg()) |vreg| {
+            print("           ", .{});
+            print("\x1b[4m", .{});
+            for (self.n.items, 0..) |n, ni| {
+                const val = nu[ni * self.nvreg + vreg];
+                if (val < FLIR.NU_INFINITY) {
+                    print("{:5}", .{val});
+                } else {
+                    print("     ", .{});
+                }
+                var ncells: u32 = 5;
+                while (ncells < n.len_for_expensive) {
+                    print(" ", .{});
+                    ncells += 1;
+                }
+                print("│", .{});
+            }
+            print("\x1b[0m\n", .{});
+        }
+    }
 }
 
 pub fn print_loop(self: *FLIR, head: u16) !void {
@@ -567,22 +603,32 @@ pub fn print_loop(self: *FLIR, head: u16) !void {
         else
             " ";
         var phi = n.phi_list;
+        var ncells: u32 = 0;
         while (phi != NoRef) {
             const i = self.iref(phi) orelse return error.FLIRError;
             print("{s}", .{the_char});
+            ncells += 1;
             phi = i.next;
         }
         var it = self.ins_iterator(n.firstblk);
         while (it.next()) |_| {
             // ALERTA: CALLS TODAY??
             print("{s}", .{the_char});
+            ncells += 1;
         }
         var put_iter = n.putphi_list;
         while (put_iter != NoRef) {
             const i = &self.i.items[put_iter];
             print("{s}", .{the_char});
+            ncells += 1;
             put_iter = i.next;
         }
+
+        while (ncells < n.len_for_expensive) {
+            print("{s}", .{the_char});
+            ncells += 1;
+        }
+
         if (ni + 1 < enda) {
             print("-", .{}); // ┼
         } else {
