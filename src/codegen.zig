@@ -16,7 +16,7 @@ const CFOModule = @import("./CFOModule.zig");
 
 const defs = @import("./defs.zig");
 fn r(reg: IPReg) X86Asm.IPReg {
-    return @fromBackingInt(@intCast(reg.id()));
+    return @fromBackingInt(reg.id());
 }
 
 fn slotea(slotid: anytype) EAddr {
@@ -613,7 +613,7 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, owner_obj_idx: ?u32, opts: defs.CFO
                 .int2vf => {
                     const val = self.ipval(i.op1) orelse return error.FLIRError;
                     const dst = i.avxreg() orelse return error.FLIRError;
-                    const ispec: defs.Int2VOp = @fromBackingInt(@intCast(i.low_spec()));
+                    const ispec: defs.Int2VOp = @fromBackingInt(i.low_spec());
                     switch (ispec) {
                         .convert => switch (val) {
                             // TODO:
@@ -630,14 +630,14 @@ pub fn codegen(self: *FLIR, mod: *CFOModule, owner_obj_idx: ?u32, opts: defs.CFO
                 .vf2int => {
                     const src = self.avxreg(i.op1) orelse return error.FLIRError;
                     const dst = i.ipreg() orelse return error.FLIRError;
-                    const ispec: defs.V2IntOp = @fromBackingInt(@intCast(i.low_spec()));
+                    const ispec: defs.V2IntOp = @fromBackingInt(i.low_spec());
                     switch (ispec) {
                         .convert => try cfo.vcvtsx2si_rr(i.fmode_op(), true, r(dst), src),
                         .bitcast => try cfo.vmovdq_iv(i.fmode_op().double(), r(dst), src),
                     }
                 },
                 .call => {
-                    const kind: defs.CallKind = @fromBackingInt(@intCast(i.spec));
+                    const kind: defs.CallKind = @fromBackingInt(i.spec);
                     switch (kind) {
                         .syscall => {
                             try regmovmc(&cfo, false, X86Asm.IPReg.rax.into(), self.ipval(i.op1).?);
