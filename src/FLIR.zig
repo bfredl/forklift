@@ -1089,6 +1089,56 @@ pub fn nextuse_expensive(self: *FLIR) !void {
     }
 }
 
+// TODO: this is early in the Cognitive Process, but I think that "wmin" and "scan_alloc"
+// can eventually be joined into pass over the blocks, provided that the dataflow pass
+// before contains everything we might need, like "max pressure of this loop"
+pub fn wmin(self: *FLIR) !void {
+    for (0.., self.n.items) |ni, *n| {
+        print("wmin at {}\n", .{ni});
+
+        if (n.npred > 0) @panic("not yet");
+
+        var w_vregs: VRegFlag = 0;
+        var w_n_temp: u16 = 0;
+
+        var phi = n.phi_list;
+        while (phi != NoRef) {
+            const i = self.iref(phi) orelse return error.FLIRError;
+
+            // likely aalmost the same for .phi, just starting out here
+            if (i.tag == .arg) {
+                if (i.vreg()) |vr| {
+                    w_vregs |= defs.vreg_flag(@intCast(vr));
+                } else {
+                    // in general, check if not ded on arival, although a deded
+                    // arg/phi should not happen this far in analysis
+                    w_n_temp += 1;
+                }
+            } else {
+                @panic("check the same ^");
+            }
+
+            phi = i.next;
+        }
+
+        var it = self.ins_iterator(n.firstblk);
+        while (it.next()) |item| {
+            const i = item.i;
+            _ = i; // SKELETON
+            @panic("oh no an instruction");
+        }
+
+        var put_iter = n.putphi_list;
+        while (put_iter != NoRef) {
+            const i = &self.i.items[put_iter];
+            if (i.tag == .putphi) {
+                @panic("oh no a putphi");
+            }
+            put_iter = i.next;
+        }
+    }
+}
+
 fn check_ops_nextuse(self: *FLIR, ni: u16, i: *Inst, nu: []NUInt, pos_counter: NUInt) void {
     for (i.ops(false)) |op| {
         if (self.iref(op)) |ref| {
@@ -1835,6 +1885,7 @@ pub fn test_analysis(self: *FLIR, comptime ABI: type, comptime check: bool, opts
         self.debug_print();
         try self.print_intervals();
         try self.print_xdot("/tmp/xdotter.dot");
+        try self.wmin();
         std.process.exit(0);
     }
 
