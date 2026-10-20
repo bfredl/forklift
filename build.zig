@@ -37,7 +37,7 @@ pub fn build(b: *std.Build) void {
         const exe_scratch = b.addExecutable(.{
             .name = "run",
             .root_module = b.createModule(.{
-                .root_source_file = b.path("src/scratch.zig"),
+                .root_source_file = b.path("src/test_reg.zig"),
                 .optimize = opt,
                 .target = t,
             }),

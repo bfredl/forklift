@@ -1835,6 +1835,7 @@ pub fn test_analysis(self: *FLIR, comptime ABI: type, comptime check: bool, opts
         self.debug_print();
         try self.print_intervals();
         try self.print_xdot("/tmp/xdotter.dot");
+        std.process.exit(0);
     }
 
     try self.scan_alloc(ABI, opts);
