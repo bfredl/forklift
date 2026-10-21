@@ -387,7 +387,7 @@ fn print_node(self: *FLIR, n: *FLIR.Node) void {
             print("\n", .{});
         } else if (i.tag == .putphi or i.tag == .retval) {
             // TODO: separate tags for "processed" and "scheduled"?
-            if (!i.f.move_processed or (self.trivial(i) catch true)) {
+            if (!i.f.move_processed or (self.trivial_moveinst(i) catch true)) {
                 if (i.f.move_processed) print("\x1b[38;5;244m", .{});
                 print_inst(self, put_iter, i);
                 if (i.f.move_processed) print("\x1b[0m", .{});
