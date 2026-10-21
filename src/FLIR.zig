@@ -1154,6 +1154,7 @@ pub fn wmin(self: *FLIR) !void {
             if (wanted_w_vregs != w_vregs) {
                 print("loop header: finish this\n", .{});
                 missing = true;
+                w_vregs = wanted_w_vregs;
             }
         } else if (n.npred > 1) { // but not loop header
             @panic("not yet");
