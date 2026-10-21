@@ -1178,9 +1178,18 @@ pub fn wmin(self: *FLIR) !void {
         var it = self.ins_iterator(n.firstblk);
         while (it.next()) |item| {
             const i = item.i;
-            _ = i; // SKELETON
-
-            @panic("oh no an instruction");
+            for (i.ops(false)) |op| {
+                if (self.iref(op)) |ref| {
+                    if (ref.vreg()) |vr| {
+                        if (w_vregs & defs.vreg_flag(@intCast(vr)) == 0) {
+                            @panic("LOL");
+                        }
+                    } else {
+                        @panic("LMAO");
+                    }
+                }
+            }
+            @panic("check output of instruction");
         }
 
         var put_iter = n.putphi_list;
