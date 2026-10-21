@@ -1097,6 +1097,19 @@ pub fn nextuse_expensive(self: *FLIR) !void {
     }
 }
 
+fn check_ops_nextuse(self: *FLIR, ni: u16, i: *Inst, nu: []NUInt, pos_counter: NUInt) void {
+    for (i.ops(false)) |op| {
+        if (self.iref(op)) |ref| {
+            if (ref.vreg()) |vreg| {
+                const v = self.vregs.items[vreg];
+                if (v.def_node != ni) {
+                    nu[vreg] = @min(nu[vreg], pos_counter);
+                }
+            }
+        }
+    }
+}
+
 // TODO: this is early in the Cognitive Process, but I think that "wmin" and "scan_alloc"
 // can eventually be joined into pass over the blocks, provided that the dataflow pass
 // before contains everything we might need, like "max pressure of this loop"
@@ -1166,6 +1179,7 @@ pub fn wmin(self: *FLIR) !void {
         while (it.next()) |item| {
             const i = item.i;
             _ = i; // SKELETON
+
             @panic("oh no an instruction");
         }
 
@@ -1186,19 +1200,6 @@ pub fn wmin(self: *FLIR) !void {
     }
 
     if (missing) return error.NotImplemented;
-}
-
-fn check_ops_nextuse(self: *FLIR, ni: u16, i: *Inst, nu: []NUInt, pos_counter: NUInt) void {
-    for (i.ops(false)) |op| {
-        if (self.iref(op)) |ref| {
-            if (ref.vreg()) |vreg| {
-                const v = self.vregs.items[vreg];
-                if (v.def_node != ni) {
-                    nu[vreg] = @min(nu[vreg], pos_counter);
-                }
-            }
-        }
-    }
 }
 
 // we consider there to be 3 kinds of intervals:
