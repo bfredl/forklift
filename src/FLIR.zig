@@ -1181,6 +1181,10 @@ pub fn wmin(self: *FLIR) !void {
             for (i.ops(false)) |op| {
                 if (self.iref(op)) |ref| {
                     if (ref.vreg()) |vr| {
+                        // NB: here is where we special case X86 and friends where
+                        // "mov res, op1; add res, [spilled op2]" is just fine if
+                        // nextuse(op2, inst-after-i) is far away (the case where this
+                        // is in a tight loop already handled at the loop header)
                         if (w_vregs & defs.vreg_flag(@intCast(vr)) == 0) {
                             @panic("LOL");
                         }
@@ -1189,7 +1193,23 @@ pub fn wmin(self: *FLIR) !void {
                     }
                 }
             }
-            @panic("check output of instruction");
+            if (i.tag == .call) {
+                // currently the only inst with projections
+                @panic("CALL ME LATER");
+            } else {
+                if (i.vreg()) |vreg| {
+                    _ = vreg;
+                    @panic("AAAAAA");
+                } else {
+                    if (i.res_type()) |res| {
+                        switch (res) {
+                            .intptr => {}, // ok, below
+                            .avxval => @panic("HAHAHA NO FLOATS PLZ"),
+                        }
+                        w_n_temp += 1;
+                    }
+                }
+            }
         }
 
         var put_iter = n.putphi_list;
