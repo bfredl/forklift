@@ -155,7 +155,7 @@ pub fn calc_live(self: *FLIR) !void {
             }
 
             n.live_in = live_vregs;
-            n.used_vregs = used_vregs;
+            n.used_vregs_maybe_loop = used_vregs;
             // print("LIVEIN {}: {x} (dvs {})\n", .{ ni, n.live_in, @popCount(n.live_in) });
 
             if (n.is_header) {
@@ -170,8 +170,8 @@ pub fn calc_live(self: *FLIR) !void {
                         if (ch_n.is_header) {
                             loop_set |= ch_loop;
                         }
-                        // NB: used_vregs remains fully local. maybe header should have "loop used" if we need it
                         ch_n.live_in |= n.live_in;
+                        n.used_vregs_maybe_loop |= ch_n.used_vregs_maybe_loop;
                     } else {
                         break; // assuming the contigous property by now
                     }
@@ -188,8 +188,10 @@ pub fn calc_live(self: *FLIR) !void {
             if ((n.live_in & vreg_flag(@intCast(vi))) != 0) {
                 v.live_in |= node_flag(@intCast(ni));
             }
-            if ((n.used_vregs & vreg_flag(@intCast(vi))) != 0) {
-                v.used |= node_flag(@intCast(ni));
+            if (false) {
+                if ((n.used_vregs_maybe_loop & vreg_flag(@intCast(vi))) != 0) {
+                    v.used |= node_flag(@intCast(ni));
+                }
             }
         }
 

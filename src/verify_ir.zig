@@ -479,7 +479,7 @@ fn print_interval(self: *FLIR, ref: u16, i: *FLIR.Inst) !void {
     print("\x1b[4m", .{});
     for (self.n.items, 0..) |*n, ni| {
         var live: bool = if (vreg_flag) |f| (f & n.live_in) != 0 else false;
-        var use: ?bool = if (vreg_flag) |f| (f & n.used_vregs) != 0 else null;
+        var use: ?bool = if (vreg_flag) |f| (f & n.used_vregs_maybe_loop) != 0 else null;
         if (i.tag == .phi and try self.defNode(i) == ni) {
             live = true;
         }

@@ -70,7 +70,13 @@ unsealed: bool = true,
 // variables 2.0: virtual registero
 // vregs is any result which is live outside of its defining node, that's it.
 nvreg: u16 = 0,
-vregs: ArrayList(struct { ref: u16, def_node: u16, live_in: NodeFlag = 0, used: NodeFlag = 0, conflicts: u16 = 0 }) = .empty,
+vregs: ArrayList(struct {
+    ref: u16,
+    def_node: u16,
+    live_in: NodeFlag = 0,
+    //  used: NodeFlag = 0,
+    conflicts: u16 = 0,
+}) = .empty,
 
 // 8-byte slots in stack frame
 nslots: u8 = 0,
@@ -128,7 +134,8 @@ pub const Node = struct {
     firstblk: u16,
     lastblk: u16,
     live_in: VRegFlag = 0, // TODO: globally allocate a [n_nodes*nvreg] multibitset
-    used_vregs: VRegFlag = 0, // TODO: globally allocate a [n_nodes*nvreg] multibitset
+    // when n.is_header, this is for vregs used ANYWHERE in the loop, otherwise in the block
+    used_vregs_maybe_loop: VRegFlag = 0, // TODO: globally allocate a [n_nodes*nvreg] multibitset
 
     loop: u16 = 0,
     rpolink: u8 = 0,
@@ -148,6 +155,7 @@ pub const Node = struct {
     putphi_list: u16 = NoRef, // also used for "putvar" entries in the construction phase
 
     len_for_expensive: u32 = 0,
+    w_exit: VRegFlag = 0,
 };
 
 // amd64 ABI
@@ -1093,20 +1101,23 @@ pub fn nextuse_expensive(self: *FLIR) !void {
 // can eventually be joined into pass over the blocks, provided that the dataflow pass
 // before contains everything we might need, like "max pressure of this loop"
 pub fn wmin(self: *FLIR) !void {
+    // we missed something but went ahead;
+    var missing = false;
+    const max_ipreg = @min(n_ipreg, self.max_ipreg_use);
     for (0.., self.n.items) |ni, *n| {
         print("wmin at {}\n", .{ni});
-
-        if (n.npred > 0) @panic("not yet");
 
         var w_vregs: VRegFlag = 0;
         var w_n_temp: u16 = 0;
 
+        // NB: we process live_in after phi because of the loop_header condition
         var phi = n.phi_list;
         while (phi != NoRef) {
             const i = self.iref(phi) orelse return error.FLIRError;
 
             // likely aalmost the same for .phi, just starting out here
-            if (i.tag == .arg) {
+            if (i.tag == .arg or i.tag == .phi) {
+                assert(i.mem_type() == .intptr); // avxvals in phis???
                 if (i.vreg()) |vr| {
                     w_vregs |= defs.vreg_flag(@intCast(vr));
                 } else {
@@ -1115,10 +1126,39 @@ pub fn wmin(self: *FLIR) !void {
                     w_n_temp += 1;
                 }
             } else {
-                @panic("check the same ^");
+                @panic("what.");
             }
 
             phi = i.next;
+        }
+
+        var wanted_w_vregs: VRegFlag = undefined;
+        if (n.is_header) {
+            assert(n.npred > 1);
+            const alive = w_vregs | n.live_in;
+            const cand = alive & n.used_vregs_maybe_loop;
+            const len_alive = @popCount(alive) + w_n_temp;
+            const len_cand = @popCount(cand) + w_n_temp;
+            if (len_alive <= max_ipreg) {
+                // quick path for when ALL of "alive" fits in "w"
+                wanted_w_vregs = alive;
+            } else if (len_cand <= max_ipreg) {
+                wanted_w_vregs = cand;
+                if (len_cand < max_ipreg) {
+                    @panic("already this:p");
+                }
+            } else {
+                @panic("sort and delet");
+            }
+            // TODO: need to check edges separately??
+            if (wanted_w_vregs != w_vregs) {
+                print("loop header: finish this\n", .{});
+                missing = true;
+            }
+        } else if (n.npred > 1) { // but not loop header
+            @panic("not yet");
+        } else if (n.npred == 1) {
+            w_vregs |= self.n.items[n.predlink].w_exit;
         }
 
         var it = self.ins_iterator(n.firstblk);
@@ -1132,11 +1172,19 @@ pub fn wmin(self: *FLIR) !void {
         while (put_iter != NoRef) {
             const i = &self.i.items[put_iter];
             if (i.tag == .putphi) {
-                @panic("oh no a putphi");
+                // for now we assume here that any .phi itself
+                // is allocated in a register, thus any "mov phi_reg, [spill slot]"
+                // is already fine at resolve_movelist time. however if phi:s
+                // begin as spilled, "mov [phi spill slot], [value slot]`" will
+                // be tricky to resolve:p
             }
             put_iter = i.next;
         }
+
+        n.w_exit = w_vregs;
     }
+
+    if (missing) return error.NotImplemented;
 }
 
 fn check_ops_nextuse(self: *FLIR, ni: u16, i: *Inst, nu: []NUInt, pos_counter: NUInt) void {
