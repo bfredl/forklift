@@ -1121,11 +1121,19 @@ pub fn wmin(self: *FLIR) !void {
     // we missed something but went ahead;
     var missing = false;
     const max_ipreg = @min(n_ipreg, self.max_ipreg_use);
+
+    // really scoped per block, but reuse the memory..:D
+    var alive_temps: ArrayList(struct {
+        ref: u16,
+        w: bool,
+    }) = .empty;
+    defer alive_temps.deinit(self.gpa);
     for (0.., self.n.items) |ni, *n| {
         print("wmin at {}\n", .{ni});
 
         var w_vregs: VRegFlag = 0;
         var w_n_temp: u16 = 0;
+        alive_temps.items.len = 0;
 
         // NB: we process live_in after phi because of the loop_header condition
         var phi = n.phi_list;
@@ -1141,6 +1149,7 @@ pub fn wmin(self: *FLIR) !void {
                     // in general, check if not ded on arival, although a deded
                     // arg/phi should not happen this far in analysis
                     w_n_temp += 1;
+                    try alive_temps.append(self.gpa, .{ .ref = phi, .w = true });
                 }
             } else {
                 @panic("what.");
@@ -1174,7 +1183,7 @@ pub fn wmin(self: *FLIR) !void {
                 w_vregs = wanted_w_vregs;
             }
         } else if (n.npred > 1) { // but not loop header
-            @panic("not yet");
+            @panic("TODO :D");
         } else if (n.npred == 1) {
             w_vregs |= self.n.items[n.predlink].w_exit;
         }
@@ -1183,8 +1192,8 @@ pub fn wmin(self: *FLIR) !void {
         while (it.next()) |item| {
             const i = item.i;
             for (i.ops(false)) |op| {
-                if (self.iref(op)) |ref| {
-                    if (ref.vreg()) |vr| {
+                if (self.iref(op)) |iop| {
+                    if (iop.vreg()) |vr| {
                         // NB: here is where we special case X86 and friends where
                         // "mov res, op1; add res, [spilled op2]" is just fine if
                         // nextuse(op2, inst-after-i) is far away (the case where this
@@ -1193,7 +1202,21 @@ pub fn wmin(self: *FLIR) !void {
                             @panic("LOL");
                         }
                     } else {
-                        @panic("LMAO");
+                        for (0.., alive_temps.items) |tid, *temp| {
+                            _ = tid;
+                            if (temp.ref == op) {
+                                if (!temp.w) {
+                                    @panic("LMAO");
+                                }
+
+                                print("TODO: check op1_killed/op2_killed\n", .{});
+                                missing = true;
+
+                                break;
+                            }
+                        } else {
+                            @panic("real panic: not found in alive_temps");
+                        }
                     }
                 }
             }
@@ -1202,14 +1225,23 @@ pub fn wmin(self: *FLIR) !void {
                 @panic("CALL ME LATER");
             } else {
                 if (i.vreg()) |vreg| {
-                    _ = vreg;
-                    @panic("AAAAAA");
+                    const f = defs.vreg_flag(@intCast(vreg));
+                    if (w_vregs & f != 0) @panic("panic: not already");
+                    w_vregs |= f;
                 } else {
                     if (i.res_type()) |res| {
                         switch (res) {
                             .intptr => {}, // ok, below
                             .avxval => @panic("HAHAHA NO FLOATS PLZ"),
                         }
+                        // at this point killed but not DCE means
+                        // the inst had a side effect, but result is ded on arival
+                        // still need to waste a slot
+                        if (i.f.killed) {
+                            // next_use = infinity
+                        }
+                        try alive_temps.append(self.gpa, .{ .ref = item.ref, .w = true });
+
                         w_n_temp += 1;
                     }
                 }
