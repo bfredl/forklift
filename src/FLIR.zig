@@ -1142,6 +1142,10 @@ pub fn wmin(self: *FLIR) !void {
 
             // likely aalmost the same for .phi, just starting out here
             if (i.tag == .arg or i.tag == .phi) {
+                if (i.tag == .arg and i.mckind == .memarg) {
+                    @panic("TODO: not all args are already in registers");
+                }
+
                 assert(i.mem_type() == .intptr); // avxvals in phis???
                 if (i.vreg()) |vr| {
                     w_vregs |= defs.vreg_flag(@intCast(vr));
@@ -1158,8 +1162,14 @@ pub fn wmin(self: *FLIR) !void {
             phi = i.next;
         }
 
-        var wanted_w_vregs: VRegFlag = undefined;
-        if (n.is_header) {
+        if (n.npred == 0) {
+            // entry block
+        } else if (n.npred == 1) {
+            assert(!n.is_header);
+            // w_vregs == 0 expected but not assumed TBH
+            w_vregs |= self.n.items[n.predlink].w_exit;
+        } else if (n.is_header) {
+            var wanted_w_vregs: VRegFlag = undefined;
             assert(n.npred > 1);
             const alive = w_vregs | n.live_in;
             const cand = alive & n.used_vregs_maybe_loop;
@@ -1182,10 +1192,24 @@ pub fn wmin(self: *FLIR) !void {
                 missing = true;
                 w_vregs = wanted_w_vregs;
             }
-        } else if (n.npred > 1) { // but not loop header
-            @panic("TODO :D");
-        } else if (n.npred == 1) {
-            w_vregs |= self.n.items[n.predlink].w_exit;
+        } else { // n.npred > 0, not loop header so all predecessors are known
+            var w_all: VRegFlag = n.live_in; // kinda ~0 but only for live shit
+            var w_some: VRegFlag = 0;
+
+            print("pred: ", .{});
+            var iter = self.predIter(@intCast(ni));
+            while (iter.next()) |p| {
+                print("{}, ", .{p});
+                const np = &self.n.items[p];
+                w_all &= np.w_exit;
+                w_some |= np.w_exit;
+            }
+            w_some &= n.live_in; // don't revive dead stuff
+            print("\n", .{});
+            if (w_all != w_some) {
+                @panic("ooooooooo");
+            }
+            w_vregs &= w_all;
         }
 
         var it = self.ins_iterator(n.firstblk);
