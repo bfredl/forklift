@@ -1196,7 +1196,6 @@ pub fn wmin(self: *FLIR) !void {
             var w_all: VRegFlag = n.live_in; // kinda ~0 but only for live shit
             var w_some: VRegFlag = 0;
 
-            print("pred: ", .{});
             var iter = self.predIter(@intCast(ni));
             while (iter.next()) |p| {
                 print("{}, ", .{p});
@@ -1209,7 +1208,7 @@ pub fn wmin(self: *FLIR) !void {
             if (w_all != w_some) {
                 @panic("ooooooooo");
             }
-            w_vregs &= w_all;
+            w_vregs |= w_all;
         }
 
         var it = self.ins_iterator(n.firstblk);
@@ -1286,9 +1285,23 @@ pub fn wmin(self: *FLIR) !void {
         }
 
         n.w_exit = w_vregs;
+        if (w_vregs != 0) {
+            print("w_exit: ", .{});
+            self.print_set(w_vregs);
+            print("\n", .{});
+        }
     }
 
     if (missing) return error.NotImplemented;
+}
+
+fn print_set(self: *FLIR, set: VRegFlag) void {
+    var ireg: u16 = 0;
+    while (ireg < self.nvreg) : (ireg += 1) {
+        if ((set & (@as(VRegFlag, 1) << @as(u7, @intCast(ireg)))) != 0) {
+            print("{}, ", .{ireg});
+        }
+    }
 }
 
 fn mcshow(inst: *Inst) struct { defs.MCKind, u16 } {
