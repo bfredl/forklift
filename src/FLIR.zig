@@ -1212,6 +1212,7 @@ pub fn wmin(self: *FLIR) !void {
         }
 
         var it = self.ins_iterator(n.firstblk);
+        var n_reload: u16 = 0;
         while (it.next()) |item| {
             const i = item.i;
             for (i.ops(false)) |op| {
@@ -1222,14 +1223,14 @@ pub fn wmin(self: *FLIR) !void {
                         // nextuse(op2, inst-after-i) is far away (the case where this
                         // is in a tight loop already handled at the loop header)
                         if (w_vregs & defs.vreg_flag(@intCast(vr)) == 0) {
-                            @panic("LOL");
+                            n_reload += 1;
                         }
                     } else {
                         for (0.., alive_temps.items) |tid, *temp| {
                             _ = tid;
                             if (temp.ref == op) {
                                 if (!temp.w) {
-                                    @panic("LMAO");
+                                    n_reload += 1;
                                 }
 
                                 print("TODO: check op1_killed/op2_killed\n", .{});
@@ -1243,29 +1244,44 @@ pub fn wmin(self: *FLIR) !void {
                     }
                 }
             }
+
+            if (n_reload > 0) {
+                @panic("reload and then add reloads to w");
+            }
+
             if (i.tag == .call) {
-                // currently the only inst with projections
+                // currently the only inst with projections and more complex args
                 @panic("CALL ME LATER");
             } else {
-                if (i.vreg()) |vreg| {
-                    const f = defs.vreg_flag(@intCast(vreg));
-                    if (w_vregs & f != 0) @panic("panic: not already");
-                    w_vregs |= f;
-                } else {
-                    if (i.res_type()) |res| {
-                        switch (res) {
-                            .intptr => {}, // ok, below
-                            .avxval => @panic("HAHAHA NO FLOATS PLZ"),
-                        }
+                // "null" means the inst doesn't even store to a scratch slot
+                if (i.res_type()) |res| {
+                    switch (res) {
+                        .intptr => {}, // ok, below
+                        .avxval => @panic("HAHAHA NO FLOATS PLZ"),
+                    }
+
+                    // simplified: here we know |n.defs| is exactly 1
+                    const n_defs = 1;
+                    const w_size = @popCount(w_vregs) + w_n_temp;
+                    if (w_size + n_defs > max_ipreg) {
+                        @panic("probably ded meat in w, but otherwise le SPILL");
+                    }
+
+                    if (i.vreg()) |vreg| {
+                        const f = defs.vreg_flag(@intCast(vreg));
+                        if (w_vregs & f != 0) @panic("panic: not already");
+                        w_vregs |= f;
+                    } else {
                         // at this point killed but not DCE means
                         // the inst had a side effect, but result is ded on arival
                         // still need to waste a slot
-                        if (i.f.killed) {
+                        if (false and i.f.killed) {
                             // next_use = infinity
+                        } else {
+                            if (i.f.killed) print("TODO: this is wrong!! need to know if a temp is born ded!!!\n", .{});
+                            w_n_temp += 1;
+                            try alive_temps.append(self.gpa, .{ .ref = item.ref, .w = true });
                         }
-                        try alive_temps.append(self.gpa, .{ .ref = item.ref, .w = true });
-
-                        w_n_temp += 1;
                     }
                 }
             }
