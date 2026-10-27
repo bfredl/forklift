@@ -1264,6 +1264,7 @@ pub fn wmin(self: *FLIR) !void {
                     const n_defs = 1;
                     const w_size = @popCount(w_vregs) + w_n_temp;
                     if (w_size + n_defs > max_ipreg) {
+                        print("wanted {} + {} + {} but max {}!\n", .{ @popCount(w_vregs), w_n_temp, n_defs, max_ipreg });
                         @panic("probably ded meat in w, but otherwise le SPILL");
                     }
 
@@ -1275,10 +1276,9 @@ pub fn wmin(self: *FLIR) !void {
                         // at this point killed but not DCE means
                         // the inst had a side effect, but result is ded on arival
                         // still need to waste a slot
-                        if (false and i.f.killed) {
+                        if (!i.f.used_in_defining_block) {
                             // next_use = infinity
                         } else {
-                            if (i.f.killed) print("TODO: this is wrong!! need to know if a temp is born ded!!!\n", .{});
                             w_n_temp += 1;
                             try alive_temps.append(self.gpa, .{ .ref = item.ref, .w = true });
                         }

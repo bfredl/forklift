@@ -239,6 +239,8 @@ fn adduse(self: *FLIR, ni: u16, user: u16, used: u16) !void {
             self.nvreg += 1;
             try self.vregs.append(self.gpa, .{ .ref = used, .def_node = def_node });
         }
+    } else {
+        i.f.used_in_defining_block = true;
     }
 }
 

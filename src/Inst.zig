@@ -71,6 +71,8 @@ f: packed struct {
     kill_op3: bool = false, // vaaaaaaal
     killed: bool = false, // if false after calc_use, a non-vreg is never used
     is_vreg: bool = false, // if true: vreg_scratch is a vreg number. otherwise it is free real (scratch) estate
+    // regardless if vreg or not, do we have a user in the defining block or no?
+    used_in_defining_block: bool = false,
 
     // if true: vregs_scratch encodes a bitset of conflicting regs.
     // for a vreg, this is always false, but check vregs[v].conflicts
