@@ -129,36 +129,36 @@ pub fn low_spec(self: Inst) u5 {
 }
 
 pub fn vmathop(self: Inst) X86Asm.VMathOp {
-    return @enumFromInt(self.low_spec());
+    return @fromBackingInt(@intCast(self.low_spec()));
 }
 
 pub fn vcmpop(self: Inst) X86Asm.VCmpOp {
-    return @enumFromInt(self.low_spec());
+    return @fromBackingInt(self.low_spec());
 }
 
 pub fn fcmpop(self: Inst) defs.IntCond {
-    return @enumFromInt(self.low_spec());
+    return @fromBackingInt(@intCast(self.low_spec()));
 }
 
 // only valid for op instructions. otherwise use mem_type
 pub fn fmode_op(self: Inst) X86Asm.FMode {
-    return @enumFromInt(self.high_spec());
+    return @fromBackingInt(self.high_spec());
 }
 
 pub fn vunop(self: Inst) defs.VUnOp {
-    return @enumFromInt(self.low_spec());
+    return @fromBackingInt(self.low_spec());
 }
 
 pub fn intcond(self: *Inst) defs.IntCond {
-    return @enumFromInt(self.low_spec());
+    return @fromBackingInt(@intCast(self.low_spec()));
 }
 
 pub fn iunop(self: *Inst) defs.IntUnOp {
-    return @enumFromInt(self.low_spec());
+    return @fromBackingInt(self.low_spec());
 }
 
 pub fn ibinop(self: *Inst) defs.IntBinOp {
-    return @enumFromInt(self.low_spec());
+    return @fromBackingInt(self.low_spec());
 }
 
 pub fn res_type(inst: Inst) ?defs.ValType {
@@ -252,7 +252,7 @@ pub fn next_as_op(i: *Inst) u16 {
 }
 
 pub fn ipreg(i: Inst) ?defs.IPReg {
-    return if (i.mckind == .ipreg) @as(defs.IPReg, @enumFromInt(i.mcidx)) else null;
+    return if (i.mckind == .ipreg) @as(defs.IPReg, @fromBackingInt(@intCast(i.mcidx))) else null;
 }
 
 pub fn avxreg(i: Inst) ?u4 {
@@ -273,7 +273,7 @@ pub fn sphigh(high: u3, low: u5) u8 {
 }
 
 pub fn vspec(lowop: u5, fmode: X86Asm.FMode) u8 {
-    return sphigh(@intFromEnum(fmode), lowop);
+    return sphigh(@backingInt(fmode), lowop);
 }
 
 const defs = @import("./defs.zig");
